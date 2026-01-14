@@ -6,8 +6,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     mc tmux ripgrep fd-find fzf zoxide jq build-essential unzip curl wget git file \
     ffmpeg 7zip poppler-utils imagemagick stow \
     iputils-ping dnsutils netcat-openbsd htop btop \
+    xclip wl-clipboard \
     python3-pip python3-venv locales \
     && echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen && update-locale LANG=en_US.UTF-8 \
+    && chmod u+s /usr/bin/ping \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 ENV LANG=en_US.UTF-8
@@ -23,7 +25,12 @@ RUN curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/s
     && LAZYGIT_VERSION=$(curl -s "https://api.github.com/repos/jesseduffield/lazygit/releases/latest" | grep -Po '"tag_name": "v\K[^"`]*') && curl -Lo lazygit.tar.gz "https://github.com/jesseduffield/lazygit/releases/latest/download/lazygit_${LAZYGIT_VERSION}_Linux_x86_64.tar.gz" && tar xf lazygit.tar.gz lazygit && install lazygit /usr/local/bin/ && rm lazygit.tar.gz \
     && YAZI_VERSION=$(curl -s "https://api.github.com/repos/sxyazi/yazi/releases/latest" | grep -Po '"tag_name": "v\K[^"`]*') && curl -Lo /tmp/yazi.zip "https://github.com/sxyazi/yazi/releases/download/v${YAZI_VERSION}/yazi-x86_64-unknown-linux-gnu.zip" && unzip /tmp/yazi.zip -d /tmp/ && mv /tmp/yazi-x86_64-unknown-linux-gnu/yazi /usr/local/bin/yazi && mv /tmp/yazi-x86_64-unknown-linux-gnu/ya /usr/local/bin/ya && rm -rf /tmp/yazi.zip /tmp/yazi-x86_64-unknown-linux-gnu \
     && curl -Lo /tmp/nvim.tar.gz https://github.com/neovim/neovim/releases/latest/download/nvim-linux-x86_64.tar.gz && tar -C /usr/local -xzf /tmp/nvim.tar.gz --strip-components=1 && rm /tmp/nvim.tar.gz \
-    && curl -sS https://starship.rs/install.sh | sh -s -- -y
+    # Vault CLI \
+    wget -O- https://apt.releases.hashicorp.com/gpg | gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg && \
+    echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/hashicorp.list && \
+    apt-get update && apt-get install -y vault && \
+    # Starship \
+    curl -sS https://starship.rs/install.sh | sh -s -- -y
 
 # Ambiente Utente
 USER vscode
