@@ -1,9 +1,14 @@
 FROM mcr.microsoft.com/devcontainers/base:debian
 
-# Fondamenta
+# --- ZERO TRUST DEVELOPER BASE (Battery Included) ---
 ENV DEBIAN_FRONTEND=noninteractive
+ENV LANG=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
+
+# 1. OS Basics & Core Tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    mc tmux ripgrep fd-find fzf zoxide jq build-essential unzip curl wget git file \
+    build-essential unzip curl wget git file \
+    mc tmux ripgrep fd-find fzf zoxide jq \
     ffmpeg 7zip poppler-utils imagemagick stow \
     iputils-ping dnsutils netcat-openbsd htop btop \
     xclip wl-clipboard \
@@ -12,35 +17,57 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && chmod u+s /usr/bin/ping \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-ENV LANG=en_US.UTF-8
-ENV LC_ALL=en_US.UTF-8
+# 2. Security Stack
+RUN echo "Installing Infisical..." \
+    && curl -sSL 'https://artifacts-cli.infisical.com/setup.deb.sh' | bash \
+    && apt-get update && apt-get install -y infisical && rm -rf /var/lib/apt/lists/*
 
-# Binari Core
-RUN curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl && rm kubectl \
-    && curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash \
-    && curl -Lo /usr/local/bin/talosctl https://github.com/siderolabs/talos/releases/latest/download/talosctl-linux-amd64 && chmod +x /usr/local/bin/talosctl \
-    && curl -Lo /usr/local/bin/sops https://github.com/getsops/sops/releases/latest/download/sops-v3.9.4.linux.amd64 && chmod +x /usr/local/bin/sops \
-    && curl -Lo /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 && chmod +x /usr/local/bin/yq \
-    && curl -Lo /tmp/eza.tar.gz https://github.com/eza-community/eza/releases/latest/download/eza_x86_64-unknown-linux-gnu.tar.gz && tar xf /tmp/eza.tar.gz -C /tmp && mv /tmp/eza /usr/local/bin/eza && rm /tmp/eza.tar.gz \
-    && LAZYGIT_VERSION=$(curl -s "https://api.github.com/repos/jesseduffield/lazygit/releases/latest" | grep -Po '"tag_name": "v\K[^"`]*') && curl -Lo lazygit.tar.gz "https://github.com/jesseduffield/lazygit/releases/latest/download/lazygit_${LAZYGIT_VERSION}_Linux_x86_64.tar.gz" && tar xf lazygit.tar.gz lazygit && install lazygit /usr/local/bin/ && rm lazygit.tar.gz \
-    && YAZI_VERSION=$(curl -s "https://api.github.com/repos/sxyazi/yazi/releases/latest" | grep -Po '"tag_name": "v\K[^"`]*') && curl -Lo /tmp/yazi.zip "https://github.com/sxyazi/yazi/releases/download/v${YAZI_VERSION}/yazi-x86_64-unknown-linux-gnu.zip" && unzip /tmp/yazi.zip -d /tmp/ && mv /tmp/yazi-x86_64-unknown-linux-gnu/yazi /usr/local/bin/yazi && mv /tmp/yazi-x86_64-unknown-linux-gnu/ya /usr/local/bin/ya && rm -rf /tmp/yazi.zip /tmp/yazi-x86_64-unknown-linux-gnu \
-    && curl -Lo /tmp/nvim.tar.gz https://github.com/neovim/neovim/releases/latest/download/nvim-linux-x86_64.tar.gz && tar -C /usr/local -xzf /tmp/nvim.tar.gz --strip-components=1 && rm /tmp/nvim.tar.gz \
-    # Vault CLI \
-    wget -O- https://apt.releases.hashicorp.com/gpg | gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg && \
-    echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/hashicorp.list && \
-    apt-get update && apt-get install -y vault && \
-    # Starship \
-    curl -sS https://starship.rs/install.sh | sh -s -- -y
+RUN echo "Installing SOPS..." \
+    && URL=$(curl -s https://api.github.com/repos/getsops/sops/releases/latest | jq -r '.assets[] | select(.name | test("linux.amd64") and (test(".sig|.sbom") | not)) | .browser_download_url' | head -n 1) \
+    && curl -fsSLo /usr/local/bin/sops "$URL" && chmod +x /usr/local/bin/sops
 
-# Ambiente Utente
+RUN echo "Installing YQ..." \
+    && URL=$(curl -s https://api.github.com/repos/mikefarah/yq/releases/latest | jq -r '.assets[] | select(.name == "yq_linux_amd64") | .browser_download_url' | head -n 1) \
+    && curl -fsSLo /usr/local/bin/yq "$URL" && chmod +x /usr/local/bin/yq
+
+RUN apt-get update && apt-get install -y age && rm -rf /var/lib/apt/lists/*
+
+# 3. Developer UX (Install & Cleanup in same layer)
+RUN echo "Installing Eza..." \
+    && URL=$(curl -s https://api.github.com/repos/eza-community/eza/releases/latest | jq -r '.assets[] | select(.name | endswith("x86_64-unknown-linux-gnu.tar.gz")) | .browser_download_url' | head -n 1) \
+    && curl -fsSLo /tmp/eza.tar.gz "$URL" && tar xf /tmp/eza.tar.gz -C /tmp && mv /tmp/eza /usr/local/bin/eza && rm /tmp/eza.tar.gz
+
+RUN echo "Installing Lazygit..." \
+    && URL=$(curl -s https://api.github.com/repos/jesseduffield/lazygit/releases/latest | jq -r '.assets[] | select(.name | test("Linux_x86_64.tar.gz"; "i")) | .browser_download_url' | head -n 1) \
+    && curl -fsSLo /tmp/lazygit.tar.gz "$URL" && tar xf /tmp/lazygit.tar.gz -C /tmp lazygit && install /tmp/lazygit /usr/local/bin/ && rm /tmp/lazygit.tar.gz /tmp/lazygit
+
+RUN echo "Installing Yazi..." \
+    && URL=$(curl -s https://api.github.com/repos/sxyazi/yazi/releases/latest | jq -r '.assets[] | select(.name | test("x86_64-unknown-linux-gnu.zip"; "i")) | .browser_download_url' | head -n 1) \
+    && curl -fsSLo /tmp/yazi.zip "$URL" && unzip /tmp/yazi.zip -d /tmp/ && mv /tmp/yazi-*/yazi /usr/local/bin/yazi && mv /tmp/yazi-*/ya /usr/local/bin/ya && rm -rf /tmp/yazi*
+
+RUN echo "Installing Neovim..." \
+    && URL=$(curl -s https://api.github.com/repos/neovim/neovim/releases/latest | jq -r '.assets[] | select(.name == "nvim-linux-x86_64.tar.gz") | .browser_download_url' | head -n 1) \
+    && curl -fsSLo /tmp/nvim.tar.gz "$URL" && tar -C /usr/local -xzf /tmp/nvim.tar.gz --strip-components=1 && rm /tmp/nvim.tar.gz
+
+RUN echo "Installing Starship..." \
+    && curl -fsS https://starship.rs/install.sh | sh -s -- -y
+
+# 4. Inserimento Dotfiles e Script (Mirror Mode)
 USER vscode
 WORKDIR /home/vscode
 ENV NVM_DIR="/home/vscode/.nvm"
-RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash \
-    && . "$NVM_DIR/nvm.sh" && nvm install --lts && nvm use --lts && nvm alias default lts/* \
-    && git clone https://github.com/LazyVim/starter /home/vscode/.config/nvim && rm -rf /home/vscode/.config/nvim/.git
 
+COPY --chown=vscode:vscode dotfiles/ /home/vscode/
+COPY --chown=vscode:vscode scripts/infisical-unlock.sh /usr/local/bin/infisical-unlock.sh
+RUN chmod +x /usr/local/bin/infisical-unlock.sh
+
+# Installazione Runtimes
+RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash \
+    && . "$NVM_DIR/nvm.sh" && nvm install --lts && nvm use --lts && nvm alias default lts/*
+
+# Configurazione finale shell
 RUN echo 'eval "$(starship init bash)"' >> ~/.bashrc \
     && echo 'eval "$(zoxide init bash)"' >> ~/.bashrc \
     && echo "alias ls='eza --icons'" >> ~/.bashrc \
-    && echo "alias vi='nvim'" >> ~/.bashrc
+    && echo "alias vi='nvim'" >> ~/.bashrc \
+    && echo "alias unlock='infisical-unlock.sh secrets.yml && [ -f ~/.tazlab-env ] && source ~/.tazlab-env'" >> ~/.bashrc

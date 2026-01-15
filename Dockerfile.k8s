@@ -1,0 +1,27 @@
+FROM devpod-base:local
+
+# --- LAYER 2: CLUSTER OPS ---
+# Adds Kubernetes specific toolchain.
+
+USER root
+
+# 1. Kubectl
+RUN echo "Installing Kubectl..." \
+    && curl -fsSLO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" \
+    && install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl \
+    && rm kubectl \
+    && kubectl version --client
+
+# 2. Helm
+RUN echo "Installing Helm..." \
+    && curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash \
+    && helm version
+
+# 3. Talosctl
+RUN echo "Installing Talosctl..." \
+    && curl -fsSLo /usr/local/bin/talosctl https://github.com/siderolabs/talos/releases/latest/download/talosctl-linux-amd64 \
+    && chmod +x /usr/local/bin/talosctl \
+    && talosctl version --client
+
+USER vscode
+

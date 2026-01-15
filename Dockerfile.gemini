@@ -1,5 +1,11 @@
-FROM tazzo/tazlab.net:devpod-base
+FROM devpod-k8s:local
 
-# Aggiunge Gemini CLI allo strato intermedio
+# --- LAYER 3: AI POWERED ---
+# Contains the heavy Gemini CLI.
+
 USER vscode
-RUN . "$NVM_DIR/nvm.sh" && npm install -g @google/gemini-cli@latest
+
+# Install Gemini CLI (Globally via NPM)
+RUN . "$NVM_DIR/nvm.sh" && \
+    echo "Installing Gemini CLI (this might take a while)..." && \
+    npm install -g @google/gemini-cli@latest
