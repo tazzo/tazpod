@@ -23,30 +23,36 @@ RUN echo "Installing Infisical..." \
     && apt-get update && apt-get install -y infisical && rm -rf /var/lib/apt/lists/*
 
 RUN echo "Installing SOPS..." \
-    && URL=$(curl -s https://api.github.com/repos/getsops/sops/releases/latest | jq -r '.assets[] | select(.name | test("linux.amd64") and (test(".sig|.sbom") | not)) | .browser_download_url' | head -n 1) \
+    && URL=$(curl -fsSL https://api.github.com/repos/getsops/sops/releases/latest | jq -r '.assets[] | select(.name | test("linux.amd64") and (test(".sig|.sbom") | not)) | .browser_download_url' | head -n 1) \
+    && [ -n "$URL" ] || { echo "❌ SOPS URL not found"; exit 1; } \
     && curl -fsSLo /usr/local/bin/sops "$URL" && chmod +x /usr/local/bin/sops
 
 RUN echo "Installing YQ..." \
-    && URL=$(curl -s https://api.github.com/repos/mikefarah/yq/releases/latest | jq -r '.assets[] | select(.name == "yq_linux_amd64") | .browser_download_url' | head -n 1) \
+    && URL=$(curl -fsSL https://api.github.com/repos/mikefarah/yq/releases/latest | jq -r '.assets[] | select(.name == "yq_linux_amd64") | .browser_download_url' | head -n 1) \
+    && [ -n "$URL" ] || { echo "❌ YQ URL not found"; exit 1; } \
     && curl -fsSLo /usr/local/bin/yq "$URL" && chmod +x /usr/local/bin/yq
 
 RUN apt-get update && apt-get install -y age && rm -rf /var/lib/apt/lists/*
 
-# 3. Developer UX (Install & Cleanup in same layer)
+# 3. Developer UX
 RUN echo "Installing Eza..." \
-    && URL=$(curl -s https://api.github.com/repos/eza-community/eza/releases/latest | jq -r '.assets[] | select(.name | endswith("x86_64-unknown-linux-gnu.tar.gz")) | .browser_download_url' | head -n 1) \
+    && URL=$(curl -fsSL https://api.github.com/repos/eza-community/eza/releases/latest | jq -r '.assets[] | select(.name | endswith("x86_64-unknown-linux-gnu.tar.gz")) | .browser_download_url' | head -n 1) \
+    && [ -n "$URL" ] || { echo "❌ Eza URL not found"; exit 1; } \
     && curl -fsSLo /tmp/eza.tar.gz "$URL" && tar xf /tmp/eza.tar.gz -C /tmp && mv /tmp/eza /usr/local/bin/eza && rm /tmp/eza.tar.gz
 
 RUN echo "Installing Lazygit..." \
-    && URL=$(curl -s https://api.github.com/repos/jesseduffield/lazygit/releases/latest | jq -r '.assets[] | select(.name | test("Linux_x86_64.tar.gz"; "i")) | .browser_download_url' | head -n 1) \
+    && URL=$(curl -fsSL https://api.github.com/repos/jesseduffield/lazygit/releases/latest | jq -r '.assets[] | select(.name | test("Linux_x86_64.tar.gz"; "i")) | .browser_download_url' | head -n 1) \
+    && [ -n "$URL" ] || { echo "❌ Lazygit URL not found"; exit 1; } \
     && curl -fsSLo /tmp/lazygit.tar.gz "$URL" && tar xf /tmp/lazygit.tar.gz -C /tmp lazygit && install /tmp/lazygit /usr/local/bin/ && rm /tmp/lazygit.tar.gz /tmp/lazygit
 
 RUN echo "Installing Yazi..." \
-    && URL=$(curl -s https://api.github.com/repos/sxyazi/yazi/releases/latest | jq -r '.assets[] | select(.name | test("x86_64-unknown-linux-gnu.zip"; "i")) | .browser_download_url' | head -n 1) \
+    && URL=$(curl -fsSL https://api.github.com/repos/sxyazi/yazi/releases/latest | jq -r '.assets[] | select(.name | test("x86_64-unknown-linux-gnu.zip"; "i")) | .browser_download_url' | head -n 1) \
+    && [ -n "$URL" ] || { echo "❌ Yazi URL not found"; exit 1; } \
     && curl -fsSLo /tmp/yazi.zip "$URL" && unzip /tmp/yazi.zip -d /tmp/ && mv /tmp/yazi-*/yazi /usr/local/bin/yazi && mv /tmp/yazi-*/ya /usr/local/bin/ya && rm -rf /tmp/yazi*
 
 RUN echo "Installing Neovim..." \
-    && URL=$(curl -s https://api.github.com/repos/neovim/neovim/releases/latest | jq -r '.assets[] | select(.name == "nvim-linux-x86_64.tar.gz") | .browser_download_url' | head -n 1) \
+    && URL=$(curl -fsSL https://api.github.com/repos/neovim/neovim/releases/latest | jq -r '.assets[] | select(.name == "nvim-linux-x86_64.tar.gz") | .browser_download_url' | head -n 1) \
+    && [ -n "$URL" ] || { echo "❌ Neovim URL not found"; exit 1; } \
     && curl -fsSLo /tmp/nvim.tar.gz "$URL" && tar -C /usr/local -xzf /tmp/nvim.tar.gz --strip-components=1 && rm /tmp/nvim.tar.gz
 
 RUN echo "Installing Starship..." \
@@ -56,6 +62,11 @@ RUN echo "Installing Starship..." \
 USER vscode
 WORKDIR /home/vscode
 ENV NVM_DIR="/home/vscode/.nvm"
+ENV STARSHIP_CONFIG="/home/vscode/.config/starship.toml"
+
+# Argomento per forzare l'aggiornamento dei dotfiles
+ARG CACHEBUST=1
+RUN echo "Cache bust: ${CACHEBUST}"
 
 COPY --chown=vscode:vscode dotfiles/ /home/vscode/
 COPY --chown=vscode:vscode scripts/infisical-unlock.sh /usr/local/bin/infisical-unlock.sh
