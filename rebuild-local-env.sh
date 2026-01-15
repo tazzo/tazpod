@@ -18,7 +18,7 @@ docker build --build-arg CACHEBUST=$(date +%s) -f Dockerfile.base -t devpod-base
 # 3. Pulizia Immagini DevPod Cache
 echo -e "${GREEN}2. Pulizia cache immagini DevPod (vsc-*)...${NC}"
 # Trova immagini che iniziano con vsc-tazlab o vsc-devpod e cancellale
-IMAGES=$(docker images -q "vsc-tazlab*" "vsc-devpod*")
+IMAGES=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -E "^vsc-tazlab|^vsc-devpod" || true)
 if [ -n "$IMAGES" ]; then
     echo "$IMAGES" | xargs -r docker rmi -f
     echo "   ✅ Cache pulita."

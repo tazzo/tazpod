@@ -11,11 +11,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     mc tmux ripgrep fd-find fzf zoxide jq \
     ffmpeg 7zip poppler-utils imagemagick stow \
     iputils-ping dnsutils netcat-openbsd htop btop \
-    xclip wl-clipboard \
+    xclip wl-clipboard cryptsetup-bin libpam-systemd e2fsprogs dmsetup \
     python3-pip python3-venv locales \
     && echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen && update-locale LANG=en_US.UTF-8 \
     && chmod u+s /usr/bin/ping \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Rimuovi sudo senza password (sicurezza Zero Trust)
+RUN rm -f /etc/sudoers.d/nopasswd
 
 # 2. Security Stack
 RUN echo "Installing Infisical..." \
@@ -70,7 +73,8 @@ RUN echo "Cache bust: ${CACHEBUST}"
 
 COPY --chown=vscode:vscode dotfiles/ /home/vscode/
 COPY --chown=vscode:vscode scripts/infisical-unlock.sh /usr/local/bin/infisical-unlock.sh
-RUN chmod +x /usr/local/bin/infisical-unlock.sh
+COPY --chown=vscode:vscode scripts/devpod-zt.sh /usr/local/bin/devpod-zt.sh
+RUN chmod +x /usr/local/bin/infisical-unlock.sh /usr/local/bin/devpod-zt.sh
 
 # Installazione Runtimes
 RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash \
@@ -81,4 +85,5 @@ RUN echo 'eval "$(starship init bash)"' >> ~/.bashrc \
     && echo 'eval "$(zoxide init bash)"' >> ~/.bashrc \
     && echo "alias ls='eza --icons'" >> ~/.bashrc \
     && echo "alias vi='nvim'" >> ~/.bashrc \
-    && echo "alias unlock='infisical-unlock.sh secrets.yml && [ -f ~/.tazlab-env ] && source ~/.tazlab-env'" >> ~/.bashrc
+    && echo "alias devpod-zt='/usr/local/bin/devpod-zt.sh'" >> ~/.bashrc \
+    && echo 'if [[ $- == *i* ]] && ! mountpoint -q ~/secrets 2>/dev/null; then echo -e "\n\033[1;31m⚠️  WARNING: Environment is UNPROTECTED. Type \033[1;32mdevpod-zt\033[1;31m to secure it.\033[0m\n"; fi' >> ~/.bashrc

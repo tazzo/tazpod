@@ -166,5 +166,6 @@ export PATH="$HOME/dotfiles/scripts:$PATH"
 [ -f ~/.bash_local ] && source ~/.bash_local
 
 # --- TAZLAB CLUSTER UNLOCK ---
-alias unlock='infisical-unlock.sh secrets.yml && [ -f ~/.tazlab-env ] && source ~/.tazlab-env'
+alias devpod-zt='/usr/local/bin/devpod-zt.sh'
+alias unlock='devpod-zt'
 [ -f "$HOME/.tazlab-env" ] && source "$HOME/.tazlab-env"
