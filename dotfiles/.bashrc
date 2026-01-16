@@ -169,3 +169,11 @@ export PATH="$HOME/dotfiles/scripts:$PATH"
 alias devpod-zt='/usr/local/bin/devpod-zt.sh'
 alias unlock='devpod-zt'
 [ -f "$HOME/.tazlab-env" ] && source "$HOME/.tazlab-env"
+
+# Caricamento automatico segreti dal Secure Vault
+if [ -f "$HOME/secrets/.env-infisical" ]; then
+    # Usiamo export per rendere le variabili disponibili ai sottoprocessi (es. kubectl)
+    set -a
+    source "$HOME/secrets/.env-infisical"
+    set +a
+fi

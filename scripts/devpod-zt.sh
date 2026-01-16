@@ -106,8 +106,9 @@ echo "   Mounting enclave..."
 sudo mount -t ext4 "/dev/mapper/$MAPPER_NAME" "$SECRETS_DIR"
 sudo chown -R $USER_NAME:$USER_NAME "$SECRETS_DIR"
 
-# 6. Export Segreti
+# 7. Export Segreti
 echo "📦 Migrating secrets to Vault..."
 infisical export --format=dotenv --silent > "$SECRETS_DIR/.env-infisical"
-echo "✅ DEVPOD-ZT: Environment SECURED."
+echo -e "\n✅ DEVPOD-ZT: Environment SECURED."
+echo -e "👉 Type \033[1;32msource ~/.bashrc\033[0m to load your secrets (KUBECONFIG, etc.)\n"
 cleanup
