@@ -1,0 +1,169 @@
+#!/bin/bash
+# --- TAZPOD: Zero Trust Persistent Vault (Open Source Edition) ---
+# NOTE: This script is meant to be SOURCED (source tazpod) to export vars.
+
+SECRET_NAME="DEVPOD_PASSPHRASE_HASH"
+USER_NAME="vscode"
+SECRETS_DIR="/home/$USER_NAME/secrets"
+
+PROJECT_ROOT="/workspaces/tazlab-k8s"
+if [ ! -d "$PROJECT_ROOT" ]; then PROJECT_ROOT=$(pwd); fi
+
+VAULT_DIR="$PROJECT_ROOT/.zt-vault"
+VAULT_IMG="$VAULT_DIR/vault.img"
+VAULT_SIZE="512" 
+MAPPER_NAME="zt_vault_$(od -A n -t x4 -N 4 /dev/urandom | tr -d ' ')"
+SECRETS_YAML="$PROJECT_ROOT/secrets.yml"
+
+# --- CONFIGURAZIONE DINAMICA ---
+if [ ! -f "$SECRETS_YAML" ]; then
+    echo "❌ Error: secrets.yml not found in $PROJECT_ROOT"
+    return 1 2>/dev/null || exit 1
+fi
+
+INFISICAL_PROJECT_ID=$(yq '.config.infisical_project_id' "$SECRETS_YAML")
+INFISICAL_API_URL=$(yq '.config.infisical_url' "$SECRETS_YAML")
+
+if [ "$INFISICAL_PROJECT_ID" == "null" ]; then
+    echo "❌ Error: config.infisical_project_id missing in secrets.yml"
+    return 1 2>/dev/null || exit 1
+fi
+
+if [ "$INFISICAL_API_URL" != "null" ]; then
+    export INFISICAL_API_URL="$INFISICAL_API_URL"
+fi
+
+# --- SICUREZZA ---
+safe_exit() {
+    unset PLAIN_PASS
+    unset PLAIN_PASS_CONFIRM
+    export INFISICAL_TOKEN=""
+    if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then return "$1"; else exit "$1"; fi
+}
+
+trap 'echo -e "\n❌ INTERRUPTED. Aborting."; safe_exit 1' INT
+
+# 0. IDEMPOTENZA
+if mountpoint -q "$SECRETS_DIR" 2>/dev/null; then
+    if [ -f "$SECRETS_DIR/.env-infisical" ]; then
+        set -a; source "$SECRETS_DIR/.env-infisical"; set +a
+    fi
+    # LazyVim fix
+    if [ ! -d "$HOME/.config/nvim" ] && [ -d "$HOME/dotfiles/.config/nvim" ]; then
+        mkdir -p "$HOME/.config"; ln -s "$HOME/dotfiles/.config/nvim" "$HOME/.config/nvim"
+    fi
+    safe_exit 0
+fi
+
+if [[ ! -t 0 ]]; then safe_exit 0; fi
+
+echo "🔐 TAZPOD: Engaging Persistent Security..."
+
+# 1. Tentativo Recupero Hash (Silenzioso)
+HASH_VAL=$(infisical secrets get $SECRET_NAME --projectId "$INFISICAL_PROJECT_ID" --plain 2>/dev/null || true)
+
+# 2. Logica Offline vs Online
+if [ -z "$HASH_VAL" ]; then
+    if [ -f "$VAULT_IMG" ]; then
+        echo "⚠️  Infisical unreachable/token expired. Using OFFLINE mode."
+    else
+        echo "🔄 First setup requires Infisical Login..."
+        infisical login --silent
+        HASH_VAL=$(infisical secrets get $SECRET_NAME --projectId "$INFISICAL_PROJECT_ID" --plain 2>/dev/null || true)
+        
+        if [ -z "$HASH_VAL" ]; then
+             echo "🆕 No hash found. Setup new passphrase."
+        fi
+    fi
+fi
+
+# 3. Passphrase Entry
+while true; do
+    echo -n "Enter Master Passphrase: "
+    read -rs PLAIN_PASS < /dev/tty
+    echo
+    
+    if [ -n "$HASH_VAL" ]; then
+        CHECK_HASH=$(openssl passwd -6 -salt "$(echo "$HASH_VAL" | cut -d'$' -f3)" -stdin <<< "$PLAIN_PASS")
+        if [ "$CHECK_HASH" == "$HASH_VAL" ]; then break; else echo "❌ WRONG PASSPHRASE. Try again."; fi
+    else
+        if [ -f "$VAULT_IMG" ]; then
+             break 
+        else
+             echo -n "Confirm New Passphrase: "
+             read -rs PLAIN_PASS_CONFIRM < /dev/tty; echo
+             [ "$PLAIN_PASS" = "$PLAIN_PASS_CONFIRM" ] && break
+             echo "❌ Passwords do not match."
+        fi
+    fi
+done
+
+if [ -z "$HASH_VAL" ] && [ ! -f "$VAULT_IMG" ]; then
+    HASH_VAL=$(openssl passwd -6 -stdin <<< "$PLAIN_PASS")
+    infisical secrets set $SECRET_NAME="$HASH_VAL" --projectId "$INFISICAL_PROJECT_ID" --silent > /dev/null
+fi
+
+if [ -n "$HASH_VAL" ]; then
+    sudo chpasswd -e <<< "$USER_NAME:$HASH_VAL"
+    sudo chpasswd -e <<< "root:$HASH_VAL"
+fi
+
+# 4. Loop & Vault
+sudo mknod /dev/loop-control c 10 237 2>/dev/null || true
+for i in $(seq 0 63); do sudo mknod /dev/loop$i b 7 $i 2>/dev/null || true; done
+
+mkdir -p "$VAULT_DIR"
+sudo losetup -a | grep "$VAULT_IMG" | cut -d: -f1 | xargs -r sudo losetup -d || true
+
+if [ -f "$VAULT_IMG" ]; then
+    echo "💾 Unlocking local vault..."
+    LOOP_DEV=$(sudo losetup -f --show "$VAULT_IMG")
+    if ! echo -n "$PLAIN_PASS" | sudo cryptsetup open "$LOOP_DEV" "$MAPPER_NAME" - 2>/dev/null; then
+        echo "❌ DECRYPTION FAILED. Wrong password or corrupted file."
+        sudo losetup -d "$LOOP_DEV"; safe_exit 1
+    fi
+else
+    echo "🆕 Creating encrypted vault..."
+    sudo dd if=/dev/zero of="$VAULT_IMG" bs=1M count=$VAULT_SIZE status=none
+    LOOP_DEV=$(sudo losetup -f --show "$VAULT_IMG")
+    echo -n "$PLAIN_PASS" | sudo cryptsetup luksFormat "$LOOP_DEV" -
+    echo -n "$PLAIN_PASS" | sudo cryptsetup open "$LOOP_DEV" "$MAPPER_NAME" -
+    sudo mkfs.ext4 -q "/dev/mapper/$MAPPER_NAME"
+fi
+
+sudo mkdir -p "$SECRETS_DIR"
+sudo mount "/dev/mapper/$MAPPER_NAME" "$SECRETS_DIR"
+sudo chown -R $USER_NAME:$USER_NAME "$SECRETS_DIR"
+
+# 5. Secrets Sync
+if [ -n "$HASH_VAL" ] || infisical project list >/dev/null 2>&1; then
+    echo "📦 Syncing secrets from Infisical..."
+    infisical export --projectId "$INFISICAL_PROJECT_ID" --format=dotenv --silent > "$SECRETS_DIR/.env-infisical"
+
+    COUNT=$(yq '.secrets | length' "$SECRETS_YAML")
+    for i in $(seq 0 $(($COUNT - 1))); do
+        S_NAME=$(yq ".secrets[$i].name" "$SECRETS_YAML")
+        S_FILE=$(yq ".secrets[$i].file" "$SECRETS_YAML")
+        S_ENV=$(yq ".secrets[$i].env" "$SECRETS_YAML")
+        VAL=$(infisical secrets get "$S_NAME" --projectId "$INFISICAL_PROJECT_ID" --plain 2>/dev/null || true)
+        if [ -n "$VAL" ]; then
+            TARGET_FILE="$SECRETS_DIR/$S_FILE"
+            echo "$VAL" > "$TARGET_FILE"
+            chmod 600 "$TARGET_FILE"
+            if [ "$S_ENV" != "null" ]; then echo "export $S_ENV=\"$TARGET_FILE\"" >> "$SECRETS_DIR/.env-infisical"; fi
+        fi
+    done
+else
+    echo "⚠️  Offline mode: Using cached secrets."
+fi
+
+# 6. Watchdog & Final
+if ! pgrep -f "watchdog.sh" > /dev/null; then
+    nohup /usr/local/bin/watchdog.sh > /tmp/watchdog.log 2>&1 &
+    echo "🐕 Watchdog service started."
+fi
+
+set -a; source "$SECRETS_DIR/.env-infisical"; set +a
+echo -e "\n✅ TAZPOD: Environment SECURED and Secrets LOADED."
+trap - INT
+safe_exit 0

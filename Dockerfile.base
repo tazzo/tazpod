@@ -1,89 +1,34 @@
-FROM mcr.microsoft.com/devcontainers/base:debian
+FROM debian:bookworm-slim
 
-# --- ZERO TRUST DEVELOPER BASE (Battery Included) ---
 ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=en_US.UTF-8
-ENV LC_ALL=en_US.UTF-8
 
-# 1. OS Basics & Core Tools
+# 1. System Essentials (Security & FS)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential unzip curl wget git file \
-    mc tmux ripgrep fd-find fzf zoxide jq \
-    ffmpeg 7zip poppler-utils imagemagick stow \
-    iputils-ping dnsutils netcat-openbsd htop btop \
-    xclip wl-clipboard cryptsetup-bin libpam-systemd e2fsprogs dmsetup \
-    python3-pip python3-venv locales \
-    && echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen && update-locale LANG=en_US.UTF-8 \
-    && chmod u+s /usr/bin/ping \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+    ca-certificates curl wget sudo \
+    cryptsetup-bin e2fsprogs dmsetup procps \
+    jq locales yq && \
+    echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Rimuovi sudo senza password (sicurezza Zero Trust)
-RUN rm -f /etc/sudoers.d/nopasswd
+# 2. Infisical CLI
+RUN curl -sSL 'https://artifacts-cli.infisical.com/setup.deb.sh' | bash && \
+    apt-get install -y infisical
 
-# 2. Security Stack
-RUN echo "Installing Infisical..." \
-    && curl -sSL 'https://artifacts-cli.infisical.com/setup.deb.sh' | bash \
-    && apt-get update && apt-get install -y infisical && rm -rf /var/lib/apt/lists/*
+# 3. User Setup (tazpod)
+RUN useradd -m -s /bin/bash -u 1000 tazpod && \
+    echo "tazpod ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/tazpod
 
-RUN echo "Installing SOPS..." \
-    && URL=$(curl -fsSL https://api.github.com/repos/getsops/sops/releases/latest | jq -r '.assets[] | select(.name | test("linux.amd64") and (test(".sig|.sbom") | not)) | .browser_download_url' | head -n 1) \
-    && [ -n "$URL" ] || { echo "❌ SOPS URL not found"; exit 1; } \
-    && curl -fsSLo /usr/local/bin/sops "$URL" && chmod +x /usr/local/bin/sops
+USER tazpod
+WORKDIR /home/tazpod
 
-RUN echo "Installing YQ..." \
-    && URL=$(curl -fsSL https://api.github.com/repos/mikefarah/yq/releases/latest | jq -r '.assets[] | select(.name == "yq_linux_amd64") | .browser_download_url' | head -n 1) \
-    && [ -n "$URL" ] || { echo "❌ YQ URL not found"; exit 1; } \
-    && curl -fsSLo /usr/local/bin/yq "$URL" && chmod +x /usr/local/bin/yq
+# 4. Iniezione Binario CLI
+COPY --chown=tazpod:tazpod tazpod /usr/local/bin/tazpod
+RUN sudo chmod +x /usr/local/bin/tazpod
 
-RUN apt-get update && apt-get install -y age && rm -rf /var/lib/apt/lists/*
-
-# 3. Developer UX
-RUN echo "Installing Eza..." \
-    && URL=$(curl -fsSL https://api.github.com/repos/eza-community/eza/releases/latest | jq -r '.assets[] | select(.name | endswith("x86_64-unknown-linux-gnu.tar.gz")) | .browser_download_url' | head -n 1) \
-    && [ -n "$URL" ] || { echo "❌ Eza URL not found"; exit 1; } \
-    && curl -fsSLo /tmp/eza.tar.gz "$URL" && tar xf /tmp/eza.tar.gz -C /tmp && mv /tmp/eza /usr/local/bin/eza && rm /tmp/eza.tar.gz
-
-RUN echo "Installing Lazygit..." \
-    && URL=$(curl -fsSL https://api.github.com/repos/jesseduffield/lazygit/releases/latest | jq -r '.assets[] | select(.name | test("Linux_x86_64.tar.gz"; "i")) | .browser_download_url' | head -n 1) \
-    && [ -n "$URL" ] || { echo "❌ Lazygit URL not found"; exit 1; } \
-    && curl -fsSLo /tmp/lazygit.tar.gz "$URL" && tar xf /tmp/lazygit.tar.gz -C /tmp lazygit && install /tmp/lazygit /usr/local/bin/ && rm /tmp/lazygit.tar.gz /tmp/lazygit
-
-RUN echo "Installing Yazi..." \
-    && URL=$(curl -fsSL https://api.github.com/repos/sxyazi/yazi/releases/latest | jq -r '.assets[] | select(.name | test("x86_64-unknown-linux-gnu.zip"; "i")) | .browser_download_url' | head -n 1) \
-    && [ -n "$URL" ] || { echo "❌ Yazi URL not found"; exit 1; } \
-    && curl -fsSLo /tmp/yazi.zip "$URL" && unzip /tmp/yazi.zip -d /tmp/ && mv /tmp/yazi-*/yazi /usr/local/bin/yazi && mv /tmp/yazi-*/ya /usr/local/bin/ya && rm -rf /tmp/yazi*
-
-RUN echo "Installing Neovim..." \
-    && URL=$(curl -fsSL https://api.github.com/repos/neovim/neovim/releases/latest | jq -r '.assets[] | select(.name == "nvim-linux-x86_64.tar.gz") | .browser_download_url' | head -n 1) \
-    && [ -n "$URL" ] || { echo "❌ Neovim URL not found"; exit 1; } \
-    && curl -fsSLo /tmp/nvim.tar.gz "$URL" && tar -C /usr/local -xzf /tmp/nvim.tar.gz --strip-components=1 && rm /tmp/nvim.tar.gz
-
-RUN echo "Installing Starship..." \
-    && curl -fsS https://starship.rs/install.sh | sh -s -- -y
-
-# 4. Inserimento Dotfiles e Script (Mirror Mode)
-USER vscode
-WORKDIR /home/vscode
-ENV NVM_DIR="/home/vscode/.nvm"
-ENV STARSHIP_CONFIG="/home/vscode/.config/starship.toml"
-
-# Argomento per forzare l'aggiornamento dei dotfiles
-ARG CACHEBUST=1
-RUN echo "Cache bust: ${CACHEBUST}"
-
-COPY --chown=vscode:vscode dotfiles/ /home/vscode/
-COPY --chown=vscode:vscode scripts/infisical-unlock.sh /usr/local/bin/infisical-unlock.sh
-COPY --chown=vscode:vscode scripts/devpod-zt.sh /usr/local/bin/devpod-zt.sh
-RUN chmod +x /usr/local/bin/infisical-unlock.sh /usr/local/bin/devpod-zt.sh
-
-# Installazione Runtimes
-RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash \
-    && . "$NVM_DIR/nvm.sh" && nvm install --lts && nvm use --lts && nvm alias default lts/*
-
-# Configurazione finale shell
-RUN echo 'eval "$(starship init bash)"' >> ~/.bashrc \
-    && echo 'eval "$(zoxide init bash)"' >> ~/.bashrc \
-    && echo "alias ls='eza --icons'" >> ~/.bashrc \
-    && echo "alias vi='nvim'" >> ~/.bashrc \
-    && echo "alias devpod-zt='/usr/local/bin/devpod-zt.sh'" >> ~/.bashrc \
-    && echo 'if [[ $- == *i* ]] && ! mountpoint -q ~/secrets 2>/dev/null; then echo -e "\n\033[1;31m⚠️  WARNING: Environment is UNPROTECTED. Type \033[1;32mdevpod-zt\033[1;31m to secure it.\033[0m\n"; fi' >> ~/.bashrc
+# 5. Shell Config (Funzione tazpod + Alias)
+RUN echo 'tazpod() { /usr/local/bin/tazpod "$@"; local res=$?; if [ "$res" -eq 0 ] && [[ "$1" == "unlock" || "$1" == "sync" ]]; then eval "$(/usr/local/bin/tazpod env)"; fi; return $res; }' >> ~/.bashrc && \
+    echo "alias unlock='tazpod unlock'" >> ~/.bashrc && \
+    echo "alias ls='ls --color=auto'" >> ~/.bashrc && \
+    echo "alias ll='ls -lh --color=auto'" >> ~/.bashrc && \
+    echo "alias la='ls -A --color=auto'" >> ~/.bashrc

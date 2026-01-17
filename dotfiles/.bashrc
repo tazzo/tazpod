@@ -166,8 +166,8 @@ export PATH="$HOME/dotfiles/scripts:$PATH"
 [ -f ~/.bash_local ] && source ~/.bash_local
 
 # --- TAZLAB CLUSTER UNLOCK ---
-alias devpod-zt='/usr/local/bin/devpod-zt.sh'
-alias unlock='devpod-zt'
+alias tazpod='source /usr/local/bin/tazpod'
+alias unlock='tazpod'
 [ -f "$HOME/.tazlab-env" ] && source "$HOME/.tazlab-env"
 
 # Caricamento automatico segreti dal Secure Vault
