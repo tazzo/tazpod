@@ -12,7 +12,7 @@ import (
 	"golang.org/x/term"
 )
 
-// Configuration constants for the TazPod environment
+// Configuration constants
 const (
 	ContainerName = "tazpod-lab"
 	ImageName     = "tazpod-engine:local"
@@ -25,32 +25,41 @@ const (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: tazpod [up|down|unlock|lock|reinit]")
+		fmt.Println("Usage: tazpod [up|down|enter|ssh|unlock|lock|reinit]")
 		os.Exit(1)
 	}
 
-	switch os.Args[1] {
+	cmd := os.Args[1]
+
+	// Logic branching based on context
+	switch cmd {
 	case "up":
 		up()
 	case "down":
 		down()
+	case "enter", "ssh":
+		enter()
 	case "unlock":
+		checkInside()
 		unlock()
 	case "lock":
+		checkInside()
 		lock()
 	case "reinit":
+		checkInside()
 		reinit()
 	default:
-		fmt.Printf("Unknown command: %s\n", os.Args[1])
+		fmt.Printf("Unknown command: %s\n", cmd)
 		os.Exit(1)
 	}
 }
 
-// --- HOST COMMANDS (Executed on the physical machine) ---
+// --- HOST COMMANDS (Manage the container from outside) ---
 
-// up builds the engine image and starts the privileged container
 func up() {
-	fmt.Println("🏗️  Ensuring TazPod Engine (Local)...")
+	fmt.Println("🏗️  Ensuring TazPod Engine Image...")
+	// We assume Dockerfile.base is in the same dir as the binary during 'up'
+	// or we can hardcode the absolute path if needed.
 	runCmd("docker", "build", "-f", "Dockerfile.base", "-t", ImageName, ".")
 	
 	fmt.Println("🛑 Cleaning instances...")
@@ -59,7 +68,6 @@ func up() {
 cwd, _ := os.Getwd()
 	fmt.Printf("🚀 Starting TazPod in %s...\n", cwd)
 	
-	// Launching with --privileged is mandatory for LUKS and mounting operations
 	runCmd("docker", "run", "-d", 
 		"--name", ContainerName, 
 		"--privileged", 
@@ -68,30 +76,40 @@ cwd, _ := os.Getwd()
 		"-w", "/workspace", 
 		ImageName, "sleep", "infinity")
 	
-	fmt.Println("✅ Ready. Entry: docker exec -it tazpod-lab bash")
+	fmt.Println("✅ TazPod is alive.")
+	fmt.Println("👉 Run 'tazpod enter' to get inside.")
 }
 
-// down stops and removes the development container
 func down() {
 	fmt.Println("🧹 Shutting down TazPod...")
 	runCmd("docker", "rm", "-f", ContainerName)
+	fmt.Println("✅ Done.")
 }
 
-// --- CONTAINER COMMANDS (Executed inside the container) ---
+func enter() {
+	fmt.Println("🚪 Entering TazPod...")
+	// Use syscall.Exec to hand over control to the docker exec process
+	binary, _ := exec.LookPath("docker")
+	args := []string{"docker", "exec", "-it", ContainerName, "bash"}
+	env := os.Environ()
+	syscall.Exec(binary, args, env)
+}
 
-// unlock performs the LUKS decryption and mounts the secure volume
+// --- CONTAINER COMMANDS (Manage security from inside) ---
+
 func unlock() {
 	if isMounted(MountPath) {
 		fmt.Println("✅ Vault already active.")
 		return
 	}
 
-	// Purge any stale mapper entries before starting
-	purgeStaleMapper()
+	// Clean up any stale mapper from previous sessions
+	exec.Command("sudo", "cryptsetup", "close", MapperName).Run()
+	exec.Command("sudo", "dmsetup", "remove", "-f", MapperName).Run()
 
 	var passphrase string
 	if !fileExist(VaultPath) {
-		fmt.Println("🆕 Vault not found. Creating NEW local vault...")
+		fmt.Println("🆕 Vault not found. Creating NEW persistent vault...")
 		os.MkdirAll(VaultDir, 0755)
 		for {
 			fmt.Print("📝 Define Master Passphrase: ")
@@ -104,27 +122,25 @@ func unlock() {
 				passphrase = string(p1)
 				break
 			}
-			fmt.Println("❌ Passwords do not match or empty. Try again.")
+			fmt.Println("❌ Passwords do not match. Try again.")
 		}
 		
 		fmt.Println("💾 Creating container file...")
 		runCmd("dd", "if=/dev/zero", "of="+VaultPath, "bs=1M", "count="+VaultSizeMB, "status=none")
 		
 		ensureNodes()
-
 		loopDev := runOutput("sudo", "losetup", "-f", "--show", VaultPath)
+		
 		fmt.Println("💎 Formatting LUKS...")
 		if _, err := runWithStdin(passphrase, "sudo", "cryptsetup", "luksFormat", "--batch-mode", loopDev); err != nil {
-			fmt.Println("❌ LUKS Format failed.")
+			fmt.Println("❌ Format failed.")
 			os.Exit(1)
 		}
 		
 		fmt.Println("🔓 Opening vault...")
-		if _, err := runWithStdin(passphrase, "sudo", "cryptsetup", "open", loopDev, MapperName); err != nil {
-			fmt.Println("❌ LUKS Open failed.")
-			os.Exit(1)
-		}
+		runWithStdin(passphrase, "sudo", "cryptsetup", "open", loopDev, MapperName)
 		
+		exec.Command("sudo", "dmsetup", "mknodes").Run()
 		waitForDevice("/dev/mapper/" + MapperName)
 		fmt.Println("⛑️  Creating Filesystem...")
 		runCmd("sudo", "mkfs.ext4", "-q", "/dev/mapper/"+MapperName)
@@ -136,27 +152,25 @@ func unlock() {
 		passphrase = string(p)
 		
 		ensureNodes()
-		cleanStaleLoops()
-
+		// Detach stale loops
+		exec.Command("bash", "-c", "sudo losetup -a | grep 'vault.img' | cut -d: -f1 | xargs -r sudo losetup -d").Run()
+		
 		loopDev := runOutput("sudo", "losetup", "-f", "--show", VaultPath)
 		if _, err := runWithStdin(passphrase, "sudo", "cryptsetup", "open", loopDev, MapperName); err != nil {
 			fmt.Println("❌ DECRYPTION FAILED.")
 			runCmd("sudo", "losetup", "-d", loopDev)
 			os.Exit(1)
 		}
+		exec.Command("sudo", "dmsetup", "mknodes").Run()
 		waitForDevice("/dev/mapper/" + MapperName)
 	}
 
 	os.MkdirAll(MountPath, 0755)
-	if err := exec.Command("sudo", "mount", "/dev/mapper/"+MapperName, MountPath).Run(); err != nil {
-		fmt.Printf("❌ MOUNT FAILED: %v\n", err)
-		os.Exit(1)
-	}
+	runCmd("sudo", "mount", "/dev/mapper/"+MapperName, MountPath)
 	runCmd("sudo", "chown", "tazpod:tazpod", MountPath)
 	fmt.Println("✅ Vault secured and mounted in ~/secrets")
 }
 
-// lock unmounts the secure volume and closes the LUKS device
 func lock() {
 	if !isMounted(MountPath) && !fileExist("/dev/mapper/"+MapperName) {
 		return
@@ -164,14 +178,12 @@ func lock() {
 	fmt.Println("🔒 Locking TazPod...")
 	exec.Command("sudo", "umount", "-f", MountPath).Run()
 	exec.Command("sudo", "cryptsetup", "close", MapperName).Run()
-	exec.Command("sudo", "dmsetup", "remove", "-f", MapperName).Run()
-	cleanStaleLoops()
+	exec.Command("bash", "-c", "sudo losetup -a | grep 'vault.img' | cut -d: -f1 | xargs -r sudo losetup -d").Run()
 	fmt.Println("✅ Vault closed.")
 }
 
-// reinit wipes the existing vault and creates a new one
 func reinit() {
-	fmt.Print("⚠️  WARNING: This will DELETE all data in the current vault. Are you sure? (y/N): ")
+	fmt.Print("⚠️  WARNING: DELETE current vault? (y/N): ")
 	var confirm string
 	fmt.Scanln(&confirm)
 	if strings.ToLower(confirm) != "y" {
@@ -179,31 +191,25 @@ func reinit() {
 		return
 	}
 	lock()
-	fmt.Println("🗑️  Deleting old vault file...")
+	fmt.Println("🗑️  Deleting vault file...")
 	os.Remove(VaultPath)
 	unlock()
 }
 
 // --- UTILS ---
 
-func purgeStaleMapper() {
-	// Try to close and remove any existing mapper entries
-	exec.Command("sudo", "cryptsetup", "close", MapperName).Run()
-	exec.Command("sudo", "dmsetup", "remove", "-f", MapperName).Run()
+func checkInside() {
+	if _, err := os.Stat("/.dockerenv"); os.IsNotExist(err) {
+		fmt.Println("❌ This command must be run INSIDE the TazPod container.")
+		os.Exit(1)
+	}
 }
 
 func ensureNodes() {
-	// Docker containers often miss /dev entries for loop and mapper
 	exec.Command("sudo", "mknod", "/dev/loop-control", "c", "10", "237").Run()
 	for i := 0; i < 32; i++ {
 		exec.Command("sudo", "mknod", fmt.Sprintf("/dev/loop%d", i), "b", "7", fmt.Sprintf("%d", i)).Run()
 	}
-	exec.Command("sudo", "dmsetup", "mknodes").Run()
-}
-
-func cleanStaleLoops() {
-	// Detach any loop devices still pointing to our vault image
-	exec.Command("bash", "-c", "sudo losetup -a | grep 'vault.img' | cut -d: -f1 | xargs -r sudo losetup -d").Run()
 }
 
 func runCmd(name string, args ...string) {
@@ -223,9 +229,6 @@ func runWithStdin(input, name string, args ...string) (string, error) {
 	var out, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &stderr
 	err := cmd.Run()
-	if err != nil {
-		fmt.Printf("System error: %s\n", stderr.String())
-	}
 	return out.String(), err
 }
 
@@ -240,7 +243,6 @@ func fileExist(path string) bool {
 }
 
 func waitForDevice(path string) {
-	// Wait for the device mapper node to appear in the filesystem
 	for i := 0; i < 20; i++ {
 		if fileExist(path) { return }
 		time.Sleep(200 * time.Millisecond)
