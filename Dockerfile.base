@@ -1,9 +1,10 @@
 FROM debian:bookworm-slim
 
+# --- TAZPOD ENGINE BASE ---
 ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=en_US.UTF-8
 
-# 1. Solo il necessario per il "ferro"
+# 1. Install Essential Security & Kernel Tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates sudo \
     cryptsetup-bin e2fsprogs dmsetup procps \
@@ -11,18 +12,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# 2. User Setup
+# 2. User Setup (tazpod)
 RUN useradd -m -s /bin/bash -u 1000 tazpod && \
     echo "tazpod ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/tazpod
 
 USER tazpod
 WORKDIR /home/tazpod
 
-# 3. Iniezione Binario CLI (verrà compilato)
+# 3. Inject TazPod CLI Binary
 COPY --chown=tazpod:tazpod tazpod /usr/local/bin/tazpod
 RUN sudo chmod +x /usr/local/bin/tazpod
 
-# 4. Shell Config & Auto-Lock (FIX: --color=auto)
+# 4. Shell Configuration & Security Auto-Lock
+# The EXIT trap ensures that when the last interactive shell is closed, 
+# the encrypted vault is automatically unmounted and the keys purged from memory.
 RUN echo "alias tazpod='/usr/local/bin/tazpod'" >> ~/.bashrc && \
     echo "alias ls='ls --color=auto'" >> ~/.bashrc && \
     echo "alias ll='ls -lh --color=auto'" >> ~/.bashrc && \

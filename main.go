@@ -12,6 +12,7 @@ import (
 	"golang.org/x/term"
 )
 
+// Configuration constants for the TazPod environment
 const (
 	ContainerName = "tazpod-lab"
 	ImageName     = "tazpod-engine:local"
@@ -45,33 +46,47 @@ func main() {
 	}
 }
 
-// --- HOST COMMANDS ---
+// --- HOST COMMANDS (Executed on the physical machine) ---
 
+// up builds the engine image and starts the privileged container
 func up() {
 	fmt.Println("🏗️  Ensuring TazPod Engine (Local)...")
 	runCmd("docker", "build", "-f", "Dockerfile.base", "-t", ImageName, ".")
+	
 	fmt.Println("🛑 Cleaning instances...")
 	exec.Command("docker", "rm", "-f", ContainerName).Run()
-	cwd, _ := os.Getwd()
+	
+cwd, _ := os.Getwd()
 	fmt.Printf("🚀 Starting TazPod in %s...\n", cwd)
-	runCmd("docker", "run", "-d", "--name", ContainerName, "--privileged", "--network", "host", "-v", cwd+":/workspace", "-w", "/workspace", ImageName, "sleep", "infinity")
+	
+	// Launching with --privileged is mandatory for LUKS and mounting operations
+	runCmd("docker", "run", "-d", 
+		"--name", ContainerName, 
+		"--privileged", 
+		"--network", "host", 
+		"-v", cwd+":/workspace", 
+		"-w", "/workspace", 
+		ImageName, "sleep", "infinity")
+	
 	fmt.Println("✅ Ready. Entry: docker exec -it tazpod-lab bash")
 }
 
+// down stops and removes the development container
 func down() {
 	fmt.Println("🧹 Shutting down TazPod...")
 	runCmd("docker", "rm", "-f", ContainerName)
 }
 
-// --- CONTAINER COMMANDS ---
+// --- CONTAINER COMMANDS (Executed inside the container) ---
 
+// unlock performs the LUKS decryption and mounts the secure volume
 func unlock() {
 	if isMounted(MountPath) {
 		fmt.Println("✅ Vault already active.")
 		return
 	}
 
-	// PURGE: Prima di tutto, puliamo il kernel da rimasugli
+	// Purge any stale mapper entries before starting
 	purgeStaleMapper()
 
 	var passphrase string
@@ -133,12 +148,19 @@ func unlock() {
 	}
 
 	os.MkdirAll(MountPath, 0755)
-	runCmd("sudo", "mount", "/dev/mapper/"+MapperName, MountPath)
+	if err := exec.Command("sudo", "mount", "/dev/mapper/"+MapperName, MountPath).Run(); err != nil {
+		fmt.Printf("❌ MOUNT FAILED: %v\n", err)
+		os.Exit(1)
+	}
 	runCmd("sudo", "chown", "tazpod:tazpod", MountPath)
 	fmt.Println("✅ Vault secured and mounted in ~/secrets")
 }
 
+// lock unmounts the secure volume and closes the LUKS device
 func lock() {
+	if !isMounted(MountPath) && !fileExist("/dev/mapper/"+MapperName) {
+		return
+	}
 	fmt.Println("🔒 Locking TazPod...")
 	exec.Command("sudo", "umount", "-f", MountPath).Run()
 	exec.Command("sudo", "cryptsetup", "close", MapperName).Run()
@@ -147,6 +169,7 @@ func lock() {
 	fmt.Println("✅ Vault closed.")
 }
 
+// reinit wipes the existing vault and creates a new one
 func reinit() {
 	fmt.Print("⚠️  WARNING: This will DELETE all data in the current vault. Are you sure? (y/N): ")
 	var confirm string
@@ -164,20 +187,22 @@ func reinit() {
 // --- UTILS ---
 
 func purgeStaleMapper() {
-	// Prova a chiudere in ogni modo possibile
+	// Try to close and remove any existing mapper entries
 	exec.Command("sudo", "cryptsetup", "close", MapperName).Run()
 	exec.Command("sudo", "dmsetup", "remove", "-f", MapperName).Run()
 }
 
 func ensureNodes() {
+	// Docker containers often miss /dev entries for loop and mapper
 	exec.Command("sudo", "mknod", "/dev/loop-control", "c", "10", "237").Run()
 	for i := 0; i < 32; i++ {
-		exec.Command("sudo", "mknod", fmt.Sprintf("/dev/loop%%d", i), "b", "7", fmt.Sprintf("%%d", i)).Run()
+		exec.Command("sudo", "mknod", fmt.Sprintf("/dev/loop%d", i), "b", "7", fmt.Sprintf("%d", i)).Run()
 	}
 	exec.Command("sudo", "dmsetup", "mknodes").Run()
 }
 
 func cleanStaleLoops() {
+	// Detach any loop devices still pointing to our vault image
 	exec.Command("bash", "-c", "sudo losetup -a | grep 'vault.img' | cut -d: -f1 | xargs -r sudo losetup -d").Run()
 }
 
@@ -215,6 +240,7 @@ func fileExist(path string) bool {
 }
 
 func waitForDevice(path string) {
+	// Wait for the device mapper node to appear in the filesystem
 	for i := 0; i < 20; i++ {
 		if fileExist(path) { return }
 		time.Sleep(200 * time.Millisecond)
