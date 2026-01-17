@@ -3,32 +3,28 @@ FROM debian:bookworm-slim
 ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=en_US.UTF-8
 
-# 1. System Essentials (Security & FS)
+# 1. Solo il necessario per il "ferro"
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl wget sudo \
+    ca-certificates sudo \
     cryptsetup-bin e2fsprogs dmsetup procps \
-    jq locales yq && \
+    neovim locales && \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# 2. Infisical CLI
-RUN curl -sSL 'https://artifacts-cli.infisical.com/setup.deb.sh' | bash && \
-    apt-get install -y infisical
-
-# 3. User Setup (tazpod)
+# 2. User Setup
 RUN useradd -m -s /bin/bash -u 1000 tazpod && \
     echo "tazpod ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/tazpod
 
 USER tazpod
 WORKDIR /home/tazpod
 
-# 4. Iniezione Binario CLI
+# 3. Iniezione Binario CLI (verrà compilato)
 COPY --chown=tazpod:tazpod tazpod /usr/local/bin/tazpod
 RUN sudo chmod +x /usr/local/bin/tazpod
 
-# 5. Shell Config (Funzione tazpod + Alias)
-RUN echo 'tazpod() { /usr/local/bin/tazpod "$@"; local res=$?; if [ "$res" -eq 0 ] && [[ "$1" == "unlock" || "$1" == "sync" ]]; then eval "$(/usr/local/bin/tazpod env)"; fi; return $res; }' >> ~/.bashrc && \
-    echo "alias unlock='tazpod unlock'" >> ~/.bashrc && \
+# 4. Shell Config & Auto-Lock (FIX: --color=auto)
+RUN echo "alias tazpod='/usr/local/bin/tazpod'" >> ~/.bashrc && \
     echo "alias ls='ls --color=auto'" >> ~/.bashrc && \
     echo "alias ll='ls -lh --color=auto'" >> ~/.bashrc && \
-    echo "alias la='ls -A --color=auto'" >> ~/.bashrc
+    echo "alias la='ls -A --color=auto'" >> ~/.bashrc && \
+    echo 'cleanup_vault() { if mountpoint -q ~/secrets 2>/dev/null; then sudo umount -l ~/secrets && sudo cryptsetup close tazpod_vault 2>/dev/null; fi; }; trap cleanup_vault EXIT' >> ~/.bashrc
