@@ -4,42 +4,54 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=en_US.UTF-8
 
 # 1. System Essentials & Security Tools
-# Aggiungiamo gpg per i repo esterni
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates sudo curl wget git build-essential unzip tar gzip \
     cryptsetup-bin e2fsprogs dmsetup procps psmisc \
     gnupg locales \
-    bat ripgrep fzf mc && \
+    bat ripgrep fzf mc \
+    python3 python3-pip python3-venv && \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Link per 'bat' (su Debian è batcat)
 RUN ln -sf /usr/bin/batcat /usr/local/bin/bat
 
-# 2. Shell Experience: Starship Prompt
+# 2. Shell Experience (Starship, Eza, Zoxide)
 RUN curl -sS https://starship.rs/install.sh | sh -s -- -y
-
-# 3. Shell Experience: Eza (ls modern replacement)
 RUN mkdir -p /etc/apt/keyrings && \
     wget -qO- https://raw.githubusercontent.com/eza-community/eza/main/deb.asc | gpg --dearmor -o /etc/apt/keyrings/gierens.gpg && \
     echo "deb [signed-by=/etc/apt/keyrings/gierens.gpg] http://deb.gierens.de stable main" | tee /etc/apt/sources.list.d/gierens.list && \
-    chmod 644 /etc/apt/keyrings/gierens.gpg /etc/apt/sources.list.d/gierens.list && \
     apt-get update && apt-get install -y eza && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
-
-# 4. Shell Experience: Zoxide (Smarter cd)
 RUN curl -sS https://webinstall.dev/zoxide | bash
 
-# 5. User Setup (tazpod)
+# 3. Multiplexers & Tools (Tmux, Zellij, TPM)
+RUN apt-get update && apt-get install -y tmux && \
+    curl -sS https://webinstall.dev/zellij | bash && \
+    git clone https://github.com/tmux-plugins/tpm /home/tazpod/.tmux/plugins/tpm
+
+# 4. Neovim Stable (v0.10+)
+RUN curl -LO https://github.com/neovim/neovim/releases/latest/download/nvim-linux-x86_64.tar.gz && \
+    rm -rf /opt/nvim && tar -C /opt -xzf nvim-linux-x86_64.tar.gz && \
+    ln -sf /opt/nvim-linux-x86_64/bin/nvim /usr/local/bin/nvim && \
+    rm nvim-linux-x86_64.tar.gz
+
+# 5. Node.js (via NodeSource per LSP)
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# 6. User Setup (tazpod)
 RUN useradd -m -s /bin/bash -u 1000 tazpod && \
     echo "tazpod ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/tazpod
 
 USER tazpod
 WORKDIR /home/tazpod
 
-# 6. Inject TazPod CLI
+# 7. Inject TazPod CLI
 COPY --chown=tazpod:tazpod tazpod /usr/local/bin/tazpod
 RUN sudo chmod +x /usr/local/bin/tazpod
 
-# 7. Brute Force Dotfiles Copy
+# 8. Brute Force Dotfiles Copy & Permission Fix
 COPY --chown=tazpod:tazpod dotfiles/ /home/tazpod/
+RUN sudo chown -R tazpod:tazpod /home/tazpod && \
+    sudo chmod -R u+rw /home/tazpod
