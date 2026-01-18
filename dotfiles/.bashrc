@@ -18,6 +18,11 @@ if [ -z "${debian_chroot:-}" ] && [ -r /etc/debian_chroot ]; then
   debian_chroot=$(cat /etc/debian_chroot)
 fi
 
+# --- NVM (Node Version Manager) ---
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+
 # Aliases - General
 alias ..="cd .."
 alias ...="cd ../.."
@@ -43,10 +48,10 @@ alias ls="eza --icons"
 alias ll="eza -lh --icons --grid"
 alias la="eza -a --icons"
 alias lt="eza --tree --icons"
-alias l="eza -l --icons --git --no-user --no-time" # Compact list
+alias l="eza -l --icons --git --no-user --no-time"
 alias cat="bat"
 
-# --- TAZPOD CORE ---
+# --- TAZPOD CORE HELPER ---
 tazpod() {
     /usr/local/bin/tazpod "$@";
     local res=$?;
@@ -57,13 +62,6 @@ tazpod() {
     fi;
     return $res;
 }
-
-# Auto-load secrets if vault is open (Ghost Mode shell)
-if [ -n "$TAZPOD_GHOST_MODE" ] && [ -f "$HOME/secrets/.env-infisical" ]; then
-    set -a
-    source "$HOME/secrets/.env-infisical"
-    set +a
-fi
 
 # Enable Modern Prompts/Tools
 [ -x "$(command -v starship)" ] && eval "$(starship init bash)"
