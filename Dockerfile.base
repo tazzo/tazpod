@@ -3,10 +3,16 @@ FROM debian:bookworm-slim
 ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=en_US.UTF-8
 
-# 1. Essential Security & Kernel Tools ONLY
+# 1. System Essentials & Security Tools
+# - Security: cryptsetup, dmsetup, sudo
+# - Process: procps, psmisc
+# - Network/Download: curl, wget
+# - Version Control: git
+# - Build: build-essential (gcc, make, etc), unzip, tar, gzip
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates sudo \
     cryptsetup-bin e2fsprogs dmsetup procps psmisc \
+    curl wget git build-essential unzip tar gzip \
     locales && \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
@@ -23,8 +29,6 @@ COPY --chown=tazpod:tazpod tazpod /usr/local/bin/tazpod
 RUN sudo chmod +x /usr/local/bin/tazpod
 
 # 4. Shell Config (Smart Exit Logic)
-# If exit code is 0 (normal exit) -> exit shell
-# If exit code is 2 (lock command) -> stay in shell
 RUN echo 'tazpod() { \
     /usr/local/bin/tazpod "$@"; \
     local res=$?; \
