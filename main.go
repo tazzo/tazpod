@@ -23,11 +23,12 @@ const (
 	GhostEnvVar   = "TAZPOD_GHOST_MODE"
 	TazPodUID     = 1000
 	TazPodGID     = 1000
+	StayMarker    = "/tmp/.tazpod_stay"
 )
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: tazpod [up|down|enter|ssh|unlock|lock|reinit|internal-ghost]")
+		help()
 		os.Exit(1)
 	}
 
@@ -52,10 +53,20 @@ func main() {
 	}
 }
 
+func help() {
+	fmt.Println("Usage: tazpod <command>")
+	fmt.Println("  up      -> Build & Start TazPod container (Host)")
+	fmt.Println("  down    -> Stop & Remove TazPod container (Host)")
+	fmt.Println("  ssh     -> Enter TazPod container (Host)")
+	fmt.Println("  unlock  -> Unlock Vault & Start Secure Shell (Container)")
+	fmt.Println("  lock    -> Close Vault & Stay in Container (Container)")
+	fmt.Println("  reinit  -> Wipe Vault & Start Fresh (Container)")
+}
+
 // --- HOST COMMANDS ---
 
 func up() {
-	fmt.Println("🏗️  Ensuring TazPod Engine (Local)...")
+	fmt.Println("🏗️  Ensuring TazPod Image (Local)...")
 	runCmd("docker", "build", "-f", "Dockerfile.base", "-t", ImageName, ".")
 	fmt.Println("🛑 Cleaning instances...")
 	exec.Command("docker", "rm", "-f", ContainerName).Run()
@@ -86,10 +97,21 @@ func unlock() {
 	}
 
 	fmt.Println("👻 Entering Ghost Mode (Private Namespace)...")
-	// Creiamo il namespace di mount privato ed eseguiamo internal-ghost come root
 	cmd := exec.Command("sudo", "unshare", "--mount", "--propagation", "private", "/usr/local/bin/tazpod", "internal-ghost")
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	if err := cmd.Run(); err != nil {
+	
+	err := cmd.Run()
+	
+	// SIGNAL HANDLING: Check if child requested to STAY in container
+	if _, statErr := os.Stat(StayMarker); statErr == nil {
+		os.Remove(StayMarker)
+		os.Exit(2) // Exit code 2 = Stay in shell
+	}
+
+	if err != nil {
+		if exitError, ok := err.(*exec.ExitError); ok {
+			os.Exit(exitError.ExitCode())
+		}
 		os.Exit(1)
 	}
 }
@@ -125,19 +147,13 @@ func internalGhost() {
 		passphrase = string(p)
 	}
 
-	// Setup Hardware Nodes
+	// Setup Hardware
 	exec.Command("mknod", "/dev/loop-control", "c", "10", "237").Run()
-	for i := 0; i < 64; i++ { exec.Command("mknod", fmt.Sprintf("/dev/loop%d", i), "b", "7", fmt.Sprintf("%d", i)).Run() }
+	for i := 0; i < 32; i++ { exec.Command("mknod", fmt.Sprintf("/dev/loop%d", i), "b", "7", fmt.Sprintf("%d", i)).Run() }
 	os.MkdirAll(VaultDir, 0755)
 	
-	// Cleanup preventivo intelligente
-	mapperDev := "/dev/mapper/" + MapperName
-	if fileExist(mapperDev) {
-		exec.Command("cryptsetup", "close", MapperName).Run()
-	}
-	if fileExist(mapperDev) {
-		exec.Command("dmsetup", "remove", "-f", MapperName).Run()
-	}
+	// CLEANUP ROBUSTO: Interroghiamo il kernel, non il filesystem
+	cleanupMappers()
 	exec.Command("bash", "-c", "losetup -a | grep 'vault.img' | cut -d: -f1 | xargs -r losetup -d").Run()
 
 	mapperPath := "/dev/mapper/" + MapperName
@@ -162,49 +178,66 @@ func internalGhost() {
 		waitForDevice(mapperPath)
 	}
 
-	// PRIVATE MOUNT
 	os.MkdirAll(MountPath, 0755)
 	runCmd("mount", "-t", "ext4", mapperPath, MountPath)
 	runCmd("chown", "tazpod:tazpod", MountPath)
 
-	// SPAWN PROTECTED USER SHELL
 	fmt.Println("\n✅ TAZPOD GHOST MODE ACTIVE.")
-	fmt.Println("🚪 Type 'exit' to lock and leave.")
+	fmt.Println("🚪 Type 'exit' to lock & leave container.")
+	fmt.Println("🔒 Type 'tazpod lock' to lock & stay.")
 	
-bashCmd := exec.Command("bash")
-bashCmd.Stdin, bashCmd.Stdout, bashCmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-bashCmd.SysProcAttr = &syscall.SysProcAttr{
+	bashCmd := exec.Command("bash")
+	bashCmd.Stdin, bashCmd.Stdout, bashCmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	bashCmd.SysProcAttr = &syscall.SysProcAttr{
 		Credential: &syscall.Credential{Uid: uint32(TazPodUID), Gid: uint32(TazPodGID)},
 	}
-bashCmd.Env = append(os.Environ(), GhostEnvVar+"=true", "USER=tazpod", "HOME=/home/tazpod")
-bashCmd.Run()
+	bashCmd.Env = append(os.Environ(), GhostEnvVar+"=true", "USER=tazpod", "HOME=/home/tazpod")
+	bashCmd.Run()
 
-	// AUTO-CLEANUP ON EXIT (SMART)
-	fmt.Println("\n🔒 Locking and destroying Ghost Enclave...")
+	fmt.Println("\n🔒 Locking Ghost Enclave...")
 	exec.Command("umount", "-f", MountPath).Run()
-	
-	// Close LUKS
-	if fileExist(mapperPath) {
-		exec.Command("cryptsetup", "close", MapperName).Run()
-	}
-	// Force remove only if still there
-	if fileExist(mapperPath) {
-		exec.Command("dmsetup", "remove", "-f", MapperName).Run()
-	}
-	
+	cleanupMappers()
 	exec.Command("bash", "-c", "losetup -a | grep 'vault.img' | cut -d: -f1 | xargs -r losetup -d").Run()
 	fmt.Println("✅ Vault locked.")
 }
 
+func cleanupMappers() {
+	// Chiediamo al kernel: "Esiste tazpod_vault?" (indipendentemente da /dev/mapper/...)
+	// dmsetup info ritorna 0 se esiste, 1 se no.
+	if exec.Command("dmsetup", "info", MapperName).Run() == nil {
+		// Esiste! Proviamo a chiudere gentilmente
+		exec.Command("cryptsetup", "close", MapperName).Run()
+		
+		// Se ancora esiste, usiamo le maniere forti
+		if exec.Command("dmsetup", "info", MapperName).Run() == nil {
+			exec.Command("dmsetup", "remove", "--force", MapperName).Run()
+		}
+	}
+}
+
 func lock() {
-	fmt.Println("ℹ️  In Ghost Mode, just type 'exit' to lock.")
+	if os.Getenv(GhostEnvVar) == "true" {
+		fmt.Println("🔒 Locking requested (Closing Shell)...")
+		os.Create(StayMarker)
+		syscall.Kill(os.Getppid(), syscall.SIGKILL)
+		return
+	}
+	fmt.Println("ℹ️  Vault is not mounted (or you are not in Ghost Mode).")
 }
 
 func reinit() {
+	if os.Getenv(GhostEnvVar) == "true" {
+		fmt.Println("❌ Cannot reinit inside Ghost Mode.")
+		fmt.Println("🔒 Run 'tazpod lock' first.")
+		os.Exit(1)
+	}
+
 	fmt.Print("⚠️  DELETE current vault? (y/N): ")
 	var confirm string
 	fmt.Scanln(&confirm)
 	if strings.ToLower(confirm) != "y" { return }
+	
+	fmt.Println("🗑️  Deleting vault...")
 	os.Remove(VaultPath)
 	unlock()
 }
@@ -229,6 +262,9 @@ func runWithStdin(input, name string, args ...string) (string, error) {
 	var out, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &stderr
 	err := cmd.Run()
+	if err != nil {
+		fmt.Printf("\n❌ SYSTEM ERROR [%s]: %s\n", name, stderr.String())
+	}
 	return out.String(), err
 }
 
