@@ -1,14 +1,13 @@
 FROM debian:bookworm-slim
 
-# --- TAZPOD ENGINE BASE ---
 ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=en_US.UTF-8
 
-# 1. Install Essential Security & Kernel Tools
+# 1. Essential Security & Kernel Tools ONLY
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates sudo \
     cryptsetup-bin e2fsprogs dmsetup procps \
-    neovim locales && \
+    locales && \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
@@ -19,15 +18,12 @@ RUN useradd -m -s /bin/bash -u 1000 tazpod && \
 USER tazpod
 WORKDIR /home/tazpod
 
-# 3. Inject TazPod CLI Binary
+# 3. Iniezione Binario CLI
 COPY --chown=tazpod:tazpod tazpod /usr/local/bin/tazpod
 RUN sudo chmod +x /usr/local/bin/tazpod
 
-# 4. Shell Configuration & Security Auto-Lock
-# The EXIT trap ensures that when the last interactive shell is closed, 
-# the encrypted vault is automatically unmounted and the keys purged from memory.
+# 4. Shell Config
 RUN echo "alias tazpod='/usr/local/bin/tazpod'" >> ~/.bashrc && \
     echo "alias ls='ls --color=auto'" >> ~/.bashrc && \
     echo "alias ll='ls -lh --color=auto'" >> ~/.bashrc && \
-    echo "alias la='ls -A --color=auto'" >> ~/.bashrc && \
-    echo 'cleanup_vault() { if mountpoint -q ~/secrets 2>/dev/null; then sudo umount -l ~/secrets && sudo cryptsetup close tazpod_vault 2>/dev/null; fi; }; trap cleanup_vault EXIT' >> ~/.bashrc
+    echo "alias la='ls -A --color=auto'" >> ~/.bashrc
