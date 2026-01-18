@@ -12,6 +12,7 @@ import (
 	"golang.org/x/term"
 )
 
+// Configuration constants
 const (
 	ContainerName = "tazpod-lab"
 	ImageName     = "tazpod-engine:local"
@@ -66,21 +67,40 @@ func help() {
 // --- HOST COMMANDS ---
 
 func up() {
-	fmt.Println("🏗️  Ensuring TazPod Engine Image...")
+	fmt.Println("🏗️  Ensuring TazPod Image (Compatible)...")
 	runCmd("docker", "build", "-f", "Dockerfile.base", "-t", ImageName, ".")
 	
-	fmt.Println("🛑 Cleaning old instances...")
+	fmt.Println("🛑 Cleaning instances...")
 	exec.Command("docker", "rm", "-f", ContainerName).Run()
+	
 	cwd, _ := os.Getwd()
 	fmt.Printf("🚀 Starting TazPod in %s...\n", cwd)
-	runCmd("docker", "run", "-d", "--name", ContainerName, "--privileged", "--network", "host", "-v", cwd+":/workspace", "-w", "/workspace", ImageName, "sleep", "infinity")
+	
+	// DISPLAY & XAUTHORITY for X11 Clipboard support
+	display := os.Getenv("DISPLAY")
+	xauth := os.Getenv("XAUTHORITY")
+	if xauth == "" {
+		xauth = os.Getenv("HOME") + "/.Xauthority"
+	}
+
+	runCmd("docker", "run", "-d", 
+		"--name", ContainerName, 
+		"--privileged", 
+		"--network", "host", 
+		"-e", "DISPLAY="+display,
+		"-e", "XAUTHORITY=/home/tazpod/.Xauthority",
+		"-v", "/tmp/.X11-unix:/tmp/.X11-unix",
+		"-v", xauth+":/home/tazpod/.Xauthority",
+		"-v", cwd+":/workspace", 
+		"-w", "/workspace", 
+		ImageName, "sleep", "infinity")
+	
 	fmt.Println("✅ Ready. Run './tazpod enter' to get inside.")
 }
 
 func down() {
 	fmt.Println("🧹 Shutting down TazPod...")
 	runCmd("docker", "rm", "-f", ContainerName)
-	fmt.Println("✅ Done.")
 }
 
 func enter() {
@@ -103,10 +123,9 @@ func unlock() {
 	
 	err := cmd.Run()
 	
-	// SIGNAL HANDLING: Check if child requested to STAY in container
 	if _, statErr := os.Stat(StayMarker); statErr == nil {
 		os.Remove(StayMarker)
-		os.Exit(2) // Exit code 2 = Stay in shell
+		os.Exit(2)
 	}
 
 	if err != nil {
@@ -150,10 +169,9 @@ func internalGhost() {
 
 	// Setup Hardware
 	exec.Command("mknod", "/dev/loop-control", "c", "10", "237").Run()
-	for i := 0; i < 32; i++ { exec.Command("mknod", fmt.Sprintf("/dev/loop%d", i), "b", "7", fmt.Sprintf("%d", i)).Run() }
+	for i := 0; i < 64; i++ { exec.Command("mknod", fmt.Sprintf("/dev/loop%d", i), "b", "7", fmt.Sprintf("%d", i)).Run() }
 	os.MkdirAll(VaultDir, 0755)
 	
-	// CLEANUP ROBUSTO: Interroghiamo il kernel, non il filesystem
 	cleanupMappers()
 	exec.Command("bash", "-c", "losetup -a | grep 'vault.img' | cut -d: -f1 | xargs -r losetup -d").Run()
 
@@ -183,9 +201,8 @@ func internalGhost() {
 	runCmd("mount", "-t", "ext4", mapperPath, MountPath)
 	runCmd("chown", "tazpod:tazpod", MountPath)
 
+	// Shell
 	fmt.Println("\n✅ TAZPOD GHOST MODE ACTIVE.")
-	fmt.Println("🚪 Type 'exit' to lock & leave container.")
-	fmt.Println("🔒 Type 'tazpod lock' to lock & stay.")
 	
 	bashCmd := exec.Command("bash")
 	bashCmd.Stdin, bashCmd.Stdout, bashCmd.Stderr = os.Stdin, os.Stdout, os.Stderr
@@ -195,21 +212,16 @@ func internalGhost() {
 	bashCmd.Env = append(os.Environ(), GhostEnvVar+"=true", "USER=tazpod", "HOME=/home/tazpod")
 	bashCmd.Run()
 
+	// EXIT CLEANUP
 	fmt.Println("\n🔒 Locking Ghost Enclave...")
 	exec.Command("umount", "-f", MountPath).Run()
 	cleanupMappers()
 	exec.Command("bash", "-c", "losetup -a | grep 'vault.img' | cut -d: -f1 | xargs -r losetup -d").Run()
-	fmt.Println("✅ Vault locked.")
 }
 
 func cleanupMappers() {
-	// Chiediamo al kernel: "Esiste tazpod_vault?" (indipendentemente da /dev/mapper/...)
-	// dmsetup info ritorna 0 se esiste, 1 se no.
 	if exec.Command("dmsetup", "info", MapperName).Run() == nil {
-		// Esiste! Proviamo a chiudere gentilmente
 		exec.Command("cryptsetup", "close", MapperName).Run()
-		
-		// Se ancora esiste, usiamo le maniere forti
 		if exec.Command("dmsetup", "info", MapperName).Run() == nil {
 			exec.Command("dmsetup", "remove", "--force", MapperName).Run()
 		}
@@ -218,27 +230,21 @@ func cleanupMappers() {
 
 func lock() {
 	if os.Getenv(GhostEnvVar) == "true" {
-		fmt.Println("🔒 Locking requested (Closing Shell)...")
 		os.Create(StayMarker)
 		syscall.Kill(os.Getppid(), syscall.SIGKILL)
 		return
 	}
-	fmt.Println("ℹ️  Vault is not mounted (or you are not in Ghost Mode).")
 }
 
 func reinit() {
 	if os.Getenv(GhostEnvVar) == "true" {
 		fmt.Println("❌ Cannot reinit inside Ghost Mode.")
-		fmt.Println("🔒 Run 'tazpod lock' first.")
 		os.Exit(1)
 	}
-
 	fmt.Print("⚠️  DELETE current vault? (y/N): ")
 	var confirm string
 	fmt.Scanln(&confirm)
 	if strings.ToLower(confirm) != "y" { return }
-	
-	fmt.Println("🗑️  Deleting vault...")
 	os.Remove(VaultPath)
 	unlock()
 }
@@ -252,8 +258,7 @@ func runCmd(name string, args ...string) {
 }
 
 func runOutput(name string, args ...string) string {
-	out, err := exec.Command(name, args...).Output()
-	if err != nil { return "" }
+	out, _ := exec.Command(name, args...).Output()
 	return strings.TrimSpace(string(out))
 }
 
@@ -263,9 +268,6 @@ func runWithStdin(input, name string, args ...string) (string, error) {
 	var out, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &stderr
 	err := cmd.Run()
-	if err != nil {
-		fmt.Printf("\n❌ SYSTEM ERROR [%s]: %s\n", name, stderr.String())
-	}
 	return out.String(), err
 }
 

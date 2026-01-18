@@ -10,7 +10,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gnupg locales ncurses-term \
     bat ripgrep fzf mc fd-find \
     python3 python3-pip python3-venv \
-    luarocks lua5.1 liblua5.1-0-dev \
     xclip xsel && \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
@@ -19,8 +18,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN ln -sf /usr/bin/batcat /usr/local/bin/bat && \
     ln -sf /usr/bin/fdfind /usr/local/bin/fd
 
-# 2. Tree-sitter CLI (Static Binary)
-RUN curl -LO https://github.com/tree-sitter/tree-sitter/releases/latest/download/tree-sitter-linux-x64.gz && \
+# 2. Tree-sitter CLI (Version compatible with Debian GLIBC)
+RUN curl -LO https://github.com/tree-sitter/tree-sitter/releases/download/v0.20.8/tree-sitter-linux-x64.gz && \
     gunzip tree-sitter-linux-x64.gz && \
     chmod +x tree-sitter-linux-x64 && \
     mv tree-sitter-linux-x64 /usr/local/bin/tree-sitter
@@ -32,7 +31,7 @@ RUN curl -LO https://github.com/neovim/neovim/releases/latest/download/nvim-linu
     rm nvim-linux-x86_64.tar.gz
 
 # 4. Lazygit (Official Binary)
-RUN LAZYGIT_VERSION=$(curl -s "https://api.github.com/repos/jesseduffield/lazygit/releases/latest" | grep '"tag_name":' | sed -E 's/.*"v([^\"]+)".*/\1/') && \
+RUN LAZYGIT_VERSION=$(curl -s "https://api.github.com/repos/jesseduffield/lazygit/releases/latest" | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/') && \
     curl -Lo lazygit.tar.gz "https://github.com/jesseduffield/lazygit/releases/latest/download/lazygit_${LAZYGIT_VERSION}_Linux_x86_64.tar.gz" && \
     tar xf lazygit.tar.gz lazygit && \
     install lazygit /usr/local/bin && \
@@ -51,26 +50,34 @@ RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | b
     . $NVM_DIR/nvm.sh && \
     nvm install --lts
 
-# 7. Shell Tools: Starship, Zoxide, Zellij, Tmux
-RUN curl -sS https://starship.rs/install.sh | sh -s -- -y && \
-    curl -sS https://webinstall.dev/zoxide | bash && \
-    curl -sS https://webinstall.dev/zellij | bash && \
-    sudo apt-get update && sudo apt-get install -y tmux && \
-    # Eza Repo
-    sudo mkdir -p /etc/apt/keyrings && \
+# 7. Shell Tools: Starship
+RUN curl -sS https://starship.rs/install.sh | sh -s -- -y
+
+# 8. Shell Tools: Zoxide
+RUN curl -sS https://webinstall.dev/zoxide | bash
+
+# 9. Shell Tools: Zellij (Static binary from GitHub)
+RUN ZELLIJ_VERSION=$(curl -s "https://api.github.com/repos/zellij-org/zellij/releases/latest" | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/') && \
+    curl -Lo zellij.tar.gz "https://github.com/zellij-org/zellij/releases/latest/download/zellij-x86_64-unknown-linux-musl.tar.gz" && \
+    tar xf zellij.tar.gz && \
+    sudo install zellij /usr/local/bin && \
+    rm zellij.tar.gz zellij
+
+# 10. Shell Tools: Eza, Tmux, TPM
+RUN sudo mkdir -p /etc/apt/keyrings && \
     wget -qO- https://raw.githubusercontent.com/eza-community/eza/main/deb.asc | sudo gpg --dearmor -o /etc/apt/keyrings/gierens.gpg && \
     echo "deb [signed-by=/etc/apt/keyrings/gierens.gpg] http://deb.gierens.de stable main" | sudo tee /etc/apt/sources.list.d/gierens.list && \
-    sudo apt-get update && sudo apt-get install -y eza && \
+    sudo apt-get update && sudo apt-get install -y eza tmux && \
     git clone https://github.com/tmux-plugins/tpm /home/tazpod/.tmux/plugins/tpm
 
-# 8. Inject TazPod CLI & Dotfiles
+# 11. Inject TazPod CLI & Dotfiles
 COPY --chown=tazpod:tazpod tazpod /usr/local/bin/tazpod
 RUN sudo chmod +x /usr/local/bin/tazpod
 
 COPY --chown=tazpod:tazpod dotfiles/ /home/tazpod/
 
-# 9. Final Setup & Headless Plugin Sync
+# 12. Final Setup & Headless Plugin Sync
 RUN sudo chown -R tazpod:tazpod /home/tazpod && \
-    sudo ln -s /home/tazpod/.nvm/versions/node/*/bin/node /usr/local/bin/node && \
-    sudo ln -s /home/tazpod/.nvm/versions/node/*/bin/npm /usr/local/bin/npm && \
+    sudo ln -sf /home/tazpod/.nvm/versions/node/*/bin/node /usr/local/bin/node && \
+    sudo ln -sf /home/tazpod/.nvm/versions/node/*/bin/npm /usr/local/bin/npm && \
     nvim --headless "+Lazy! sync" +qa || echo "Initial sync done"
