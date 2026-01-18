@@ -4,11 +4,6 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=en_US.UTF-8
 
 # 1. System Essentials & Security Tools
-# - Security: cryptsetup, dmsetup, sudo
-# - Process: procps, psmisc
-# - Network/Download: curl, wget
-# - Version Control: git
-# - Build: build-essential (gcc, make, etc), unzip, tar, gzip
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates sudo \
     cryptsetup-bin e2fsprogs dmsetup procps psmisc \
@@ -24,21 +19,10 @@ RUN useradd -m -s /bin/bash -u 1000 tazpod && \
 USER tazpod
 WORKDIR /home/tazpod
 
-# 3. Iniezione Binario CLI
+# 3. Inject TazPod CLI
 COPY --chown=tazpod:tazpod tazpod /usr/local/bin/tazpod
 RUN sudo chmod +x /usr/local/bin/tazpod
 
-# 4. Shell Config (Smart Exit Logic)
-RUN echo 'tazpod() { \
-    /usr/local/bin/tazpod "$@"; \
-    local res=$?; \
-    if [ -z "$TAZPOD_GHOST_MODE" ]; then \
-        if [ "$1" == "unlock" ] || [ "$1" == "reinit" ]; then \
-            if [ $res -eq 0 ]; then exit 0; fi; \
-        fi; \
-    fi; \
-    return $res; \
-}' >> ~/.bashrc && \
-    echo "alias ls='ls --color=auto'" >> ~/.bashrc && \
-    echo "alias ll='ls -lh --color=auto'" >> ~/.bashrc && \
-    echo "alias la='ls -A --color=auto'" >> ~/.bashrc
+# 4. Brute Force Dotfiles Copy
+# Copiamo tutto (incluso .bashrc modificato) direttamente nella home
+COPY --chown=tazpod:tazpod dotfiles/ /home/tazpod/
