@@ -53,14 +53,19 @@ alias cat="bat"
 
 # --- TAZPOD CORE HELPER ---
 tazpod() {
-    /usr/local/bin/tazpod "$@";
-    local res=$?;
-    if [ -z "$TAZPOD_GHOST_MODE" ]; then
-        if [ "$1" == "unlock" ] || [ "$1" == "reinit" ]; then
-            if [ $res -eq 0 ]; then exit 0; fi;
+    # Se chiediamo l'ambiente, facciamo eval automatico dell'output del binario
+    if [ "$1" == "env" ]; then
+        eval "$(/usr/local/bin/tazpod env)"
+    else
+        /usr/local/bin/tazpod "$@";
+        local res=$?;
+        if [ -z "$TAZPOD_GHOST_MODE" ]; then
+            if [ "$1" == "unlock" ] || [ "$1" == "reinit" ]; then
+                if [ $res -eq 0 ]; then exit 0; fi;
+            fi;
         fi;
-    fi;
-    return $res;
+        return $res;
+    fi
 }
 
 # Enable Modern Prompts/Tools

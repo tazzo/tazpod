@@ -5,11 +5,12 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=en_US.UTF-8
 
 # 1. System Essentials, Security & Extra Dev Tools
+# Includiamo yq (essenziale per la CLI Go) e i tool di sistema
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates sudo curl wget git build-essential unzip \
     cryptsetup-bin e2fsprogs dmsetup procps psmisc \
     gnupg locales ncurses-term x11-xserver-utils \
-    bat ripgrep fzf mc fd-find \
+    bat ripgrep fzf mc fd-find yq \
     python3 python3-pip python3-venv \
     xclip xsel jq \
     iputils-ping tree btop ncdu duf tldr zip dnsutils man-db && \
@@ -21,7 +22,7 @@ RUN ln -sf /usr/bin/batcat /usr/local/bin/bat && \
     ln -sf /usr/bin/fdfind /usr/local/bin/fd
 
 # 2. Yazi Installation (Modern Terminal File Manager)
-RUN YAZI_VERSION=$(curl -s "https://api.github.com/repos/sxyazi/yazi/releases/latest" | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/') && \
+RUN YAZI_VERSION=$(curl -s "https://api.github.com/repos/sxyazi/yazi/releases/latest" | grep '"tag_name":' | sed -E 's/.*"v([^\"]+)".*/\1/') && \
     curl -Lo yazi.zip "https://github.com/sxyazi/yazi/releases/latest/download/yazi-x86_64-unknown-linux-musl.zip" && \
     unzip yazi.zip && \
     install yazi-x86_64-unknown-linux-musl/yazi /usr/local/bin && \
@@ -34,7 +35,7 @@ RUN curl -LO https://github.com/neovim/neovim/releases/latest/download/nvim-linu
     rm nvim-linux-x86_64.tar.gz
 
 # 4. Lazygit (Latest Stable)
-RUN LAZYGIT_VERSION=$(curl -s "https://api.github.com/repos/jesseduffield/lazygit/releases/latest" | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/') && \
+RUN LAZYGIT_VERSION=$(curl -s "https://api.github.com/repos/jesseduffield/lazygit/releases/latest" | grep '"tag_name":' | sed -E 's/.*"v([^\"]+)".*/\1/') && \
     curl -Lo lazygit.tar.gz "https://github.com/jesseduffield/lazygit/releases/latest/download/lazygit_${LAZYGIT_VERSION}_Linux_x86_64.tar.gz" && \
     tar xf lazygit.tar.gz lazygit && \
     install lazygit /usr/local/bin && \
@@ -49,7 +50,7 @@ USER tazpod
 WORKDIR /home/tazpod
 
 # 6. Node.js via NVM (For LSP)
-ENV NVM_DIR /home/tazpod/.nvm
+ENV NVM_DIR="/home/tazpod/.nvm"
 RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash && \
     . $NVM_DIR/nvm.sh && \
     nvm install --lts
@@ -58,7 +59,7 @@ RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | b
 RUN curl -sS https://starship.rs/install.sh | sh -s -- -y && \
     curl -sS https://webinstall.dev/zoxide | bash && \
     # Zellij Static Binary
-    ZELLIJ_VERSION=$(curl -s "https://api.github.com/repos/zellij-org/zellij/releases/latest" | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/') && \
+    ZELLIJ_VERSION=$(curl -s "https://api.github.com/repos/zellij-org/zellij/releases/latest" | grep '"tag_name":' | sed -E 's/.*"v([^\"]+)".*/\1/') && \
     curl -Lo zellij.tar.gz "https://github.com/zellij-org/zellij/releases/latest/download/zellij-x86_64-unknown-linux-musl.tar.gz" && \
     tar xf zellij.tar.gz && \
     sudo install zellij /usr/local/bin && \
