@@ -107,7 +107,9 @@ func InternalGhost() {
 	}
 	newEnv := os.Environ()
 	newEnv = append(newEnv, GhostEnvVar+"=true", "USER=tazpod", "HOME=/home/tazpod")
-	envs := getSecretEnvs()
+	
+	// Sincronizziamo senza log per la shell (i log sono gestiti da getSecretEnvs)
+	envs := getSecretEnvs(true) 
 	for k, v := range envs {
 		newEnv = append(newEnv, k+"="+v)
 	}
@@ -120,41 +122,44 @@ func InternalGhost() {
 	fmt.Println("✅ Vault locked.")
 }
 
-func getSecretEnvs() map[string]string {
+func getSecretEnvs(showLog bool) map[string]string {
 	envs := make(map[string]string)
 	if !utils.FileExist(SecretsYAML) {
+		if showLog { fmt.Fprintln(os.Stderr, "⚠️  secrets.yml not found") }
 		return envs
 	}
 	countStr := utils.RunOutput("yq", ".secrets | length", SecretsYAML)
 	var count int
 	fmt.Sscanf(countStr, "%d", &count)
+	if showLog { fmt.Fprintln(os.Stderr, "📦 Sourcing secrets from vault...") }
 	for i := 0; i < count; i++ {
 		fileName := cleanStr(utils.RunOutput("yq", fmt.Sprintf(".secrets[%d].file", i), SecretsYAML))
 		envVar := cleanStr(utils.RunOutput("yq", fmt.Sprintf(".secrets[%d].env", i), SecretsYAML))
-		if fileName == "" || envVar == "" {
-			continue
-		}
+		if fileName == "" || envVar == "" { continue }
 		fullPath := MountPath + "/" + fileName
 		if utils.FileExist(fullPath) {
 			envs[envVar] = fullPath
+			if showLog { fmt.Fprintf(os.Stderr, "  ✅ %s -> $%s\n", fileName, envVar) }
+		} else {
+			if showLog { fmt.Fprintf(os.Stderr, "  ❌ %s (NOT FOUND)\n", fileName) }
 		}
 	}
 	return envs
 }
 
 func ExportEnv() {
-	envs := getSecretEnvs()
+	envs := getSecretEnvs(true)
 	for k, v := range envs {
-		// Concatenazione pura senza Printf per evitare errori di escaping
-		fmt.Println("export " + k + "=\"" + v + "\"")
+		// Concatenazione pura: zero Printf, zero errori
+		os.Stdout.WriteString("export " + k + "=\"" + v + "\"\n")
 	}
 }
 
 func cleanStr(s string) string {
 	s = strings.TrimSpace(s)
-	// Rimuoviamo virgolette usando i codici ASCII
-	s = strings.Trim(s, string(34)) 
-	s = strings.Trim(s, string(39))
+	s = strings.Trim(s, "`")
+	s = strings.Trim(s, "\"")
+	s = strings.Trim(s, "'")
 	if s == "null" { return "" }
 	return s
 }
