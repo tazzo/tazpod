@@ -1,10 +1,7 @@
 module tazpod
 
-go 1.24.0
+go 1.23.2
 
-toolchain go1.24.12
+require golang.org/x/term v0.28.0
 
-require (
-	golang.org/x/sys v0.40.0 // indirect
-	golang.org/x/term v0.39.0 // indirect
-)
+require golang.org/x/sys v0.29.0 // indirect
