@@ -38,11 +38,13 @@ alias ctx="kubectx"
 alias ns="kubens"
 alias tf="terraform"
 
-# Aliases - Modern Tools (will be installed later)
+# Aliases - Modern Tools
 alias ls="eza --icons"
 alias ll="eza -lh --icons --grid"
 alias la="eza -a --icons"
 alias lt="eza --tree --icons"
+alias l="eza -l --icons --git --no-user --no-time" # Compact list
+alias cat="bat"
 
 # --- TAZPOD CORE ---
 tazpod() {
@@ -63,6 +65,7 @@ if [ -n "$TAZPOD_GHOST_MODE" ] && [ -f "$HOME/secrets/.env-infisical" ]; then
     set +a
 fi
 
-# Enable Modern Prompts/Tools if available
+# Enable Modern Prompts/Tools
 [ -x "$(command -v starship)" ] && eval "$(starship init bash)"
 [ -x "$(command -v zoxide)" ] && eval "$(zoxide init bash)"
+[ -f ~/.fzf.bash ] && source ~/.fzf.bash

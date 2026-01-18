@@ -66,9 +66,10 @@ func help() {
 // --- HOST COMMANDS ---
 
 func up() {
-	fmt.Println("🏗️  Ensuring TazPod Image (Local)...")
+	fmt.Println("🏗️  Ensuring TazPod Engine Image...")
 	runCmd("docker", "build", "-f", "Dockerfile.base", "-t", ImageName, ".")
-	fmt.Println("🛑 Cleaning instances...")
+	
+	fmt.Println("🛑 Cleaning old instances...")
 	exec.Command("docker", "rm", "-f", ContainerName).Run()
 	cwd, _ := os.Getwd()
 	fmt.Printf("🚀 Starting TazPod in %s...\n", cwd)

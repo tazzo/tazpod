@@ -4,25 +4,42 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=en_US.UTF-8
 
 # 1. System Essentials & Security Tools
+# Aggiungiamo gpg per i repo esterni
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates sudo \
+    ca-certificates sudo curl wget git build-essential unzip tar gzip \
     cryptsetup-bin e2fsprogs dmsetup procps psmisc \
-    curl wget git build-essential unzip tar gzip \
-    locales && \
+    gnupg locales \
+    bat ripgrep fzf mc && \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# 2. User Setup (tazpod)
+# Link per 'bat' (su Debian è batcat)
+RUN ln -sf /usr/bin/batcat /usr/local/bin/bat
+
+# 2. Shell Experience: Starship Prompt
+RUN curl -sS https://starship.rs/install.sh | sh -s -- -y
+
+# 3. Shell Experience: Eza (ls modern replacement)
+RUN mkdir -p /etc/apt/keyrings && \
+    wget -qO- https://raw.githubusercontent.com/eza-community/eza/main/deb.asc | gpg --dearmor -o /etc/apt/keyrings/gierens.gpg && \
+    echo "deb [signed-by=/etc/apt/keyrings/gierens.gpg] http://deb.gierens.de stable main" | tee /etc/apt/sources.list.d/gierens.list && \
+    chmod 644 /etc/apt/keyrings/gierens.gpg /etc/apt/sources.list.d/gierens.list && \
+    apt-get update && apt-get install -y eza && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# 4. Shell Experience: Zoxide (Smarter cd)
+RUN curl -sS https://webinstall.dev/zoxide | bash
+
+# 5. User Setup (tazpod)
 RUN useradd -m -s /bin/bash -u 1000 tazpod && \
     echo "tazpod ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/tazpod
 
 USER tazpod
 WORKDIR /home/tazpod
 
-# 3. Inject TazPod CLI
+# 6. Inject TazPod CLI
 COPY --chown=tazpod:tazpod tazpod /usr/local/bin/tazpod
 RUN sudo chmod +x /usr/local/bin/tazpod
 
-# 4. Brute Force Dotfiles Copy
-# Copiamo tutto (incluso .bashrc modificato) direttamente nella home
+# 7. Brute Force Dotfiles Copy
 COPY --chown=tazpod:tazpod dotfiles/ /home/tazpod/
