@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -48,6 +49,8 @@ const (
 	VaultAuthDir  = MountPath + "/.auth-infisical"
 )
 
+var ProjectID = "" 
+
 func main() {
 	if len(os.Args) < 2 {
 		help()
@@ -73,6 +76,8 @@ func main() {
 		reinit()
 	case "login":
 		login()
+	case "pull", "sync":
+		internalSync()
 	case "internal-ghost":
 		internalGhost()
 	default:
@@ -86,6 +91,19 @@ func loadConfig() {
 	if err == nil {
 		yaml.Unmarshal(data, &cfg)
 	}
+	// Carica anche ProjectID da secrets.yml se presente (Legacy support)
+	if _, err := os.Stat("/workspace/secrets.yml"); err == nil {
+		out, _ := exec.Command("yq", ".config.infisical_project_id", "/workspace/secrets.yml").Output()
+		ProjectID = clean(string(out))
+	}
+}
+
+func clean(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.ReplaceAll(s, "\"", "")
+	s = strings.ReplaceAll(s, "'", "")
+	if s == "null" { return "" }
+	return s
 }
 
 func help() {
@@ -95,7 +113,8 @@ func help() {
 	fmt.Println("  down    -> Stop container")
 	fmt.Println("  ssh     -> Enter container")
 	fmt.Println("  unlock  -> Unlock Vault")
-	fmt.Println("  login   -> Infisical Login & Init (Inside Ghost Mode)")
+	fmt.Println("  login   -> Infisical Login")
+	fmt.Println("  pull    -> Pull secrets from Infisical (Ghost Mode)")
 }
 
 // --- HOST COMMANDS ---
@@ -235,8 +254,10 @@ func internalGhost() {
 	runCmd("mount", "-t", "ext4", mapperPath, MountPath)
 	runCmd("chown", fmt.Sprintf("%d:%d", TazPodUID, TazPodGID), MountPath)
 
-	// RESTORE INFISICAL SESSION
 	restoreAuth()
+	
+	// Auto-Sync on unlock? Maybe not if we want manual control.
+	// internalSync() 
 
 	fmt.Println("\n✅ GHOST MODE ACTIVE.")
 	bashCmd := exec.Command("bash")
@@ -245,8 +266,7 @@ func internalGhost() {
 	bashCmd.Env = append(os.Environ(), GhostEnvVar+"=true", "USER=tazpod", "HOME=/home/tazpod")
 	bashCmd.Run()
 
-	// PERSIST INFISICAL SESSION ON EXIT
-persistAuth()
+	persistAuth()
 
 	fmt.Println("\n🔒 Cleanup...")
 	exec.Command("umount", "-f", MountPath).Run()
@@ -257,51 +277,82 @@ persistAuth()
 
 func login() {
 	if os.Getenv(GhostEnvVar) != "true" {
-		fmt.Println("❌ Please run 'tazpod unlock' first to enter Ghost Mode.")
+		fmt.Println("❌ Run 'tazpod unlock' first.")
 		os.Exit(1)
 	}
-	
-	fmt.Println("🔐 Infisical Login Sequence...")
-	if err := runCmdInteractive("infisical", "login"); err != nil {
-		fmt.Println("❌ Login failed.")
-		return
-	}
-	
+	fmt.Println("🔐 Infisical Login...")
+	if err := runCmdInteractive("infisical", "login"); err != nil { return }
 	fmt.Println("🛠️  Infisical Init...")
-	if err := runCmdInteractive("infisical", "init"); err != nil {
-		fmt.Println("❌ Init failed.")
-		return
-	}
-	
-	// Force persistence check immediately
-	// Note: Actual persistence happens when internalGhost exits (calls persistAuth), 
-	// but we can also do it here if we want immediate sync to disk.
-	fmt.Println("✅ Login successful. Session will be saved to vault on exit.")
+	runCmdInteractive("infisical", "init")
 }
 
-// Moves ~/.infisical -> ~/secrets/.auth-infisical
-func persistAuth() {
-	if _, err := os.Stat(InfisicalDir); err == nil {
-		// Se esiste la cartella locale (nuovo login), copiala nel vault
-		// Attenzione: se è un symlink, non fare nulla (è già nel vault)
-		info, _ := os.Lstat(InfisicalDir)
-		if info.Mode()&os.ModeSymlink == 0 {
-			// È una directory reale. Spostiamola.
-			os.RemoveAll(VaultAuthDir)
-			exec.Command("cp", "-r", InfisicalDir, VaultAuthDir).Run()
-			os.RemoveAll(InfisicalDir)
-			os.Symlink(VaultAuthDir, InfisicalDir)
-			fmt.Println("💾 Infisical session secured in vault.")
+func internalSync() {
+	if os.Getenv(GhostEnvVar) != "true" {
+		fmt.Println("❌ Run inside Ghost Mode.")
+		return
+	}
+	
+	// Check if ProjectID is set via secrets.yml or env
+	if ProjectID == "" {
+		// Try to read from .infisical.json if present
+		// But for now, we rely on secrets.yml or manual infisical usage
+	}
+
+	fmt.Println("📦 Syncing secrets to ~/secrets/...")
+	
+	// Export full env (if project linked)
+	envFile := filepath.Join(MountPath, ".env-infisical")
+	if err := exec.Command("infisical", "export", "--format=dotenv").Run(); err == nil {
+		out, _ := exec.Command("infisical", "export", "--format=dotenv").Output()
+		os.WriteFile(envFile, out, 0600)
+		fmt.Println("✅ .env-infisical updated")
+	} else {
+		fmt.Println("⚠️  Could not export full env (Project not initialized?)")
+	}
+
+	// Fetch individual files from secrets.yml
+	if _, err := os.Stat("/workspace/secrets.yml"); err == nil {
+		countStr, _ := exec.Command("yq", ".secrets | length", "/workspace/secrets.yml").Output()
+		var count int
+		fmt.Sscanf(string(countStr), "%d", &count)
+		
+		for i := 0; i < count; i++ {
+			sName, _ := exec.Command("yq", fmt.Sprintf(".secrets[%d].name", i), "/workspace/secrets.yml").Output()
+			sFile, _ := exec.Command("yq", fmt.Sprintf(".secrets[%d].file", i), "/workspace/secrets.yml").Output()
+			
+			name := clean(string(sName))
+			file := clean(string(sFile))
+			
+			fmt.Printf("⬇️  Pulling %s -> %s... ", name, file)
+			val, err := exec.Command("infisical", "secrets", "get", name, "--plain").Output()
+			if err == nil {
+				target := filepath.Join(MountPath, file)
+				os.WriteFile(target, val, 0600)
+				fmt.Println("✅ OK")
+			} else {
+				fmt.Println("❌ MISSING (or Error)")
+			}
 		}
 	}
 }
 
-// Links ~/secrets/.auth-infisical -> ~/.infisical
+func persistAuth() {
+	if _, err := os.Stat(InfisicalDir); err == nil {
+		info, _ := os.Lstat(InfisicalDir)
+		if info.Mode()&os.ModeSymlink == 0 {
+			os.RemoveAll(VaultAuthDir)
+			exec.Command("cp", "-r", InfisicalDir, VaultAuthDir).Run()
+			os.RemoveAll(InfisicalDir)
+			os.Symlink(VaultAuthDir, InfisicalDir)
+			fmt.Println("💾 Infisical session saved.")
+		}
+	}
+}
+
 func restoreAuth() {
 	if _, err := os.Stat(VaultAuthDir); err == nil {
 		os.RemoveAll(InfisicalDir)
 		os.Symlink(VaultAuthDir, InfisicalDir)
-		// Fix permissions just in case
 		os.Chown(InfisicalDir, TazPodUID, TazPodGID)
 	}
 }
@@ -334,15 +385,15 @@ func runCmd(name string, args ...string) {
 	cmd.Run()
 }
 
+func runOutput(name string, args ...string) string {
+	out, _ := exec.Command(name, args...).Output()
+	return strings.TrimSpace(string(out))
+}
+
 func runCmdInteractive(name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	return cmd.Run()
-}
-
-func runOutput(name string, args ...string) string {
-	out, _ := exec.Command(name, args...).Output()
-	return strings.TrimSpace(string(out))
 }
 
 func runWithStdin(input, name string, args ...string) (string, error) {
