@@ -1,0 +1,19 @@
+# TazPod Configuration
+version: 1.0
+
+# Base Image (da Docker Hub o locale)
+image: "tazzo/tazlab.net:tazpod-base"
+
+# Container Settings
+container_name: "tazpod-lab"
+user: "tazpod"
+
+# Build Settings (Opzionale: se presente, costruisce locale invece di pullare)
+build:
+  dockerfile: ".tazpod/Dockerfile.infisical"
+  context: "."
+
+# Features
+features:
+  ghost_mode: true
+  persistence: true

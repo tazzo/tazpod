@@ -1,0 +1,16 @@
+# --- TAZPOD LAYER 2: INFISICAL (Secrets) ---
+# This layer depends on tazzo/tazlab.net:tazpod-base
+FROM tazzo/tazlab.net:tazpod-base
+
+USER root
+
+# Install Infisical CLI
+RUN curl -sSL 'https://artifacts-cli.infisical.com/setup.deb.sh' | bash && \
+    apt-get install -y infisical && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+USER tazpod
+WORKDIR /home/tazpod
+
+# Banner aggiornato
+RUN echo 'echo -e "\n\033[1;34m🔑 TAZPOD SECRETS LAYER ACTIVE (Infisical Ready)\033[0m\n"' >> ~/.bashrc
