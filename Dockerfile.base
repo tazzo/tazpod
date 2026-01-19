@@ -1,11 +1,11 @@
 FROM ubuntu:24.04
 
-# --- TAZPOD v4.1 (UBUNTU NOBLE - OPTIMIZED) ---
+# --- TAZPOD v4.2 (UBUNTU NOBLE - VISUALS) ---
 ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=en_US.UTF-8
 
 # 1. System Essentials, Security & Extra Dev Tools
-# Includiamo yq (essenziale per la CLI Go) e i tool di sistema
+# Includiamo Chafa per le anteprime grafiche nel terminale
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates sudo curl wget git build-essential unzip \
     cryptsetup-bin e2fsprogs dmsetup procps psmisc \
@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     bat ripgrep fzf mc fd-find yq \
     python3 python3-pip python3-venv \
     xclip xsel jq \
+    ffmpeg 7zip poppler-utils ffmpegthumbnailer imagemagick chafa \
     iputils-ping tree btop ncdu duf tldr zip dnsutils man-db && \
     locale-gen en_US.UTF-8 && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
@@ -21,27 +22,28 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN ln -sf /usr/bin/batcat /usr/local/bin/bat && \
     ln -sf /usr/bin/fdfind /usr/local/bin/fd
 
-# 2. Yazi Installation (Modern Terminal File Manager)
-RUN YAZI_VERSION=$(curl -s "https://api.github.com/repos/sxyazi/yazi/releases/latest" | grep '"tag_name":' | sed -E 's/.*"v([^\"]+)".*/\1/') && \
+# 2. Yazi Installation
+RUN YAZI_VERSION=$(curl -s "https://api.github.com/repos/sxyazi/yazi/releases/latest" | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/') && \
     curl -Lo yazi.zip "https://github.com/sxyazi/yazi/releases/latest/download/yazi-x86_64-unknown-linux-musl.zip" && \
     unzip yazi.zip && \
     install yazi-x86_64-unknown-linux-musl/yazi /usr/local/bin && \
+    install yazi-x86_64-unknown-linux-musl/ya /usr/local/bin && \
     rm -rf yazi.zip yazi-x86_64-unknown-linux-musl
 
-# 3. Neovim Stable (Official Binary v0.10+)
+# 3. Neovim Stable
 RUN curl -LO https://github.com/neovim/neovim/releases/latest/download/nvim-linux-x86_64.tar.gz && \
     rm -rf /opt/nvim && tar -C /opt -xzf nvim-linux-x86_64.tar.gz && \
     ln -sf /opt/nvim-linux-x86_64/bin/nvim /usr/local/bin/nvim && \
     rm nvim-linux-x86_64.tar.gz
 
-# 4. Lazygit (Latest Stable)
-RUN LAZYGIT_VERSION=$(curl -s "https://api.github.com/repos/jesseduffield/lazygit/releases/latest" | grep '"tag_name":' | sed -E 's/.*"v([^\"]+)".*/\1/') && \
+# 4. Lazygit
+RUN LAZYGIT_VERSION=$(curl -s "https://api.github.com/repos/jesseduffield/lazygit/releases/latest" | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/') && \
     curl -Lo lazygit.tar.gz "https://github.com/jesseduffield/lazygit/releases/latest/download/lazygit_${LAZYGIT_VERSION}_Linux_x86_64.tar.gz" && \
     tar xf lazygit.tar.gz lazygit && \
     install lazygit /usr/local/bin && \
     rm lazygit.tar.gz lazygit
 
-# 5. User Setup (tazpod)
+# 5. User Setup
 RUN if id -u 1000 >/dev/null 2>&1; then userdel -r $(id -un 1000); fi && \
     useradd -m -s /bin/bash -u 1000 tazpod && \
     echo "tazpod ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/tazpod
@@ -49,22 +51,20 @@ RUN if id -u 1000 >/dev/null 2>&1; then userdel -r $(id -un 1000); fi && \
 USER tazpod
 WORKDIR /home/tazpod
 
-# 6. Node.js via NVM (For LSP)
+# 6. Node.js via NVM
 ENV NVM_DIR="/home/tazpod/.nvm"
 RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash && \
     . $NVM_DIR/nvm.sh && \
     nvm install --lts
 
-# 7. Shell Tools: Starship, Zoxide, Zellij, Tmux, Eza
+# 7. Shell Tools
 RUN curl -sS https://starship.rs/install.sh | sh -s -- -y && \
     curl -sS https://webinstall.dev/zoxide | bash && \
-    # Zellij Static Binary
-    ZELLIJ_VERSION=$(curl -s "https://api.github.com/repos/zellij-org/zellij/releases/latest" | grep '"tag_name":' | sed -E 's/.*"v([^\"]+)".*/\1/') && \
+    ZELLIJ_VERSION=$(curl -s "https://api.github.com/repos/zellij-org/zellij/releases/latest" | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/') && \
     curl -Lo zellij.tar.gz "https://github.com/zellij-org/zellij/releases/latest/download/zellij-x86_64-unknown-linux-musl.tar.gz" && \
     tar xf zellij.tar.gz && \
     sudo install zellij /usr/local/bin && \
     rm zellij.tar.gz && \
-    # Eza Repo
     sudo mkdir -p /etc/apt/keyrings && \
     wget -qO- https://raw.githubusercontent.com/eza-community/eza/main/deb.asc | sudo gpg --dearmor -o /etc/apt/keyrings/gierens.gpg && \
     echo "deb [signed-by=/etc/apt/keyrings/gierens.gpg] http://deb.gierens.de stable main" | sudo tee /etc/apt/sources.list.d/gierens.list && \
