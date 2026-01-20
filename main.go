@@ -77,10 +77,15 @@ func main() {
 	case "up": up()
 	case "down": down()
 	case "enter", "ssh": enter()
-	case "pull", "sync": pull()
-	case "login": login()
-	case "env": printEnv()
-	case "unlock": unlock()
+		case "pull", "sync":
+			pull()
+		case "login":
+			login()
+		case "__internal_env":
+			printEnv()
+		case "unlock":
+			unlock()
+	
 	case "reinit": reinit()
 	case "internal-ghost": internalGhost()
 	default:
@@ -194,8 +199,11 @@ func internalGhost() {
 	if len(os.Args) > 2 { requestedCmd = os.Args[2] }
 
 	passphrase := performUnlock()
+	
+	fmt.Println("🚀 Mounting secure vault...")
 	mountVault(passphrase)
 	
+	fmt.Println("🔑 Restoring Infisical enclave identity...")
 	migrateLegacyAuth()
 	setupBindAuth()
 
@@ -205,15 +213,35 @@ func internalGhost() {
 		internalLogin()
 	}
 
-	fmt.Println("\n✅ TAZPOD GHOST MODE ACTIVE.")
-	bashCmd := exec.Command("bash")
-	bashCmd.Stdin, bashCmd.Stdout, bashCmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	bashCmd.SysProcAttr = &syscall.SysProcAttr{ Credential: &syscall.Credential{Uid: uint32(TazPodUID), Gid: uint32(TazPodGID)} }
+	// Final verification of environment
+	fmt.Println("📂 Secrets directory is now accessible.")
+	if _, err := os.Stat(filepath.Join(InfisicalLocalHome, "infisical-config.json")); err == nil {
+		fmt.Println("✅ Infisical session restored successfully.")
+	}
+
+	fmt.Println("\n✨ TAZPOD GHOST MODE ACTIVE.")
 	
 	newEnv := os.Environ()
 	newEnv = append(newEnv, GhostEnvVar+"=true", "USER=tazpod", "HOME=/home/tazpod", "INFISICAL_VAULT_BACKEND=file")
 	if cfg.Features.Debug { newEnv = append(newEnv, DebugEnvVar+"=true") }
 	
+	// Load and log environment from secrets.yml mapping
+	if len(secCfg.Secrets) > 0 {
+		fmt.Println("📦 Loading environment secrets...")
+		for _, s := range secCfg.Secrets {
+			if s.Env != "" {
+				target := filepath.Join(MountPath, s.File)
+				if _, err := os.Stat(target); err == nil {
+					fmt.Printf("  ✅ Setting %s -> %s\n", s.Env, s.File)
+					newEnv = append(newEnv, fmt.Sprintf("%s=%s", s.Env, target))
+				} else {
+					fmt.Printf("  ⚠️  Skipping %s (File %s not found)\n", s.Env, s.File)
+				}
+			}
+		}
+	}
+
+	// Clean and inject environment from .env-infisical
 	if data, err := os.ReadFile(EnvFile); err == nil {
 		lines := strings.Split(string(data), "\n")
 		for _, line := range lines {
@@ -224,6 +252,10 @@ func internalGhost() {
 			}
 		}
 	}
+
+	bashCmd := exec.Command("bash")
+	bashCmd.Stdin, bashCmd.Stdout, bashCmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	bashCmd.SysProcAttr = &syscall.SysProcAttr{ Credential: &syscall.Credential{Uid: uint32(TazPodUID), Gid: uint32(TazPodGID)} }
 	bashCmd.Env = newEnv; bashCmd.Run()
 
 	logDebug("Locking Ghost Enclave...")
@@ -305,12 +337,19 @@ func syncSecrets() {
 }
 
 func printEnv() {
-	fmt.Printf("export INFISICAL_VAULT_BACKEND='file'\n")
+	// Security check: Never print secrets directly to a terminal (TTY)
+	if term.IsTerminal(int(os.Stdout.Fd())) {
+		fmt.Fprintln(os.Stderr, "❌ Security Error: Secrets cannot be printed directly to the terminal.")
+		fmt.Fprintln(os.Stderr, "   Use 'tazpod env' to load them into your shell session.")
+		os.Exit(1)
+	}
+
 	if data, err := os.ReadFile(EnvFile); err == nil { fmt.Print(string(data)) }
 	for _, s := range secCfg.Secrets {
 		if s.Env != "" {
 			target := filepath.Join(MountPath, s.File)
 			if _, err := os.Stat(target); err == nil {
+				// FIX: Missing '=' sign restored
 				fmt.Printf("export %s='%s'\n", s.Env, target)
 			} else { fmt.Printf("unset %s\n", s.Env) }
 		}

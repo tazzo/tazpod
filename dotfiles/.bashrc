@@ -51,8 +51,15 @@ alias lt="eza --tree --icons"
 alias l="eza -l --icons --git --no-user --no-time"
 alias cat="bat"
 
-# --- TAZPOD CORE (Smart Function v6.3) ---
+# --- TAZPOD CORE (Smart Function v6.4) ---
 tazpod() {
+    # Special case for 'env' to prevent leaking secrets to terminal
+    if [ "$1" == "env" ]; then
+        eval "$(/usr/local/bin/tazpod __internal_env 2>/dev/null)"
+        echo "🔄 Enclave environment variables refreshed."
+        return 0
+    fi
+
     /usr/local/bin/tazpod "$@";
     local res=$?;
     
@@ -65,7 +72,7 @@ tazpod() {
     # Inner Ghost Shell: Auto-reload env on sync/login/pull
     else
         if [ "$1" == "pull" ] || [ "$1" == "sync" ] || [ "$1" == "login" ]; then
-             eval "$(/usr/local/bin/tazpod env)";
+             eval "$(/usr/local/bin/tazpod __internal_env 2>/dev/null)"
              echo "🔄 Environment updated."
         fi
     fi;
@@ -74,7 +81,7 @@ tazpod() {
 
 # Auto-load secrets on startup if vault is open
 if [ -n "$TAZPOD_GHOST_MODE" ]; then
-    eval "$(/usr/local/bin/tazpod env 2>/dev/null)"
+    eval "$(/usr/local/bin/tazpod __internal_env 2>/dev/null)"
 fi
 
 # Enable Modern Prompts/Tools
