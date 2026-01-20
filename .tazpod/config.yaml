@@ -1,19 +1,18 @@
 # TazPod Configuration
 version: 1.0
 
-# Base Image (da Docker Hub o locale)
-image: "tazzo/tazlab.net:tazpod-base"
+# Base Image
+image: "tazzo/tazlab.net:tazpod-k8s"
 
 # Container Settings
 container_name: "tazpod-lab"
 user: "tazpod"
 
-# Build Settings (Opzionale: se presente, costruisce locale invece di pullare)
+# Build Settings (Builds K8s layer locally over the Infisical base)
 build:
-  dockerfile: ".tazpod/Dockerfile.infisical"
+  dockerfile: ".tazpod/Dockerfile.k8s"
   context: "."
 
 # Features
 features:
   ghost_mode: true
-  persistence: true
