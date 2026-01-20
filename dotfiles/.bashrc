@@ -51,34 +51,30 @@ alias lt="eza --tree --icons"
 alias l="eza -l --icons --git --no-user --no-time"
 alias cat="bat"
 
-# --- TAZPOD CORE (Smart Function) ---
+# --- TAZPOD CORE (Smart Function v6.3) ---
 tazpod() {
     /usr/local/bin/tazpod "$@";
     local res=$?;
     
-    # Logic for Host/Outer Shell (Exit on unlock/reinit)
+    # Outer Shell: Exit on unlock/reinit/pull(if vault was closed)
     if [ -z "$TAZPOD_GHOST_MODE" ]; then
-        if [ "$1" == "unlock" ] || [ "$1" == "reinit" ]; then
+        if [ "$1" == "unlock" ] || [ "$1" == "reinit" ] || [ "$1" == "pull" ]; then
             if [ $res -eq 0 ]; then exit 0; fi;
         fi;
     
-    # Logic for Ghost Shell (Reload Env on pull/sync/login)
+    # Inner Ghost Shell: Auto-reload env on sync/login/pull
     else
         if [ "$1" == "pull" ] || [ "$1" == "sync" ] || [ "$1" == "login" ]; then
-             if [ -f "$HOME/secrets/.env-infisical" ]; then
-                 set -a; source "$HOME/secrets/.env-infisical"; set +a;
-                 echo "🔄 Environment reloaded."
-             fi
+             eval "$(/usr/local/bin/tazpod env)";
+             echo "🔄 Environment updated."
         fi
     fi;
     return $res;
 }
 
 # Auto-load secrets on startup if vault is open
-if [ -n "$TAZPOD_GHOST_MODE" ] && [ -f "$HOME/secrets/.env-infisical" ]; then
-    set -a
-    source "$HOME/secrets/.env-infisical"
-    set +a
+if [ -n "$TAZPOD_GHOST_MODE" ]; then
+    eval "$(/usr/local/bin/tazpod env 2>/dev/null)"
 fi
 
 # Enable Modern Prompts/Tools
