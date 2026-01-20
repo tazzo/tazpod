@@ -8,7 +8,7 @@ image: "tazzo/tazlab.net:tazpod-k8s"
 container_name: "tazpod-lab"
 user: "tazpod"
 
-# Build Settings (Builds K8s layer locally over the Infisical base)
+# Build Settings
 build:
   dockerfile: ".tazpod/Dockerfile.k8s"
   context: "."
@@ -16,3 +16,4 @@ build:
 # Features
 features:
   ghost_mode: true
+  debug: true

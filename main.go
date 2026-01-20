@@ -20,6 +20,10 @@ type Config struct {
 	Image         string `yaml:"image"`
 	ContainerName string `yaml:"container_name"`
 	User          string `yaml:"user"`
+	Features      struct {
+		GhostMode bool `yaml:"ghost_mode"`
+		Debug     bool `yaml:"debug"`
+	} `yaml:"features"`
 }
 
 type SecretMapping struct {
@@ -42,14 +46,16 @@ const (
 	MapperName    = "tazpod_vault"
 	VaultSizeMB   = "512"
 	GhostEnvVar   = "TAZPOD_GHOST_MODE"
+	DebugEnvVar   = "TAZPOD_DEBUG"
 	TazPodUID     = 1000
 	TazPodGID     = 1000
 	ConfigPath    = ".tazpod/config.yaml"
 	SecretsYAML   = "/workspace/secrets.yml"
-	// NEW: Absolute path inside vault for auth
-	InfisicalVaultConfig = MountPath + "/.infisical-auth"
-	EnvFile              = MountPath + "/.env-infisical"
-	StayMarker           = "/tmp/.tazpod_stay"
+	EnvFile       = MountPath + "/.env-infisical"
+	
+	// FINAL AUTH LOCATION (Inside Vault)
+	InfisicalEnclaveDir = MountPath + "/.infisical-vault"
+	StayMarker          = "/tmp/.tazpod_stay"
 )
 
 var (
@@ -58,68 +64,64 @@ var (
 )
 
 func main() {
-	if len(os.Args) < 2 {
-		help()
-		os.Exit(1)
-	}
-
+	if len(os.Args) < 2 { help(); os.Exit(1) }
 	loadConfigs()
-
 	command := os.Args[1]
 
 	switch command {
-	case "up":
-		up()
-	case "down":
-		down()
-	case "enter", "ssh":
-		enter()
-	case "pull", "sync":
-		pull()
-	case "login":
-		login()
-	case "env":
-		printEnv()
-	case "reinit":
-		reinit()
-	case "internal-ghost":
-		internalGhost()
+	case "up": up()
+	case "down": down()
+	case "enter", "ssh": enter()
+	case "pull", "sync": pull()
+	case "login": login()
+	case "env": printEnv()
+	case "reinit": reinit()
+	case "internal-ghost": internalGhost()
 	default:
 		fmt.Printf("Unknown command: %s\n", command)
 		os.Exit(1)
 	}
 }
 
+// --- LOGGING ---
+
+func logDebug(format string, a ...interface{}) {
+	if cfg.Features.Debug || os.Getenv(DebugEnvVar) == "true" {
+		fmt.Printf("\033[1;30m[DEBUG] "+format+"\033[0m\n", a...)
+	}
+}
+
 func loadConfigs() {
 	cfg.Image = "tazzo/tazlab.net:tazpod-base"
-	cfg.ContainerName = "tazpod-lab"
-	cfg.User = "tazpod"
-
-	if data, err := os.ReadFile(ConfigPath); err == nil {
-		yaml.Unmarshal(data, &cfg)
-	}
-	if data, err := os.ReadFile(SecretsYAML); err == nil {
-		yaml.Unmarshal(data, &secCfg)
-	}
+	cfg.ContainerName = "tazpod-lab"; cfg.User = "tazpod"
+	if data, err := os.ReadFile(ConfigPath); err == nil { yaml.Unmarshal(data, &cfg) }
+	if data, err := os.ReadFile(SecretsYAML); err == nil { yaml.Unmarshal(data, &secCfg) }
 }
 
-func help() {
-	fmt.Println("TazPod CLI v7.0 - Stable Edition")
-}
+func help() { fmt.Println("TazPod CLI v8.4 - Native Enclave Persistence") }
 
-// --- SECURE INFISICAL WRAPPER ---
-// Redirects Infisical to use the vault for EVERYTHING (Config & Auth)
+// --- INFISICAL RUNNER ---
 
 func runInfisical(args ...string) ([]byte, error) {
 	cmd := exec.Command("infisical", args...)
-	// We point HOME to the vault for this command only
-	cmd.Env = append(os.Environ(), "HOME="+InfisicalVaultConfig, "INFISICAL_VAULT_BACKEND=file")
+	cmd.Env = append(os.Environ(), 
+		"INFISICAL_CONFIG_DIR="+InfisicalEnclaveDir,
+		"INFISICAL_VAULT_BACKEND=file",
+		"HOME=/home/tazpod",
+		"USER=tazpod",
+	)
+	logDebug("Exec: infisical %s", strings.Join(args, " "))
 	return cmd.CombinedOutput()
 }
 
 func runInfisicalInteractive(args ...string) error {
 	cmd := exec.Command("infisical", args...)
-	cmd.Env = append(os.Environ(), "HOME="+InfisicalVaultConfig, "INFISICAL_VAULT_BACKEND=file")
+	cmd.Env = append(os.Environ(), 
+		"INFISICAL_CONFIG_DIR="+InfisicalEnclaveDir,
+		"INFISICAL_VAULT_BACKEND=file",
+		"HOME=/home/tazpod",
+		"USER=tazpod",
+	)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	return cmd.Run()
 }
@@ -134,7 +136,7 @@ func pull() {
 		cmd.Run()
 		return
 	}
-	ensureAuth()
+	internalEnsureAuth()
 	syncSecrets()
 }
 
@@ -146,16 +148,21 @@ func login() {
 		cmd.Run()
 		return
 	}
-	fmt.Println("🔐 Starting Infisical Login (inside vault)...")
-	os.MkdirAll(InfisicalVaultConfig, 0755)
-	exec.Command("chown", "-R", "tazpod:tazpod", InfisicalVaultConfig).Run()
-	
+	internalLogin()
+}
+
+func internalLogin() {
+	fmt.Println("🔐 Infisical Login Sequence...")
+	os.MkdirAll(InfisicalEnclaveDir, 0755)
+	exec.Command("chown", "-R", "tazpod:tazpod", InfisicalEnclaveDir).Run()
+	runInfisical("vault", "set", "file")
 	runInfisicalInteractive("login")
 	runInfisicalInteractive("init")
 }
 
 func internalGhost() {
 	os.Setenv(GhostEnvVar, "true")
+	if cfg.Features.Debug { os.Setenv(DebugEnvVar, "true") }
 
 	requestedCmd := ""
 	if len(os.Args) > 2 { requestedCmd = os.Args[2] }
@@ -163,15 +170,17 @@ func internalGhost() {
 	passphrase := performUnlock()
 	mountVault(passphrase)
 	
-	// Ensure the config directory exists in the vault
-	os.MkdirAll(InfisicalVaultConfig, 0755)
-	exec.Command("chown", "-R", "tazpod:tazpod", InfisicalVaultConfig).Run()
+	// AUTO-MIGRATE LEGACY AUTH
+	migrateLegacyAuth()
+	
+os.MkdirAll(InfisicalEnclaveDir, 0755)
+	exec.Command("chown", "-R", "tazpod:tazpod", InfisicalEnclaveDir).Run()
 
 	if requestedCmd == "pull" {
-		ensureAuth()
+		internalEnsureAuth()
 		syncSecrets()
 	} else if requestedCmd == "login" {
-		login()
+		internalLogin()
 	}
 
 	fmt.Println("\n✅ TAZPOD GHOST MODE ACTIVE.")
@@ -180,27 +189,26 @@ func internalGhost() {
 	bashCmd.SysProcAttr = &syscall.SysProcAttr{ Credential: &syscall.Credential{Uid: uint32(TazPodUID), Gid: uint32(TazPodGID)} }
 	
 	newEnv := os.Environ()
-	newEnv = append(newEnv, GhostEnvVar+"=true", "USER=tazpod", "HOME=/home/tazpod")
-	// NEW: Tell the shell to use the vault for Infisical too
-	newEnv = append(newEnv, "INFISICAL_HOME="+InfisicalVaultConfig)
+	newEnv = append(newEnv, 
+		GhostEnvVar+"=true", 
+		"USER=tazpod", 
+		"HOME=/home/tazpod",
+		"INFISICAL_CONFIG_DIR="+InfisicalEnclaveDir,
+		"INFISICAL_VAULT_BACKEND=file",
+	)
+	if cfg.Features.Debug { newEnv = append(newEnv, DebugEnvVar+"=true") }
 	
-	// Load Env
 	if data, err := os.ReadFile(EnvFile); err == nil {
 		lines := strings.Split(string(data), "\n")
 		for _, line := range lines {
 			line = strings.TrimSpace(line)
 			if strings.HasPrefix(line, "export ") {
-				kv := strings.TrimPrefix(line, "export ")
-				parts := strings.SplitN(kv, "=", 2)
-				if len(parts) == 2 {
-					val := strings.Trim(parts[1], "'\"")
-					newEnv = append(newEnv, fmt.Sprintf("%s=%s", parts[0], val))
-				}
+				kv := strings.TrimPrefix(line, "export "); parts := strings.SplitN(kv, "=", 2)
+				if len(parts) == 2 { newEnv = append(newEnv, fmt.Sprintf("%s=%s", parts[0], strings.Trim(parts[1], "'\""))) }
 			}
 		}
 	}
-	bashCmd.Env = newEnv
-	bashCmd.Run()
+	bashCmd.Env = newEnv; bashCmd.Run()
 
 	fmt.Println("\n🔒 Locking Ghost Enclave...")
 	exec.Command("umount", "-l", MountPath).Run()
@@ -208,82 +216,89 @@ func internalGhost() {
 	exec.Command("bash", "-c", "losetup -a | grep 'vault.img' | cut -d: -f1 | xargs -r sudo losetup -d").Run()
 }
 
+func migrateLegacyAuth() {
+	legacyPaths := []string{
+		MountPath + "/.infisical-storage",
+		MountPath + "/.infisical-auth",
+		MountPath + "/.auth-infisical",
+	}
+	for _, old := range legacyPaths {
+		if _, err := os.Stat(old); err == nil {
+			logDebug("Migrating legacy session from %s...", old)
+			if _, errDir := os.Stat(InfisicalEnclaveDir); os.IsNotExist(errDir) {
+				exec.Command("mv", old, InfisicalEnclaveDir).Run()
+			} else {
+				exec.Command("rm", "-rf", old).Run()
+			}
+		}
+	}
+}
+
 func syncSecrets() {
 	fmt.Println("📦 Syncing secrets...")
 	pID := secCfg.Config.ProjectID
-	
 	args := []string{"export", "--format=dotenv", "--silent"}
 	if pID != "" { args = append(args, "--projectId", pID) }
 	args = append(args, "--env", "dev")
 
 	out, err := runInfisical(args...)
 	if err == nil && len(out) > 0 {
-		os.WriteFile(EnvFile, out, 0600)
-		os.Chown(EnvFile, TazPodUID, TazPodGID)
-		fmt.Println("✅ .env-infisical updated.")
+		os.WriteFile(EnvFile, out, 0600); os.Chown(EnvFile, TazPodUID, TazPodGID)
+		logDebug("Env file updated in vault.")
 	}
 
 	for _, s := range secCfg.Secrets {
 		target := filepath.Join(MountPath, s.File)
-		fmt.Printf("⬇️  Pulling [%s] -> [%s]... ", s.Name, s.File)
+		fmt.Printf("⬇️  Pulling [%s] -> [%s]... ", s.Name, s.File) 
 		cmdArgs := []string{"secrets", "get", s.Name, "--plain"}
 		if pID != "" { cmdArgs = append(cmdArgs, "--projectId", pID) }
 		cmdArgs = append(cmdArgs, "--env", "dev")
 
 		val, err := runInfisical(cmdArgs...)
 		if err == nil && len(strings.TrimSpace(string(val))) > 0 {
-			os.WriteFile(target, val, 0600)
-			os.Chown(target, TazPodUID, TazPodGID)
+			os.WriteFile(target, val, 0600); os.Chown(target, TazPodUID, TazPodGID)
 			fmt.Println("✅ OK")
 		} else {
-			if _, err := os.Stat(target); err == nil {
-				fmt.Println("⚠️  KEEPING LOCAL COPY")
-			} else {
-				fmt.Println("❌ FAILED")
-			}
+			if _, err := os.Stat(target); err == nil { fmt.Println("⚠️  KEEPING LOCAL COPY") } else { fmt.Println("❌ FAILED") }
 		}
 	}
 }
 
 func printEnv() {
-	// Point shell's Infisical to the vault auth dir
+	fmt.Printf("export INFISICAL_CONFIG_DIR='%s'\n", InfisicalEnclaveDir)
 	fmt.Printf("export INFISICAL_VAULT_BACKEND='file'\n")
-	
-	if data, err := os.ReadFile(EnvFile); err == nil {
-		fmt.Print(string(data))
-	}
+	if data, err := os.ReadFile(EnvFile); err == nil { fmt.Print(string(data)) }
 	for _, s := range secCfg.Secrets {
 		if s.Env != "" {
 			target := filepath.Join(MountPath, s.File)
 			if _, err := os.Stat(target); err == nil {
 				fmt.Printf("export %s='%s'\n", s.Env, target)
-			} else {
-				fmt.Printf("unset %s\n", s.Env)
-			}
+			} else { fmt.Printf("unset %s\n", s.Env) }
 		}
 	}
 }
 
-// --- HELPERS ---
-
-func ensureAuth() {
-	// Check auth using our vault-redirected runner
-	if _, err := runInfisical("whoami"); err != nil {
-		fmt.Println("🔑 Infisical session missing in vault.")
-		login()
+func internalEnsureAuth() {
+	configPath := filepath.Join(InfisicalEnclaveDir, "infisical-config.json")
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		fmt.Println("🔑 Infisical session missing in enclave."); internalLogin(); return
+	}
+	pID := secCfg.Config.ProjectID
+	args := []string{"secrets", "--env", "dev", "--silent"}
+	if pID != "" { args = append(args, "--projectId", pID) }
+	if out, err := runInfisical(args...); err != nil {
+		logDebug("Auth Test Failed: %s", string(out))
+		fmt.Println("🔑 Infisical session invalid or expired."); internalLogin()
 	}
 }
 
-func mountVault(passphrase string) {
-	ensureNodes()
-	cleanupMappers()
-	exec.Command("bash", "-c", "losetup -a | grep 'vault.img' | cut -d: -f1 | xargs -r sudo losetup -d").Run()
+// --- SYSTEM HELPERS ---
 
+func mountVault(passphrase string) {
+	ensureNodes(); cleanupMappers()
+	exec.Command("bash", "-c", "losetup -a | grep 'vault.img' | cut -d: -f1 | xargs -r sudo losetup -d").Run()
 	isNew := false
-	if !fileExist(VaultPath) {
-		isNew = true
-		runCmd("dd", "if=/dev/zero", "of="+VaultPath, "bs=1M", "count="+VaultSizeMB, "status=none")
-	}
+	if !fileExist(VaultPath) { isNew = true; runCmd("dd", "if=/dev/zero", "of="+VaultPath, "bs=1M", "count="+VaultSizeMB, "status=none") }
 	loopDev := runOutput("losetup", "-f", "--show", VaultPath)
 	if isNew { runWithStdin(passphrase, "cryptsetup", "luksFormat", "--batch-mode", "--key-file", "-", loopDev) }
 	if _, err := runWithStdin(passphrase, "cryptsetup", "open", "--key-file", "-", loopDev, MapperName); err != nil { os.Exit(1) }
@@ -299,13 +314,11 @@ func performUnlock() string {
 	var passphrase string
 	if !fileExist(VaultPath) {
 		fmt.Println("🆕 Creating new vault..."); for {
-			fmt.Print("📝 Passphrase: "); p1, _ := term.ReadPassword(int(syscall.Stdin)); fmt.Println()
+			fmt.Print("📝 Define Passphrase: "); p1, _ := term.ReadPassword(int(syscall.Stdin)); fmt.Println()
 			fmt.Print("📝 Confirm: "); p2, _ := term.ReadPassword(int(syscall.Stdin)); fmt.Println()
 			if string(p1) == string(p2) && len(p1) > 0 { passphrase = string(p1); break }
 		}
-	} else {
-		fmt.Print("🔑 Enter Passphrase: "); p, _ := term.ReadPassword(int(syscall.Stdin)); fmt.Println(); passphrase = string(p)
-	}
+	} else { fmt.Print("🔑 Enter Passphrase: "); p, _ := term.ReadPassword(int(syscall.Stdin)); fmt.Println(); passphrase = string(p) }
 	return passphrase
 }
 
@@ -319,15 +332,14 @@ func cleanupMappers() {
 func reinit() {
 	if os.Getenv(GhostEnvVar) == "true" { fmt.Println("❌ Exit Ghost Mode first."); os.Exit(1) }
 	fmt.Print("⚠️  WIPE VAULT? (y/N): "); var c string; fmt.Scanln(&c)
-	if strings.ToLower(c) == "y" { os.Remove(VaultPath); fmt.Println("🗑️  Vault deleted.") }
+	if strings.ToLower(c) == "y" { os.Remove(VaultPath); pull() }
 }
 
 func runCmd(name string, args ...string) { cmd := exec.Command(name, args...); cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr; cmd.Run() }
 func runOutput(name string, args ...string) string { out, _ := exec.Command(name, args...).Output(); return strings.TrimSpace(string(out)) }
 func runWithStdin(input, name string, args ...string) (string, error) {
-	cmd := exec.Command(name, args...); cmd.Stdin = bytes.NewBufferString(input)
-	var out, stderr bytes.Buffer; cmd.Stdout, cmd.Stderr = &out, &stderr
-	err := cmd.Run(); return out.String(), err
+	cmd := exec.Command(name, args...); cmd.Stdin = bytes.NewBufferString(input); var out, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &stderr; err := cmd.Run(); return out.String(), err
 }
 func fileExist(path string) bool { _, err := os.Stat(path); return err == nil }
 func ensureNodes() {
