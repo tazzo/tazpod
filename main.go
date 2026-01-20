@@ -53,9 +53,14 @@ const (
 	SecretsYAML   = "/workspace/secrets.yml"
 	EnvFile       = MountPath + "/.env-infisical"
 	
-	// FINAL AUTH LOCATION (Inside Vault)
-	InfisicalEnclaveDir = MountPath + "/.infisical-vault"
-	StayMarker          = "/tmp/.tazpod_stay"
+	// PERSISTENCE PATHS
+	InfisicalLocalHome    = "/home/tazpod/.infisical"
+	InfisicalKeyringLocal = "/home/tazpod/infisical-keyring"
+	
+	InfisicalVaultDir     = MountPath + "/.infisical-vault"
+	InfisicalKeyringVault = MountPath + "/.infisical-keyring"
+	
+	StayMarker = "/tmp/.tazpod_stay"
 )
 
 var (
@@ -75,6 +80,7 @@ func main() {
 	case "pull", "sync": pull()
 	case "login": login()
 	case "env": printEnv()
+	case "unlock": unlock()
 	case "reinit": reinit()
 	case "internal-ghost": internalGhost()
 	default:
@@ -98,29 +104,41 @@ func loadConfigs() {
 	if data, err := os.ReadFile(SecretsYAML); err == nil { yaml.Unmarshal(data, &secCfg) }
 }
 
-func help() { fmt.Println("TazPod CLI v8.4 - Native Enclave Persistence") }
+func help() { fmt.Println("TazPod CLI v8.9.3 - Fixed Validation") }
 
 // --- INFISICAL RUNNER ---
 
 func runInfisical(args ...string) ([]byte, error) {
-	cmd := exec.Command("infisical", args...)
+	var cmd *exec.Cmd
+	if os.Geteuid() == 0 {
+		fullArgs := append([]string{"-u", "tazpod", "infisical"}, args...)
+		cmd = exec.Command("sudo", fullArgs...)
+	} else {
+		cmd = exec.Command("infisical", args...)
+	}
+	
 	cmd.Env = append(os.Environ(), 
-		"INFISICAL_CONFIG_DIR="+InfisicalEnclaveDir,
-		"INFISICAL_VAULT_BACKEND=file",
 		"HOME=/home/tazpod",
 		"USER=tazpod",
+		"INFISICAL_VAULT_BACKEND=file",
 	)
-	logDebug("Exec: infisical %s", strings.Join(args, " "))
+	logDebug("Running: infisical %s", strings.Join(args, " "))
 	return cmd.CombinedOutput()
 }
 
 func runInfisicalInteractive(args ...string) error {
-	cmd := exec.Command("infisical", args...)
+	var cmd *exec.Cmd
+	if os.Geteuid() == 0 {
+		fullArgs := append([]string{"-u", "tazpod", "infisical"}, args...)
+		cmd = exec.Command("sudo", fullArgs...)
+	} else {
+		cmd = exec.Command("infisical", args...)
+	}
+	
 	cmd.Env = append(os.Environ(), 
-		"INFISICAL_CONFIG_DIR="+InfisicalEnclaveDir,
-		"INFISICAL_VAULT_BACKEND=file",
 		"HOME=/home/tazpod",
 		"USER=tazpod",
+		"INFISICAL_VAULT_BACKEND=file",
 	)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	return cmd.Run()
@@ -136,8 +154,15 @@ func pull() {
 		cmd.Run()
 		return
 	}
-	internalEnsureAuth()
-	syncSecrets()
+	internalEnsureAuth(); syncSecrets()
+}
+
+func unlock() {
+	if os.Getenv(GhostEnvVar) == "true" { fmt.Println("✅ Already in Ghost Mode."); return }
+	fmt.Println("👻 Entering Ghost Mode...")
+	cmd := exec.Command("sudo", "unshare", "--mount", "--propagation", "private", "/usr/local/bin/tazpod", "internal-ghost")
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	cmd.Run()
 }
 
 func login() {
@@ -153,11 +178,12 @@ func login() {
 
 func internalLogin() {
 	fmt.Println("🔐 Infisical Login Sequence...")
-	os.MkdirAll(InfisicalEnclaveDir, 0755)
-	exec.Command("chown", "-R", "tazpod:tazpod", InfisicalEnclaveDir).Run()
+	setupBindAuth()
 	runInfisical("vault", "set", "file")
 	runInfisicalInteractive("login")
-	runInfisicalInteractive("init")
+	if _, err := os.Stat("/workspace/.infisical.json"); os.IsNotExist(err) {
+		runInfisicalInteractive("init")
+	}
 }
 
 func internalGhost() {
@@ -170,15 +196,11 @@ func internalGhost() {
 	passphrase := performUnlock()
 	mountVault(passphrase)
 	
-	// AUTO-MIGRATE LEGACY AUTH
 	migrateLegacyAuth()
-	
-os.MkdirAll(InfisicalEnclaveDir, 0755)
-	exec.Command("chown", "-R", "tazpod:tazpod", InfisicalEnclaveDir).Run()
+	setupBindAuth()
 
 	if requestedCmd == "pull" {
-		internalEnsureAuth()
-		syncSecrets()
+		internalEnsureAuth(); syncSecrets()
 	} else if requestedCmd == "login" {
 		internalLogin()
 	}
@@ -189,13 +211,7 @@ os.MkdirAll(InfisicalEnclaveDir, 0755)
 	bashCmd.SysProcAttr = &syscall.SysProcAttr{ Credential: &syscall.Credential{Uid: uint32(TazPodUID), Gid: uint32(TazPodGID)} }
 	
 	newEnv := os.Environ()
-	newEnv = append(newEnv, 
-		GhostEnvVar+"=true", 
-		"USER=tazpod", 
-		"HOME=/home/tazpod",
-		"INFISICAL_CONFIG_DIR="+InfisicalEnclaveDir,
-		"INFISICAL_VAULT_BACKEND=file",
-	)
+	newEnv = append(newEnv, GhostEnvVar+"=true", "USER=tazpod", "HOME=/home/tazpod", "INFISICAL_VAULT_BACKEND=file")
 	if cfg.Features.Debug { newEnv = append(newEnv, DebugEnvVar+"=true") }
 	
 	if data, err := os.ReadFile(EnvFile); err == nil {
@@ -204,16 +220,17 @@ os.MkdirAll(InfisicalEnclaveDir, 0755)
 			line = strings.TrimSpace(line)
 			if strings.HasPrefix(line, "export ") {
 				kv := strings.TrimPrefix(line, "export "); parts := strings.SplitN(kv, "=", 2)
-				if len(parts) == 2 { newEnv = append(newEnv, fmt.Sprintf("%s=%s", parts[0], strings.Trim(parts[1], "'\""))) }
+				if len(parts) == 2 { newEnv = append(newEnv, fmt.Sprintf("%s=%s", parts[0], strings.Trim(parts[1], "'\"")))}
 			}
 		}
 	}
 	bashCmd.Env = newEnv; bashCmd.Run()
 
-	fmt.Println("\n🔒 Locking Ghost Enclave...")
+	logDebug("Locking Ghost Enclave...")
+	exec.Command("umount", "-l", InfisicalKeyringLocal).Run()
+	exec.Command("umount", "-l", InfisicalLocalHome).Run()
 	exec.Command("umount", "-l", MountPath).Run()
 	cleanupMappers()
-	exec.Command("bash", "-c", "losetup -a | grep 'vault.img' | cut -d: -f1 | xargs -r sudo losetup -d").Run()
 }
 
 func migrateLegacyAuth() {
@@ -223,15 +240,38 @@ func migrateLegacyAuth() {
 		MountPath + "/.auth-infisical",
 	}
 	for _, old := range legacyPaths {
+		if old == InfisicalVaultDir { continue }
 		if _, err := os.Stat(old); err == nil {
 			logDebug("Migrating legacy session from %s...", old)
-			if _, errDir := os.Stat(InfisicalEnclaveDir); os.IsNotExist(errDir) {
-				exec.Command("mv", old, InfisicalEnclaveDir).Run()
+			if _, errDir := os.Stat(InfisicalVaultDir); os.IsNotExist(errDir) {
+				exec.Command("mv", old, InfisicalVaultDir).Run()
 			} else {
 				exec.Command("rm", "-rf", old).Run()
 			}
 		}
 	}
+}
+
+func setupBindAuth() {
+	bridge(InfisicalLocalHome, InfisicalVaultDir)
+	bridge(InfisicalKeyringLocal, InfisicalKeyringVault)
+}
+
+func bridge(local, vault string) {
+	out, _ := exec.Command("mount").Output()
+	if strings.Contains(string(out), local) {
+		logDebug("Bind mount already active at %s", local)
+		return
+	}
+	logDebug("Bridging: %s -> %s", vault, local)
+	os.MkdirAll(vault, 0755)
+	exec.Command("chown", "-R", "tazpod:tazpod", vault).Run()
+	exec.Command("rm", "-rf", local).Run()
+	os.MkdirAll(local, 0755)
+	if err := exec.Command("mount", "--bind", vault, local).Run(); err != nil {
+		logDebug("Mount bind failed for %s: %v", local, err)
+	}
+	exec.Command("chown", "-R", "tazpod:tazpod", local).Run()
 }
 
 func syncSecrets() {
@@ -244,12 +284,12 @@ func syncSecrets() {
 	out, err := runInfisical(args...)
 	if err == nil && len(out) > 0 {
 		os.WriteFile(EnvFile, out, 0600); os.Chown(EnvFile, TazPodUID, TazPodGID)
-		logDebug("Env file updated in vault.")
+		logDebug("Env file updated.")
 	}
 
 	for _, s := range secCfg.Secrets {
 		target := filepath.Join(MountPath, s.File)
-		fmt.Printf("⬇️  Pulling [%s] -> [%s]... ", s.Name, s.File) 
+		fmt.Printf("⬇️  Pulling [%s] -> [%s]... ", s.Name, s.File)
 		cmdArgs := []string{"secrets", "get", s.Name, "--plain"}
 		if pID != "" { cmdArgs = append(cmdArgs, "--projectId", pID) }
 		cmdArgs = append(cmdArgs, "--env", "dev")
@@ -265,7 +305,6 @@ func syncSecrets() {
 }
 
 func printEnv() {
-	fmt.Printf("export INFISICAL_CONFIG_DIR='%s'\n", InfisicalEnclaveDir)
 	fmt.Printf("export INFISICAL_VAULT_BACKEND='file'\n")
 	if data, err := os.ReadFile(EnvFile); err == nil { fmt.Print(string(data)) }
 	for _, s := range secCfg.Secrets {
@@ -279,16 +318,22 @@ func printEnv() {
 }
 
 func internalEnsureAuth() {
-	configPath := filepath.Join(InfisicalEnclaveDir, "infisical-config.json")
+	configPath := filepath.Join(InfisicalLocalHome, "infisical-config.json")
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		logDebug("Auth config NOT found at %s", configPath)
 		fmt.Println("🔑 Infisical session missing in enclave."); internalLogin(); return
 	}
+	
 	pID := secCfg.Config.ProjectID
+	// SAFE VALIDATION: No forbidden flags
 	args := []string{"secrets", "--env", "dev", "--silent"}
 	if pID != "" { args = append(args, "--projectId", pID) }
+	
 	if out, err := runInfisical(args...); err != nil {
 		logDebug("Auth Test Failed: %s", string(out))
 		fmt.Println("🔑 Infisical session invalid or expired."); internalLogin()
+	} else {
+		logDebug("Auth Test Successful.")
 	}
 }
 
@@ -296,21 +341,34 @@ func internalEnsureAuth() {
 
 func mountVault(passphrase string) {
 	ensureNodes(); cleanupMappers()
-	exec.Command("bash", "-c", "losetup -a | grep 'vault.img' | cut -d: -f1 | xargs -r sudo losetup -d").Run()
 	isNew := false
 	if !fileExist(VaultPath) { isNew = true; runCmd("dd", "if=/dev/zero", "of="+VaultPath, "bs=1M", "count="+VaultSizeMB, "status=none") }
 	loopDev := runOutput("losetup", "-f", "--show", VaultPath)
 	if isNew { runWithStdin(passphrase, "cryptsetup", "luksFormat", "--batch-mode", "--key-file", "-", loopDev) }
-	if _, err := runWithStdin(passphrase, "cryptsetup", "open", "--key-file", "-", loopDev, MapperName); err != nil { os.Exit(1) }
+	
+	if _, err := os.Stat("/dev/mapper/" + MapperName); os.IsNotExist(err) {
+		if _, err := runWithStdin(passphrase, "cryptsetup", "open", "--key-file", "-", loopDev, MapperName); err != nil {
+			fmt.Println("❌ Decryption failed."); os.Exit(1)
+		}
+	}
 	exec.Command("dmsetup", "mknodes").Run()
 	waitForDevice("/dev/mapper/" + MapperName)
 	if isNew { runCmd("mkfs.ext4", "-q", "/dev/mapper/"+MapperName) }
-	os.MkdirAll(MountPath, 0755)
-	exec.Command("mount", "-o", "rw", "-t", "ext4", "/dev/mapper/"+MapperName, MountPath).Run()
+	
+	if !isMounted(MountPath) {
+		os.MkdirAll(MountPath, 0755)
+		exec.Command("mount", "-o", "rw", "-t", "ext4", "/dev/mapper/"+MapperName, MountPath).Run()
+	}
 	exec.Command("chown", "-R", "tazpod:tazpod", MountPath).Run()
 }
 
+func isMounted(path string) bool {
+	data, _ := os.ReadFile("/proc/mounts")
+	return strings.Contains(string(data), path)
+}
+
 func performUnlock() string {
+	if isMounted(MountPath) { return "" }
 	var passphrase string
 	if !fileExist(VaultPath) {
 		fmt.Println("🆕 Creating new vault..."); for {
@@ -318,7 +376,9 @@ func performUnlock() string {
 			fmt.Print("📝 Confirm: "); p2, _ := term.ReadPassword(int(syscall.Stdin)); fmt.Println()
 			if string(p1) == string(p2) && len(p1) > 0 { passphrase = string(p1); break }
 		}
-	} else { fmt.Print("🔑 Enter Passphrase: "); p, _ := term.ReadPassword(int(syscall.Stdin)); fmt.Println(); passphrase = string(p) }
+	} else {
+		fmt.Print("🔑 Enter Passphrase: "); p, _ := term.ReadPassword(int(syscall.Stdin)); fmt.Println(); passphrase = string(p)
+	}
 	return passphrase
 }
 
@@ -338,6 +398,7 @@ func reinit() {
 func runCmd(name string, args ...string) { cmd := exec.Command(name, args...); cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr; cmd.Run() }
 func runOutput(name string, args ...string) string { out, _ := exec.Command(name, args...).Output(); return strings.TrimSpace(string(out)) }
 func runWithStdin(input, name string, args ...string) (string, error) {
+	if input == "" { return "", nil }
 	cmd := exec.Command(name, args...); cmd.Stdin = bytes.NewBufferString(input); var out, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &stderr; err := cmd.Run(); return out.String(), err
 }
@@ -345,6 +406,7 @@ func fileExist(path string) bool { _, err := os.Stat(path); return err == nil }
 func ensureNodes() {
 	exec.Command("sudo", "mknod", "/dev/loop-control", "c", "10", "237").Run()
 	for i := 0; i < 64; i++ { exec.Command("sudo", "mknod", fmt.Sprintf("/dev/loop%d", i), "b", "7", fmt.Sprintf("%d", i)).Run() }
+	exec.Command("sudo", "dmsetup", "mknodes").Run()
 }
 func waitForDevice(path string) { for i:=0; i<20; i++ { if fileExist(path) { return }; time.Sleep(200*time.Millisecond) } }
 func up() {
