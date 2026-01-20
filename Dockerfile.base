@@ -1,0 +1,84 @@
+FROM ubuntu:24.04
+
+# --- TAZPOD v4.3 (UBUNTU NOBLE - POWER TOOLS) ---
+ENV DEBIAN_FRONTEND=noninteractive
+ENV LANG=en_US.UTF-8
+
+# 1. System Essentials & Security
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates sudo curl wget git build-essential unzip \
+    cryptsetup-bin e2fsprogs dmsetup procps psmisc \
+    gnupg locales ncurses-term x11-xserver-utils \
+    bat ripgrep fzf mc fd-find \
+    python3 python3-pip python3-venv \
+    xclip xsel jq ffmpeg 7zip poppler-utils ffmpegthumbnailer imagemagick chafa && \
+    locale-gen en_US.UTF-8 && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Fix per 'bat' e 'fd'
+RUN ln -sf /usr/bin/batcat /usr/local/bin/bat && \
+    ln -sf /usr/bin/fdfind /usr/local/bin/fd
+
+# 2. Tree-sitter CLI (LATEST - Now compatible with Ubuntu 24.04)
+RUN curl -LO https://github.com/tree-sitter/tree-sitter/releases/latest/download/tree-sitter-linux-x64.gz && \
+    gunzip tree-sitter-linux-x64.gz && \
+    chmod +x tree-sitter-linux-x64 && \
+    mv tree-sitter-linux-x64 /usr/local/bin/tree-sitter
+
+# 3. YQ (Latest official binary)
+RUN YQ_VERSION=$(curl -s "https://api.github.com/repos/mikefarah/yq/releases/latest" | grep '"tag_name":' | sed -E 's/.*"v([^\"]+)".*/\1/') && \
+    curl -Lo /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64" && \
+    chmod +x /usr/local/bin/yq
+
+# 4. Neovim Stable (Official Binary v0.10+)
+RUN curl -LO https://github.com/neovim/neovim/releases/latest/download/nvim-linux-x86_64.tar.gz && \
+    rm -rf /opt/nvim && tar -C /opt -xzf nvim-linux-x86_64.tar.gz && \
+    ln -sf /opt/nvim-linux-x86_64/bin/nvim /usr/local/bin/nvim && \
+    rm nvim-linux-x86_64.tar.gz
+
+# 5. Lazygit (Latest Stable)
+RUN LAZYGIT_VERSION=$(curl -s "https://api.github.com/repos/jesseduffield/lazygit/releases/latest" | grep '"tag_name":' | sed -E 's/.*"v([^\"]+)".*/\1/') && \
+    curl -Lo lazygit.tar.gz "https://github.com/jesseduffield/lazygit/releases/latest/download/lazygit_${LAZYGIT_VERSION}_Linux_x86_64.tar.gz" && \
+    tar xf lazygit.tar.gz lazygit && \
+    install lazygit /usr/local/bin && \
+    rm lazygit.tar.gz lazygit
+
+# 6. User Setup (tazpod)
+RUN if id -u 1000 >/dev/null 2>&1; then userdel -r $(id -un 1000); fi && \
+    useradd -m -s /bin/bash -u 1000 tazpod && \
+    echo "tazpod ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/tazpod
+
+USER tazpod
+WORKDIR /home/tazpod
+
+# 7. Node.js via NVM
+ENV NVM_DIR="/home/tazpod/.nvm"
+RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash && \
+    . $NVM_DIR/nvm.sh && \
+    nvm install --lts
+
+# 8. Shell Tools: Starship, Zoxide, Zellij, Tmux, Eza
+RUN curl -sS https://starship.rs/install.sh | sh -s -- -y && \
+    curl -sS https://webinstall.dev/zoxide | bash && \
+    ZELLIJ_VERSION=$(curl -s "https://api.github.com/repos/zellij-org/zellij/releases/latest" | grep '"tag_name":' | sed -E 's/.*"v([^\"]+)".*/\1/') && \
+    curl -Lo zellij.tar.gz "https://github.com/zellij-org/zellij/releases/latest/download/zellij-x86_64-unknown-linux-musl.tar.gz" && \
+    tar xf zellij.tar.gz && \
+    sudo install zellij /usr/local/bin && \
+    rm zellij.tar.gz && \
+    sudo mkdir -p /etc/apt/keyrings && \
+    wget -qO- https://raw.githubusercontent.com/eza-community/eza/main/deb.asc | sudo gpg --dearmor -o /etc/apt/keyrings/gierens.gpg && \
+    echo "deb [signed-by=/etc/apt/keyrings/gierens.gpg] http://deb.gierens.de stable main" | sudo tee /etc/apt/sources.list.d/gierens.list && \
+    sudo apt-get update && sudo apt-get install -y eza tmux && \
+    git clone https://github.com/tmux-plugins/tpm /home/tazpod/.tmux/plugins/tpm
+
+# 9. Inject TazPod CLI & Dotfiles
+COPY --chown=tazpod:tazpod tazpod /usr/local/bin/tazpod
+RUN sudo chmod +x /usr/local/bin/tazpod
+
+COPY --chown=tazpod:tazpod dotfiles/ /home/tazpod/
+
+# 10. Final Setup & Headless Plugin Sync
+RUN sudo chown -R tazpod:tazpod /home/tazpod && \
+    sudo ln -sf /home/tazpod/.nvm/versions/node/*/bin/node /usr/local/bin/node && \
+    sudo ln -sf /home/tazpod/.nvm/versions/node/*/bin/npm /usr/local/bin/npm && \
+    nvim --headless "+Lazy! sync" +qa || echo "Initial sync done"
