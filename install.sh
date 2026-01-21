@@ -1,43 +1,55 @@
 #!/bin/bash
-# --- TAZPOD INSTALLER ---
+# --- TAZPOD UNIVERSAL INSTALLER ---
 set -e
+
+# Configuration
+REPO="tazzo/tazpod"
+INSTALL_DIR="$HOME/.local/bin"
 
 # Colors
 BLUE='\033[0;34m'
 GREEN='\033[0;32m'
+RED='\033[0;31m'
 RESET='\033[0m'
 
-echo -e "${BLUE}🛡️ Starting TazPod Installation...${RESET}"
+echo -e "${BLUE}🛡️  TazPod Installer starting...${RESET}"
 
-# 1. Determine OS and Arch
+# 1. Detect OS and Architecture
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m)
-INSTALL_DIR="$HOME/.local/bin"
 
-# 2. Ensure Install Dir exists
-mkdir -p "$INSTALL_DIR"
-
-# 3. Download (Simulated for now, would point to GitHub Releases)
-# In our local lab, we just copy the compiled binary if we are in the repo
-if [ -f "./tazpod" ]; then
-    echo "📦 Local binary found, installing..."
-    cp ./tazpod "$INSTALL_DIR/tazpod"
-else
-    echo "☁️ Binary not found locally. (In production, I would download from GitHub here)"
-    # Example: curl -L https://github.com/tazzo/tazpod/releases/latest/download/tazpod-$OS-$ARCH -o "$INSTALL_DIR/tazpod"
+# Map architecture names
+if [ "$ARCH" == "x86_64" ]; then
+    ARCH="amd64"
+elif [ "$ARCH" == "aarch64" ] || [ "$ARCH" == "arm64" ]; then
+    ARCH="arm64"
 fi
 
-# 4. Set Permissions
+echo -e "🔎 Detected: $OS-$ARCH"
+
+# 2. Ensure Install Dir
+mkdir -p "$INSTALL_DIR"
+
+# 3. Download Latest Binary from GitHub Releases
+# Note: For now, we point to a generic 'tazpod' name in the latest release
+BINARY_URL="https://github.com/$REPO/releases/latest/download/tazpod"
+
+echo -e "📥 Downloading TazPod from GitHub..."
+if ! curl -L "$BINARY_URL" -o "$INSTALL_DIR/tazpod"; then
+    echo -e "${RED}❌ Download failed. Make sure you have created a 'latest' release on GitHub with the 'tazpod' binary attached.${RESET}"
+    exit 1
+fi
+
+# 4. Permissions
 chmod +x "$INSTALL_DIR/tazpod"
 
 echo -e "${GREEN}✅ TazPod installed successfully in $INSTALL_DIR/tazpod${RESET}"
 
-# 5. Check PATH
-if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
+# 5. PATH check
+if [[ ":$PATH:" != ":$INSTALL_DIR:"* ]]; then
     echo -e "\n⚠️  ${BLUE}$INSTALL_DIR${RESET} is not in your PATH."
     echo "Add this to your .bashrc or .zshrc:"
     echo -e "  export PATH=\$PATH:$INSTALL_DIR"
 fi
 
 echo -e "\n🚀 Run '${BLUE}tazpod init${RESET}' in your project directory to start!"
-
