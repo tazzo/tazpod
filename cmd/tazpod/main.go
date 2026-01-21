@@ -12,6 +12,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 	"golang.org/x/term"
+	"math/rand"
 )
 
 // --- CONFIGURATION STRUCTS ---
@@ -164,28 +165,57 @@ func initProject() {
 		fmt.Println("⚠️  .tazpod directory already exists.")
 		return
 	}
+
+	imageType := "k8s"
+	if len(os.Args) > 2 {
+		imageType = os.Args[2]
+	}
+
+	imageName := "tazzo/tazlab.net:tazpod-k8s"
+	switch imageType {
+	case "base":
+		imageName = "tazzo/tazlab.net:tazpod-base"
+	case "infisical":
+		imageName = "tazzo/tazlab.net:tazpod-infisical"
+	case "k8s", "talos":
+		imageName = "tazzo/tazlab.net:tazpod-k8s"
+	case "gemini":
+		imageName = "tazzo/tazlab.net:tazpod-gemini"
+	default:
+		fmt.Printf("⚠️  Unknown type '%s', defaulting to k8s\n", imageType)
+	}
+
 	os.Mkdir(".tazpod", 0755)
 	
+	// Generate unique container name (v9.9)
+	cwd, _ := os.Getwd()
+	dirName := filepath.Base(cwd)
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	containerName := fmt.Sprintf("tazpod-%s-%d", dirName, rng.Intn(9000000)+1000000)
+
 	// 1. Config YAML
-	yamlContent := `# TazPod Configuration
+	yamlContent := fmt.Sprintf(`# TazPod Configuration
 version: 1.0
-image: "tazzo/tazlab.net:tazpod-k8s"
-container_name: "tazpod-lab"
+image: "%s"
+container_name: "%s"
 user: "tazpod"
 features:
   ghost_mode: true
   debug: false
-`
+`, imageName, containerName)
 	os.WriteFile(ConfigPath, []byte(yamlContent), 0644)
 	os.MkdirAll(VaultDir, 0755)
 	exec.Command("chown", "-R", "tazpod:tazpod", ".tazpod").Run() // Ensure everything in .tazpod belongs to user
 
 	
-	// 3. Gitignore for TazPod (Updated for v9.2)
-	gitignore := `# TazPod local sensitive data
+	// 3. Gitignore for TazPod (Updated for v9.7)
+	gitignore := `# TazPod sensitive data
 vault/
+.gemini/
 `
 	os.WriteFile(".tazpod/.gitignore", []byte(gitignore), 0644)
+	os.MkdirAll(".gemini", 0755) 
+	exec.Command("chown", "-R", "tazpod:tazpod", ".gemini").Run()
 
 	// 4. Sample secrets.yml (v9.6)
 	secretsYAML := `# TazPod Secrets Configuration
@@ -474,7 +504,8 @@ func up() {
 	exec.Command("docker", "rm", "-f", cfg.ContainerName).Run()
 	display := os.Getenv("DISPLAY"); xauth := os.Getenv("XAUTHORITY"); if xauth == "" { xauth = os.Getenv("HOME") + "/.Xauthority" }
 	cwd, _ := os.Getwd()
-	runCmd("docker", "run", "-d", "--name", cfg.ContainerName, "--privileged", "--network", "host", "-e", "DISPLAY="+display, "-e", "XAUTHORITY=/home/tazpod/.Xauthority", "-v", "/tmp/.X11-unix:/tmp/.X11-unix", "-v", xauth+":/home/tazpod/.Xauthority", "-v", cwd+":/workspace", "-w", "/workspace", cfg.Image, "sleep", "infinity")
+	os.MkdirAll(".gemini", 0755) // Ensure it exists before mounting
+	runCmd("docker", "run", "-d", "--name", cfg.ContainerName, "--privileged", "--network", "host", "-e", "DISPLAY="+display, "-e", "XAUTHORITY=/home/tazpod/.Xauthority", "-v", "/tmp/.X11-unix:/tmp/.X11-unix", "-v", xauth+":/home/tazpod/.Xauthority", "-v", cwd+":/workspace", "-v", cwd+"/.gemini:/home/tazpod/.gemini", "-w", "/workspace", cfg.Image, "sleep", "infinity")
 	fmt.Println("✅ Ready.")
 }
 func down() { exec.Command("docker", "rm", "-f", cfg.ContainerName).Run() }
