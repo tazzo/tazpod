@@ -10,7 +10,7 @@ TazPod is an ephemeral, secure, and portable development environment built on **
 *   **Modular Verticals**: Choose between Base, Infisical, K8s, or AI-Enhanced images.
 *   **Infrastructure as Code**: Project settings are defined via `.tazpod/config.yaml`.
 *   **Infisical Native**: Securely pull secrets from Infisical with persisted authentication sessions *inside* the encrypted vault.
-*   **Portable**: Runs on any machine with Docker (Linux/macOS).
+*   **Portable**: Runs on any Linux machine with Docker.
 
 ---
 
