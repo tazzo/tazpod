@@ -77,15 +77,13 @@ func main() {
 	case "up": up()
 	case "down": down()
 	case "enter", "ssh": enter()
-		case "pull", "sync":
-			pull()
-		case "login":
-			login()
+	case "pull", "sync": pull()
+	case "login": login()
+	case "env": printEnv()
 		case "__internal_env":
 			printEnv()
-		case "unlock":
-			unlock()
 	
+	case "unlock": unlock()
 	case "reinit": reinit()
 	case "internal-ghost": internalGhost()
 	default:
