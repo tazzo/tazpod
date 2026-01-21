@@ -1,75 +1,81 @@
-# TazPod Architecture & Security Model 🛡️
+# TazPod Technical Architecture 🛡️🏗️
 
-TazPod is not just a development container. It is an ephemeral, **Zero Trust** infrastructure designed to ensure that secrets are never exposed in plaintext on the host filesystem or to unauthorized processes.
-
-## 1. Core Concept: "Ghost Mode" 👻
-
-The heart of TazPod's security is **Ghost Mode**. Unlike traditional Docker volumes (which are visible to the entire container), TazPod leverages **Linux Namespaces** to create an isolated "bubble".
-
-### The Concurrency Problem
-In a standard container, if you mount a decrypted volume at `/home/user/secrets`, anyone who gains access to the container (e.g., via another `docker exec` session or a compromised process) can read those files.
-
-### The Solution: Namespace Isolation
-When you run `tazpod unlock`, the system does not simply mount the disk. Instead:
-1.  The Go binary executes `unshare -m --propagation private`.
-2.  This creates a new **Mount Namespace** in the Linux kernel.
-3.  Inside this namespace (and ONLY here), the encrypted disk is mounted.
-4.  A new Bash Shell is launched (the "Ghost Shell").
-
-**Result:**
-*   **Inside the Ghost Shell:** You see the files in `~/secrets`.
-*   **Outside (other shells, host):** The `~/secrets` directory appears **EMPTY**. Even `root` on the host cannot see the mountpoint because it exists only in the memory of the isolated process.
+TazPod is a specialized, ephemeral development environment designed for **Zero-Trust workflows**. It combines modern containerization with kernel-level security features to ensure that sensitive credentials remain strictly isolated and non-persistent.
 
 ---
 
-## 2. The "Matryoshka" Shell Lifecycle 🐚
+## 1. High-Level Architecture
 
-TazPod's execution flow is a chain of nested processes designed to ensure secrets are destroyed as soon as the user stops working.
+TazPod operates across three distinct layers:
 
-1.  **Host Shell (Mac/Linux)**
-    *   Runs `tazpod ssh` -> Executes `docker exec -it tazpod-lab bash`.
-2.  **Container Entry Shell (Bash)**
-    *   This is a "public" shell. It has no access to secrets.
-    *   The user runs `tazpod unlock`.
-3.  **Go Wrapper (Parent)**
-    *   Verifies the passphrase.
-    *   Runs `unshare` to create the namespace.
-4.  **Go Wrapper (Internal Ghost - Root)**
-    *   Runs inside the namespace.
-    *   Opens LUKS (`cryptsetup`).
-    *   Mounts the ext4 filesystem.
-    *   Performs *Drop Privileges* (switches back to user `tazpod`).
-    *   Loads environment variables from Infisical.
-5.  **Ghost Shell (Bash - User)**
-    *   This is the shell where the user works. It has access to secrets.
-6.  **Exit / Death**
-    *   When the user types `exit` in the Ghost Shell:
-        1.  The Ghost Shell dies.
-        2.  `Internal Ghost` (Go) regains control.
-        3.  Executes `umount`, `cryptsetup close`, `dmsetup remove`.
-        4.  Secrets vanish from kernel memory.
-        5.  The Go process terminates.
-    *   The **Container Entry Shell** (step 2) has a helper function in `.bashrc` that detects the exit and forces a cascading `exit`, closing the SSH connection.
+1.  **Orchestration Layer (Host)**: A Go-based CLI (`tazpod`) that manages the container lifecycle, project initialization, and secure entry points.
+2.  **Enclave Layer (Kernel)**: Uses **Linux Mount Namespaces** and **LUKS2 encryption** to create a "Ghost Mode"—a secure memory space invisible to the host and other container processes.
+3.  **Application Layer (Container)**: Modular Docker images (Verticals) providing tailored toolstacks (IDE, Infisical, Kubernetes, AI).
 
 ---
 
-## 3. Storage & Persistence 💾
+## 2. The "Ghost Mode" Security Model 👻
 
-### The Vault (`vault.img`)
-*   It is a simple allocated file (`dd`) residing on the host at `.tazpod-vault/vault.img`.
-*   It is mapped into the container as a **Loop Device** (`/dev/loopX`).
-*   It is encrypted with **LUKS2**. The key is never saved to disk; it resides only in kernel RAM during the Ghost session.
+The core innovation of TazPod is the **Ghost Mode**. In standard Docker setups, any process inside a container can see all mounted volumes. Ghost Mode breaks this paradigm.
 
-### Infisical Integration
-*   TazPod uses the Infisical CLI to pull secrets.
-*   **Session Persistence**: The Infisical login token (`~/.infisical`) is moved inside the encrypted vault (`~/secrets/.auth-infisical`) and symlinked.
-*   This way, if the vault is closed, no one can steal your Infisical session.
+### 2.1 Namespace Isolation
+When `tazpod unlock` or `tazpod pull` is executed:
+*   The Go binary invokes the `unshare` system call with the `--mount` and `--propagation private` flags.
+*   This spawns a **new Mount Namespace** for that specific process tree.
+*   The encrypted vault is mounted **only within this namespace**.
+
+**Security Impact:** Any concurrent `docker exec` session or compromised process running in the "main" container space will see an **empty** `~/secrets` directory. The decrypted files exist only in the kernel memory context of the Ghost session.
+
+### 2.2 LUKS2 Encryption
+The data resides in a loopback image file (`vault.img`) located at `.tazpod/vault/`. 
+*   **Encryption**: AES-XTS 256-bit (Standard LUKS2).
+*   **Decryption**: Performed via `cryptsetup` inside the container.
+*   **Zero-Persistence**: The decryption key exists only in the RAM of the isolated Ghost process.
 
 ---
 
-## 4. Device Mapper Troubleshooting 🔧
+## 3. Persistent Identity & Infisical Enclave 🔐
 
-Docker and Kernel Device Mappers sometimes conflict ("Device or resource busy"). TazPod uses a "Smart Cleanup" strategy:
-1.  **Lazy Unmount (`umount -l`)**: Detaches the filesystem even if the shell is holding it open.
-2.  **Kernel Check**: Queries `dmsetup info` instead of checking files in `/dev/mapper` (which are often missing in containers).
-3.  **SIGKILL**: The `tazpod lock` command uses instant death signals to force the closure of shells holding the vault hostage.
+Infisical's session tokens are sensitive. Storing them in the standard home directory within a container is insecure. 
+
+### 3.1 Unified Vault Persistence
+TazPod standardizes identity storage in `~/secrets/.infisical-vault`. 
+*   **Bridging**: TazPod uses a **Bind Mount** to bridge the standard config path (`~/.infisical`) and the keyring path (`~/infisical-keyring`) directly into the encrypted vault.
+*   **Ownership Management**: The CLI performs recursive `chown` operations to ensure the non-root `tazpod` user (UID 1000) maintains full access to the enclave while the root wrapper performs system-level mounts.
+
+---
+
+## 4. The Shell Matryoshka (Process Lifecycle) 🐚
+
+TazPod manages a complex chain of shell executions to ensure a seamless developer experience:
+
+1.  **Terminal Entry**: `tazpod ssh` initiates a `docker exec` into a public Bash shell.
+2.  **The Unlock Trigger**: The user runs `tazpod pull`.
+3.  **Privilege Escalation & Isolation**: The Go CLI uses `sudo unshare` to jump into the Enclave context.
+4.  **Hardware Unlock**: LUKS is opened, the filesystem is mounted, and the Infisical bridge is established.
+5.  **Privilege Drop**: The CLI drops root privileges and spawns a **Ghost Bash Shell** as the `tazpod` user.
+6.  **Cleanup on Exit**: Once the Ghost Shell terminates, the Go wrapper intercepts the signal, performs a `lazy unmount` (`umount -l`), closes the LUKS mapper, and destroys the namespace.
+
+---
+
+## 5. Modular Image Hierarchy (Verticals) 🧅
+
+TazPod uses a layered image strategy to minimize build times and maximize portability:
+
+1.  **`tazpod-base`**: Ubuntu 24.04 + IDE (Neovim, Zellij, Starship, Lazygit).
+2.  **`tazpod-infisical`**: Adds Infisical CLI and the secret injection engine.
+3.  **`tazpod-k8s`**: Adds the full DevOps stack (Kubectl, Helm, K9s, Talosctl).
+4.  **`tazpod-gemini`**: Adds the Gemini AI CLI for integrated platform mentoring.
+
+---
+
+## 6. Smart CLI Workflow 🧠
+
+The `tazpod` Go binary implements an "Intent-Based" workflow:
+*   **`init`**: Bootstraps a project with `config.yaml`, `Dockerfile` templates, and `secrets.yml`.
+*   **`up`**: Orchestrates `docker build` (if custom layers exist) and starts the container.
+*   **`pull`**: A unified command that checks for vault state, sifts through legacy sessions, authenticates with Infisical, and synchronizes secrets in one go.
+*   **`env`**: A secure bridge that refreshes shell variables via `eval $(tazpod env)` without ever printing secrets to the TTY.
+
+---
+*Architecture v9.3 | Documented by Senior Platform Mentor*
