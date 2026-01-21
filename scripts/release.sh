@@ -32,7 +32,7 @@ fi
 echo -e "${BLUE}🔨 Building TazPod for Linux/AMD64...${RESET}"
 export GOOS=linux
 export GOARCH=amd64
-go build -o $BINARY_NAME main.go
+go build -o $BINARY_NAME cmd/tazpod/main.go
 
 # 3. Git Tag and Push
 echo -e "${BLUE}🏷️  Tagging and pushing code...${RESET}"
