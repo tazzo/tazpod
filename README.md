@@ -1,72 +1,111 @@
 # TazPod: The Zero-Trust Containerized Developer Environment 🛡️📦
 
-TazPod is an ephemeral, secure, and portable development environment built on **Docker**, **Go**, and **Linux Namespaces**. It provides a fully configured IDE (Neovim, Tmux, Zellij) while ensuring that sensitive secrets are never exposed to the host filesystem or unauthorized processes.
+TazPod is an ephemeral, secure, and portable development environment built on **Docker**, **Go**, and **Linux Namespaces**. It provides a fully configured IDE (Neovim, Tmux, Zellij) while ensuring that sensitive secrets are never exposed to the host filesystem or unauthorized processes through its unique **Ghost Mode**.
+
+---
 
 ## 🚀 Key Features
 
-*   **Zero Trust Architecture**: Secrets are stored in a LUKS-encrypted vault (`vault.img`) that is mounted only within an isolated **Linux Namespace** ("Ghost Mode"). Even `root` on the host cannot see your secrets.
-*   **Infrastructure as Code**: Defined via `Dockerfile` and `config.yaml`.
-*   **Full IDE Stack**: Ubuntu 24.04, Neovim (v0.10+), LazyVim, NVM (Node LTS), Lazygit, Yazi, Zellij, Tmux.
-*   **Modern Shell**: Bash with Starship (Pastel preset), Zoxide, Eza, Bat, Ripgrep, FZF.
-*   **Infisical Integration**: Securely pull secrets from Infisical with persisted authentication sessions inside the vault.
+*   **Zero Trust Architecture**: Secrets are stored in a LUKS-encrypted vault (`vault.img`) mounted only within an isolated **Linux Namespace** ("Ghost Mode").
+*   **Modular Verticals**: Choose between Base, Infisical, K8s, or AI-Enhanced images.
+*   **Infrastructure as Code**: Project settings are defined via `.tazpod/config.yaml`.
+*   **Infisical Native**: Securely pull secrets from Infisical with persisted authentication sessions *inside* the encrypted vault.
 *   **Portable**: Runs on any machine with Docker (Linux/macOS).
+
+---
 
 ## 📥 Installation
 
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/tazzo/tazpod.git
-    cd tazpod
-    ```
+Install TazPod globally on your system using the official installer:
 
-2.  **Build and Start:**
-    ```bash
-    ./tazpod up
-    ```
-
-## 🎮 Usage
-
-### 1. Enter the Pod
-Access the container shell from your host:
 ```bash
-./tazpod ssh
+curl -sSL https://raw.githubusercontent.com/tazzo/tazpod/master/scripts/install.sh | bash
+```
+*Make sure `~/.local/bin` is in your `$PATH`.*
+
+---
+
+## 🏁 Project Initialization
+
+To start using TazPod in a new or existing project, run:
+
+```bash
+tazpod init
 ```
 
-### 2. Unlock the Vault (Ghost Mode)
-Inside the container, unlock your secure vault. This creates a private namespace and mounts your secrets at `~/secrets`.
-```bash
-tazpod unlock
+This will create:
+*   `.tazpod/config.yaml`: The main configuration file.
+*   `.tazpod/Dockerfile`: A template to extend the environment.
+*   `secrets.yml`: A mapping file for your Infisical secrets.
+
+---
+
+## ⚙️ Configuration (`config.yaml`)
+
+The `.tazpod/config.yaml` file defines how your environment behaves:
+
+```yaml
+version: 1.0
+# The Docker image to use (see Pre-compiled Images)
+image: "tazzo/tazlab.net:tazpod-k8s"
+container_name: "tazpod-lab"
+user: "tazpod"
+features:
+  ghost_mode: true # Enable Namespace isolation
+  debug: false      # Show detailed logs
 ```
-*If this is your first time, it will ask you to define a Master Passphrase.*
 
-### 3. Manage Secrets
-Once inside the Ghost Shell:
-*   **Login to Infisical**: `tazpod login`
-*   **Sync Secrets**: `tazpod pull` (Updates `~/secrets/.env-infisical` and files defined in `secrets.yml`)
+---
 
-### 4. Lock & Exit
-*   **Exit**: Simply type `exit`. This will automatically unmount the vault, close LUKS, destroy the namespace, and close your SSH session.
-*   **Lock (Stay inside)**: Type `tazpod lock`. This forces the vault to close but keeps you in the container (useful for maintenance).
+## ☁️ Pre-compiled Images (Verticals)
 
-### 5. Re-initialize
-To wipe the vault and start fresh:
+We provide several optimized images on Docker Hub:
+
+| Image Name | Features |
+| :--- | :--- |
+| `tazzo/tazlab.net:tazpod-base` | Ubuntu 24.04, Neovim, Tmux, Shell tools |
+| `tazzo/tazlab.net:tazpod-infisical` | Base + Infisical CLI for secret management |
+| `tazzo/tazlab.net:tazpod-k8s` | Infisical + Kubectl, Helm, K9s, Talosctl, Stern |
+| `tazzo/tazlab.net:tazpod-gemini` | K8s + Gemini AI CLI for assisted coding |
+
+---
+
+## 🎮 Usage Guide
+
+### 1. Start & Enter
+Start the container and enter the shell:
 ```bash
-tazpod reinit
+tazpod up
+tazpod ssh
 ```
-*(Note: You must NOT be in Ghost Mode to run this).*
 
-## 🏗️ Architecture
+### 2. Using Base Mode (No Secrets)
+If you just need the IDE tools, you can use the `base` image. Your project files in `/workspace` are always accessible.
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for a deep dive into the security model, Linux Namespaces, and the Go CLI internal logic.
+### 3. Using Infisical & Secrets
+To access your secrets securely:
+1.  **Unlock**: Run `tazpod pull`. It will ask for your LUKS passphrase and perform a sync.
+2.  **Login**: If it's your first time, it will trigger `tazpod login`. The session token will be saved **inside the encrypted vault**.
+3.  **Environment**: Run `tazpod env` to refresh environment variables in your current shell session.
 
-## 🛠️ Tech Stack
+### 4. Secrets Mapping (`secrets.yml`)
+Define which secrets to pull from Infisical and where to save them:
 
-*   **Core**: Go 1.23, Docker
-*   **OS**: Ubuntu 24.04 LTS (Noble)
-*   **Editor**: Neovim + LazyVim
-*   **Terminal**: Tmux, Zellij, Starship
-*   **Tools**: Lazygit, Yazi, Eza, Bat, Ripgrep, FZF
-*   **Security**: Cryptsetup (LUKS2), Infisical CLI
+```yaml
+config:
+  infisical_project_id: "049af2e5-..." # Your project ID
+
+secrets:
+  - name: KUBECONFIG_CONTENT # Secret name in Infisical
+    file: kubeconfig         # Target filename in ~/secrets/
+    env: KUBECONFIG          # Exported environment variable
+```
+
+---
+
+## 🏗️ Technical Architecture
+
+For a deep dive into the security model, Linux Namespaces, and the Go CLI internal logic, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ---
 *Built with ❤️ by TazLab*

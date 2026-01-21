@@ -181,12 +181,31 @@ features:
 	exec.Command("chown", "-R", "tazpod:tazpod", ".tazpod").Run() // Ensure everything in .tazpod belongs to user
 
 	
-	gitignore := `#TazPod sensitive data
+	// 3. Gitignore for TazPod (Updated for v9.2)
+	gitignore := `# TazPod local sensitive data
 vault/
 `
 	os.WriteFile(".tazpod/.gitignore", []byte(gitignore), 0644)
 
+	// 4. Sample secrets.yml (v9.6)
+	secretsYAML := `# TazPod Secrets Configuration
+config:
+  infisical_project_id: "your-project-id-here"
+
+secrets:
+  # - name: KUBECONFIG_CONTENT
+  #   file: kubeconfig
+  #   env: KUBECONFIG
+  # - name: MY_API_KEY
+  #   file: api.key
+  #   env: API_KEY
+`
+	if !fileExist("secrets.yml") {
+		os.WriteFile("secrets.yml", []byte(secretsYAML), 0644)
+	}
+
 	fmt.Println("✅ Successfully initialized TazPod project.")
+	fmt.Println("➡️  Files created: .tazpod/config.yaml, .tazpod/Dockerfile, secrets.yml")
 	fmt.Println("🚀 Run 'tazpod up' to start!")
 }
 
