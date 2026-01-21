@@ -1,19 +1,19 @@
 # TazPod Configuration
 version: 1.0
 
-# Base Image
-image: "tazzo/tazlab.net:tazpod-k8s"
+# Final Image
+image: "tazzo/tazlab.net:tazpod-gemini"
 
 # Container Settings
 container_name: "tazpod-lab"
 user: "tazpod"
 
-# Build Settings
+# Build Settings (Build Gemini layer locally)
 build:
-  dockerfile: ".tazpod/Dockerfile.k8s"
+  dockerfile: ".tazpod/Dockerfile.gemini"
   context: "."
 
 # Features
 features:
   ghost_mode: true
-  debug: true
+  debug: false

@@ -1,0 +1,14 @@
+# --- TAZPOD LAYER 4: AI ENHANCED ---
+# This layer depends on tazzo/tazlab.net:tazpod-k8s
+FROM tazzo/tazlab.net:tazpod-k8s
+
+USER root
+
+# Install Gemini CLI (Correct Command)
+RUN npm install -g @google/gemini-cli@latest
+
+USER tazpod
+WORKDIR /home/tazpod
+
+# Updated Banner for Gemini Layer
+RUN echo 'echo -e "\n\033[1;35m🧠 TAZPOD AI ENHANCED LAYER ACTIVE (Gemini Ready)\033[0m\n"' >> ~/.bashrc

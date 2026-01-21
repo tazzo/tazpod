@@ -5,6 +5,7 @@ set -e
 BASE_IMAGE="tazzo/tazlab.net:tazpod-base"
 INFISICAL_IMAGE="tazzo/tazlab.net:tazpod-infisical"
 K8S_IMAGE="tazzo/tazlab.net:tazpod-k8s"
+GEMINI_IMAGE="tazzo/tazlab.net:tazpod-gemini"
 
 echo "🏗️  Step 1: Building Base..."
 docker build -t $BASE_IMAGE -f .tazpod/Dockerfile.base .
@@ -15,9 +16,13 @@ docker build -t $INFISICAL_IMAGE -f .tazpod/Dockerfile.infisical .
 echo "🏗️  Step 3: Building K8s..."
 docker build -t $K8S_IMAGE -f .tazpod/Dockerfile.k8s .
 
-echo "🚀 Step 4: Pushing to Docker Hub..."
+echo "🏗️  Step 4: Building Gemini..."
+docker build -t $GEMINI_IMAGE -f .tazpod/Dockerfile.gemini .
+
+echo "🚀 Step 5: Pushing to Docker Hub..."
 docker push $BASE_IMAGE
 docker push $INFISICAL_IMAGE
 docker push $K8S_IMAGE
+docker push $GEMINI_IMAGE
 
-echo "✅ All TazPod layers (Base, Infisical, K8s) are now online."
+echo "✅ All TazPod layers (Base, Infisical, K8s, Gemini) are now online."
