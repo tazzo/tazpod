@@ -30,7 +30,7 @@ fi
 # 4. Set Permissions
 chmod +x "$INSTALL_DIR/tazpod"
 
-echo -e "${GREEN}✅ TazPod installed successfully in $INSTALL_DIR/tazpod"${RESET}"
+echo -e "${GREEN}✅ TazPod installed successfully in $INSTALL_DIR/tazpod${RESET}"
 
 # 5. Check PATH
 if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
@@ -40,3 +40,4 @@ if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
 fi
 
 echo -e "\n🚀 Run '${BLUE}tazpod init${RESET}' in your project directory to start!"
+
