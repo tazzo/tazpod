@@ -62,9 +62,11 @@ const (
 	// PERSISTENCE PATHS
 	InfisicalLocalHome    = "/home/tazpod/.infisical"
 	InfisicalKeyringLocal = "/home/tazpod/infisical-keyring"
+	GeminiLocalHome       = "/home/tazpod/.gemini"
 	
 	InfisicalVaultDir     = MountPath + "/.infisical-vault"
 	InfisicalKeyringVault = MountPath + "/.infisical-keyring"
+	GeminiVaultDir        = MountPath + "/.gemini-vault"
 	
 	StayMarker = "/tmp/.tazpod_stay"
 )
@@ -119,7 +121,7 @@ func loadConfigs() {
 }
 
 func help() {
-	fmt.Println("🛡️  TazPod CLI v9.3")
+	fmt.Println("🛡️  TazPod CLI v0.1.3")
 	fmt.Println("\nUsage:")
 	fmt.Println("  tazpod up      -> Start the development environment")
 	fmt.Println("  tazpod down    -> Stop and remove the container")
@@ -345,6 +347,7 @@ bashCmd.SysProcAttr = &syscall.SysProcAttr{ Credential: &syscall.Credential{Uid:
 	logDebug("Locking Ghost Enclave...")
 	exec.Command("umount", "-l", InfisicalKeyringLocal).Run()
 	exec.Command("umount", "-l", InfisicalLocalHome).Run()
+	exec.Command("umount", "-l", GeminiLocalHome).Run()
 	exec.Command("umount", "-l", MountPath).Run()
 	cleanupMappers()
 }
@@ -362,6 +365,7 @@ func migrateLegacyAuth() {
 func setupBindAuth() {
 	bridge(InfisicalLocalHome, InfisicalVaultDir)
 	bridge(InfisicalKeyringLocal, InfisicalKeyringVault)
+	bridge(GeminiLocalHome, GeminiVaultDir)
 }
 
 func bridge(local, vault string) {

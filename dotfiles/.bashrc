@@ -84,6 +84,22 @@ if [ -n "$TAZPOD_GHOST_MODE" ]; then
     eval "$(/usr/local/bin/tazpod __internal_env 2>/dev/null)"
 fi
 
+# Gemini CLI Safety Wrapper
+gemini() {
+    if [ "$TAZPOD_GHOST_MODE" = "true" ]; then
+        /usr/local/bin/gemini "$@"
+    else
+        echo -e "\033[0;33m🔒 Vault is closed. Gemini memories are in the secure enclave.\033[0m"
+        echo "   Starting unlock procedure... please run 'gemini' again once inside."
+        tazpod unlock
+    fi
+}
+
+# Vault Welcome Message
+if [ "$TAZPOD_GHOST_MODE" = "true" ]; then
+    echo -e "\n\033[1;32m✅ Vault Unlocked. You can now run 'gemini' safely.\033[0m\n"
+fi
+
 # Enable Modern Prompts/Tools
 [ -x "$(command -v starship)" ] && eval "$(starship init bash)"
 [ -x "$(command -v zoxide)" ] && eval "$(zoxide init bash)"
