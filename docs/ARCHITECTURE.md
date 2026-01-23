@@ -39,8 +39,9 @@ The data resides in a loopback image file (`vault.img`) located at `.tazpod/vaul
 Infisical's session tokens are sensitive. Storing them in the standard home directory within a container is insecure. 
 
 ### 3.1 Unified Vault Persistence
-TazPod standardizes identity storage in `~/secrets/.infisical-vault`. 
-*   **Bridging**: TazPod uses a **Bind Mount** to bridge the standard config path (`~/.infisical`) and the keyring path (`~/infisical-keyring`) directly into the encrypted vault.
+TazPod standardizes identity storage in the encrypted enclave.
+*   **Bridging**: TazPod uses a **Bind Mount** to bridge standard config paths (Infisical, Gemini) directly into the encrypted vault.
+*   **Enclave Targets**: `~/.infisical`, `~/.gemini`, and SSH keyrings.
 *   **Ownership Management**: The CLI performs recursive `chown` operations to ensure the non-root `tazpod` user (UID 1000) maintains full access to the enclave while the root wrapper performs system-level mounts.
 
 ---
@@ -78,4 +79,4 @@ The `tazpod` Go binary implements an "Intent-Based" workflow:
 *   **`env`**: A secure bridge that refreshes shell variables via `eval $(tazpod env)` without ever printing secrets to the TTY.
 
 ---
-*Architecture v9.3 | Documented by Senior Platform Mentor*
+*Architecture v0.1.3 | Documented by Senior Platform Mentor*

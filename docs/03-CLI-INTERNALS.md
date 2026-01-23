@@ -52,7 +52,7 @@ This is where the magic happens. This function is **only** ever executed by `roo
 1.  **Unlock**: Prompts for passphrase and calls `cryptsetup open`.
 2.  **Mount**: Mounts the decrypted mapper device to `/home/tazpod/secrets`.
 3.  **Migration**: Checks for legacy data structures and migrates them.
-4.  **Bridge**: Sets up the bind-mounts for `.infisical` and `infisical-keyring`.
+4.  **Bridge**: Sets up the bind-mounts for `.infisical`, `infisical-keyring`, and the `.gemini` folder.
 5.  **Ownership Fix**: Runs `chown -R` to ensure the user can read what root just mounted.
 6.  **Handover**: Spawns a `bash` shell, dropping privileges back to `UID 1000`.
 

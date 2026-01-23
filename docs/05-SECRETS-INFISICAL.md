@@ -19,6 +19,8 @@ TazPod moves the persistence layer **inside** the encrypted vault.
     ```
 3.  **Result**: The Infisical CLI sees its config file where it expects it to be, but the data is physically located on the encrypted loop device.
 
+> **Note**: Gemini AI (`.gemini/`) uses this same "Vault Bridge" strategy to ensure your conversation history and API keys never stay on the unprotected host disk.
+
 ---
 
 ## 2. Secrets Mapping (`secrets.yml`)

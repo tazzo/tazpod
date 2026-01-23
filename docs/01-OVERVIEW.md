@@ -33,7 +33,7 @@ TazPod operates by orchestrating three main components:
 
 ### 🧠 The AI-Augmented Engineer
 *   **Scenario**: You use Gemini or GPT tools that require API keys.
-*   **TazPod Solution**: Use `tazpod init gemini`. The container includes the latest AI CLIs. Your API usage history and "memories" are persisted in a dedicated, isolated volume (`.gemini/`), keeping your context intact but segregated per project.
+*   **TazPod Solution**: Use `tazpod init gemini`. The container includes the AI CLI, but access is gated. The `.gemini/` folder (memories/auth) is securely mounted **inside the vault**. You must unlock the vault before you can converse with the AI, ensuring your intellectual property remains encrypted at rest.
 
 ---
 

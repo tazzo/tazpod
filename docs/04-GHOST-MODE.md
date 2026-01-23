@@ -34,8 +34,9 @@ TazPod implements a nested shell strategy to manage this isolation safely.
 
 ## 3. The `.bashrc` Integration
 
-To make this seamless, TazPod injects a smart function into the container's `.bashrc`.
+To make this seamless, TazPod injects smart functions into the container's `.bashrc`.
 
+**The Core Wrapper:**
 ```bash
 tazpod() {
     # Special case for 'env' to prevent leaking secrets to TTY
@@ -43,8 +44,20 @@ tazpod() {
         eval "$(/usr/local/bin/tazpod __internal_env 2>/dev/null)"
         return 0
     fi
-
     /usr/local/bin/tazpod "$@";
+}
+```
+
+**The Gemini Safety Latch:**
+For AI tools, we add a wrapper that prevents execution outside the vault.
+```bash
+gemini() {
+    if [ "$TAZPOD_GHOST_MODE" = "true" ]; then
+        /usr/local/bin/gemini "$@"
+    else
+        echo "🔒 Vault is closed. Unlocking required..."
+        tazpod unlock
+    fi
 }
 ```
 
