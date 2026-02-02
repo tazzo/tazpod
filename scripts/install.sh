@@ -1,12 +1,16 @@
 #!/bin/bash
 # --- TAZPOD UNIVERSAL INSTALLER ---
+# This script automates the installation of the TazPod CLI tool.
+# It detects the operating system and architecture, downloads the correct binary,
+# and ensures it is executable and in the user's PATH.
+
 set -e
 
-# Configuration
+# --- CONFIGURATION ---
 REPO="tazzo/tazpod"
 INSTALL_DIR="$HOME/.local/bin"
 
-# Colors
+# --- COLORS FOR OUTPUT ---
 BLUE='\033[0;34m'
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -14,11 +18,12 @@ RESET='\033[0m'
 
 echo -e "${BLUE}🛡️  TazPod Installer starting...${RESET}"
 
-# 1. Detect OS and Architecture
+# 1. DETECT OS AND ARCHITECTURE
+# Identify the kernel name (e.g., Linux, Darwin) and normalize to lowercase.
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m)
 
-# Map architecture names
+# Normalize architecture names to standard conventions (amd64, arm64).
 if [ "$ARCH" == "x86_64" ]; then
     ARCH="amd64"
 elif [ "$ARCH" == "aarch64" ] || [ "$ARCH" == "arm64" ]; then
@@ -27,11 +32,13 @@ fi
 
 echo -e "🔎 Detected: $OS-$ARCH"
 
-# 2. Ensure Install Dir
+# 2. PREPARE INSTALLATION DIRECTORY
+# Create the target directory if it doesn't already exist.
 mkdir -p "$INSTALL_DIR"
 
-# 3. Download Latest Binary from GitHub Releases
-# Note: For now, we point to a generic 'tazpod' name in the latest release
+# 3. DOWNLOAD BINARY
+# Fetch the 'tazpod' binary from the latest release of the GitHub repository.
+# Note: Currently assumes a single binary name 'tazpod'. Future versions might require dynamic naming based on OS/Arch.
 BINARY_URL="https://github.com/$REPO/releases/latest/download/tazpod"
 
 echo -e "📥 Downloading TazPod from GitHub..."
@@ -40,12 +47,15 @@ if ! curl -L "$BINARY_URL" -o "$INSTALL_DIR/tazpod"; then
     exit 1
 fi
 
-# 4. Permissions
+# 4. SET PERMISSIONS
+# Make the downloaded binary executable.
 chmod +x "$INSTALL_DIR/tazpod"
 
 echo -e "${GREEN}✅ TazPod installed successfully in $INSTALL_DIR/tazpod${RESET}"
 
-# 5. PATH check
+# 5. PATH VERIFICATION
+# Check if the installation directory is currently in the user's system PATH.
+# If not, advise the user to add it to their shell configuration file.
 if [[ ":$PATH:" != ":$INSTALL_DIR:"* ]]; then
     echo -e "\n⚠️  ${BLUE}$INSTALL_DIR${RESET} is not in your PATH."
     echo "Add this to your .bashrc or .zshrc:"

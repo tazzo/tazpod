@@ -2,27 +2,65 @@
 set -e
 
 # --- TAZPOD MULTI-LAYER PUBLISHER ---
-BASE_IMAGE="tazzo/tazlab.net:tazpod-base"
-INFISICAL_IMAGE="tazzo/tazlab.net:tazpod-infisical"
-K8S_IMAGE="tazzo/tazlab.net:tazpod-k8s"
-GEMINI_IMAGE="tazzo/tazlab.net:tazpod-gemini"
+# This script handles the building and publishing of the TazPod Docker image hierarchy.
+# It builds images in a specific order (Base -> Infisical -> K8s -> Gemini) to ensure
+# layer dependencies are correctly respected, and then pushes them to the registry.
 
-echo "🏗️  Step 1: Building Base..."
-docker build -t $BASE_IMAGE -f .tazpod/Dockerfile.base .
+# Usage: ./scripts/publish-base.sh [version]
+# Example: ./scripts/publish-base.sh v1.0.0
 
-echo "🏗️  Step 2: Building Infisical..."
-docker build -t $INFISICAL_IMAGE -f .tazpod/Dockerfile.infisical .
+VERSION=$1
 
-echo "🏗️  Step 3: Building K8s..."
-docker build -t $K8S_IMAGE -f .tazpod/Dockerfile.k8s .
+# --- IMAGE DEFINITIONS ---
+REPO_PREFIX="tazzo/tazlab.net"
+BASE_NAME="tazpod-base"
+INFISICAL_NAME="tazpod-infisical"
+K8S_NAME="tazpod-k8s"
+GEMINI_NAME="tazpod-gemini"
 
-echo "🏗️  Step 4: Building Gemini..."
-docker build -t $GEMINI_IMAGE -f .tazpod/Dockerfile.gemini .
+# Function to build and push
+build_and_push() {
+    NAME=$1
+    DOCKERFILE=$2
+    FULL_IMAGE="$REPO_PREFIX:$NAME"
+    
+    echo "🏗️  Building $NAME..."
+    docker build -t "$FULL_IMAGE" -f "$DOCKERFILE" .
+    
+    if [ -n "$VERSION" ]; then
+        VERSIONED_IMAGE="$REPO_PREFIX:$NAME-$VERSION"
+        echo "🏷️  Tagging as $NAME-$VERSION..."
+        docker tag "$FULL_IMAGE" "$VERSIONED_IMAGE"
+    fi
+}
 
-echo "🚀 Step 5: Pushing to Docker Hub..."
-docker push $BASE_IMAGE
-docker push $INFISICAL_IMAGE
-docker push $K8S_IMAGE
-docker push $GEMINI_IMAGE
+push_image() {
+    NAME=$1
+    FULL_IMAGE="$REPO_PREFIX:$NAME"
+    
+    echo "🚀 Pushing $NAME..."
+    docker push "$FULL_IMAGE"
+    
+    if [ -n "$VERSION" ]; then
+        VERSIONED_IMAGE="$REPO_PREFIX:$NAME-$VERSION"
+        echo "🚀 Pushing $NAME-$VERSION..."
+        docker push "$VERSIONED_IMAGE"
+    fi
+}
 
-echo "✅ All TazPod layers (Base, Infisical, K8s, Gemini) are now online."
+# 1. BUILD
+build_and_push $BASE_NAME ".tazpod/Dockerfile.base"
+build_and_push $INFISICAL_NAME ".tazpod/Dockerfile.infisical"
+build_and_push $K8S_NAME ".tazpod/Dockerfile.k8s"
+build_and_push $GEMINI_NAME ".tazpod/Dockerfile.gemini"
+
+# 2. PUSH
+push_image $BASE_NAME
+push_image $INFISICAL_NAME
+push_image $K8S_NAME
+push_image $GEMINI_NAME
+
+echo "✅ All TazPod layers are now online."
+if [ -n "$VERSION" ]; then
+    echo "📦 Published version: $VERSION"
+fi
