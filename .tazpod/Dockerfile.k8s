@@ -40,4 +40,5 @@ USER tazpod
 WORKDIR /home/tazpod
 
 # Banner aggiornato per il Layer K8s
-RUN echo 'echo -e "\n\033[1;32m☸️  TAZPOD K8S COMMANDER LAYER ACTIVE\033[0m\n"' >> ~/.bashrc
+RUN sed -i '/LAYER ACTIVE/d' ~/.bashrc && \
+    echo 'echo -e "\n\033[1;32m☸️  TAZPOD K8S COMMANDER LAYER ACTIVE\033[0m\n"' >> ~/.bashrc

@@ -13,4 +13,5 @@ USER tazpod
 WORKDIR /home/tazpod
 
 # Banner aggiornato
-RUN echo 'echo -e "\n\033[1;34m🔑 TAZPOD SECRETS LAYER ACTIVE (Infisical Ready)\033[0m\n"' >> ~/.bashrc
+RUN sed -i '/LAYER ACTIVE/d' ~/.bashrc && \
+    echo 'echo -e "\n\033[1;34m🔑 TAZPOD SECRETS LAYER ACTIVE (Infisical Ready)\033[0m\n"' >> ~/.bashrc

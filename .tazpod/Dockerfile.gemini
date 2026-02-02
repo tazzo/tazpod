@@ -11,4 +11,5 @@ USER tazpod
 WORKDIR /home/tazpod
 
 # Updated Banner for Gemini Layer
-RUN echo 'echo -e "\n\033[1;35m🧠 TAZPOD AI ENHANCED LAYER ACTIVE (Gemini Ready)\033[0m\n"' >> ~/.bashrc
+RUN sed -i '/LAYER ACTIVE/d' ~/.bashrc && \
+    echo 'echo -e "\n\033[1;35m🧠 TAZPOD AI ENHANCED LAYER ACTIVE (Gemini Ready)\033[0m\n"' >> ~/.bashrc

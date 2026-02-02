@@ -1,3 +1,5 @@
 secrets/
 /tazpod
 .tazpod-vault/
+.tazpod/vault/vault.img
+.tazpod/vault/

@@ -87,7 +87,7 @@ fi
 # Gemini CLI Safety Wrapper
 gemini() {
     if [ "$TAZPOD_GHOST_MODE" = "true" ]; then
-        /usr/local/bin/gemini "$@"
+        command gemini "$@"
     else
         echo -e "\033[0;33m🔒 Vault is closed. Gemini memories are in the secure enclave.\033[0m"
         echo "   Starting unlock procedure... please run 'gemini' again once inside."
