@@ -26,7 +26,33 @@ export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
 
-# ... (omissis) ...
+# Aliases - General
+alias ..="cd .."
+alias ...="cd ../.."
+alias v="nvim"
+alias vi="nvim"
+alias vim="nvim"
+
+# Aliases - Git
+alias g="git"
+alias lg="lazygit"
+alias gs="git status"
+alias gp="git push"
+alias gl="git log --oneline --graph --decorate"
+
+# Aliases - DevOps
+alias k="kubectl"
+alias ctx="kubectx"
+alias ns="kubens"
+alias tf="terraform"
+
+# Aliases - Modern Tools
+alias ls="eza --icons"
+alias ll="eza -lh --icons --grid"
+alias la="eza -a --icons"
+alias lt="eza --tree --icons"
+alias l="eza -l --icons --git --no-user --no-time"
+alias cat="bat"
 
 # --- TAZPOD CORE (Smart Function v6.5) ---
 tazpod() {
@@ -35,7 +61,7 @@ tazpod() {
         eval "$(command tazpod __internal_env 2>/dev/null)"
         echo "🔄 Enclave environment variables refreshed."
         return 0
-    }
+    fi
 
     command tazpod "$@";
     local res=$?;
@@ -44,15 +70,15 @@ tazpod() {
     if [ -z "$TAZPOD_GHOST_MODE" ]; then
         if [ "$1" == "unlock" ] || [ "$1" == "reinit" ] || [ "$1" == "pull" ]; then
             if [ $res -eq 0 ]; then exit 0; fi;
-        fi;
+        fi
     
     # Inner Ghost Shell: Auto-reload env on sync/login/pull
     else
         if [ "$1" == "pull" ] || [ "$1" == "sync" ] || [ "$1" == "login" ]; then
              eval "$(command tazpod __internal_env 2>/dev/null)"
              echo "🔄 Environment updated."
-        }
-    fi;
+        fi
+    fi
     return $res;
 }
 

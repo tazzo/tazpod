@@ -123,7 +123,13 @@ func loadConfigs() {
 }
 
 func help() {
-	fmt.Println("🛡️  TazPod CLI v0.1.3")
+	version := "v0.0.0"
+	if data, err := os.ReadFile("/workspace/tazpod/VERSION"); err == nil {
+		version = strings.TrimSpace(string(data))
+	} else if data, err := os.ReadFile("VERSION"); err == nil {
+		version = strings.TrimSpace(string(data))
+	}
+	fmt.Printf("🛡️  TazPod CLI %s\n", version)
 	fmt.Println("\nUsage:")
 	fmt.Println("  tazpod up      -> Start the development environment")
 	fmt.Println("  tazpod down    -> Stop and remove the container")
@@ -401,8 +407,9 @@ func syncSecrets() {
 		if pID != "" { cmdArgs = append(cmdArgs, "--projectId", pID) }
 		
 		val, err := runInfisical(cmdArgs...)
-		if err == nil && len(strings.TrimSpace(string(val))) > 0 {
-			os.WriteFile(target, val, 0600)
+		cleanVal := strings.TrimSpace(string(val))
+		if err == nil && len(cleanVal) > 0 {
+			os.WriteFile(target, []byte(cleanVal), 0600)
 			os.Chown(target, TazPodUID, TazPodGID)
 			fmt.Println("✅ OK")
 		} else {

@@ -1,6 +1,6 @@
 FROM ubuntu:24.04
 
-# --- TAZPOD v4.2 (UBUNTU NOBLE - VISUALS) ---
+# --- TAZPOD v4.3 (UBUNTU NOBLE - ATOMIC) ---
 ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=en_US.UTF-8
 
@@ -19,17 +19,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # 2. GitHub CLI (gh)
-RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg && \
-    sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg && \
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null && \
-    sudo apt-get update && sudo apt-get install gh -y
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg && \
+    chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null && \
+    apt-get update && apt-get install gh -y
 
-# 3. Taskfile & modern tools
+# 3. Modern CLI Tools (System-wide)
 RUN sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin && \
+    curl -sS https://starship.rs/install.sh | sh -s -- -y && \
     ln -sf /usr/bin/batcat /usr/local/bin/bat && \
     ln -sf /usr/bin/fdfind /usr/local/bin/fd
 
-# 2. Yazi Installation
+# 4. Yazi Installation
 RUN YAZI_VERSION=$(curl -s "https://api.github.com/repos/sxyazi/yazi/releases/latest" | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/') && \
     curl -Lo yazi.zip "https://github.com/sxyazi/yazi/releases/latest/download/yazi-x86_64-unknown-linux-musl.zip" && \
     unzip yazi.zip && \
@@ -37,56 +38,50 @@ RUN YAZI_VERSION=$(curl -s "https://api.github.com/repos/sxyazi/yazi/releases/la
     install yazi-x86_64-unknown-linux-musl/ya /usr/local/bin && \
     rm -rf yazi.zip yazi-x86_64-unknown-linux-musl
 
-# 3. Neovim Stable
+# 5. Neovim Stable
 RUN curl -LO https://github.com/neovim/neovim/releases/latest/download/nvim-linux-x86_64.tar.gz && \
     rm -rf /opt/nvim && tar -C /opt -xzf nvim-linux-x86_64.tar.gz && \
     ln -sf /opt/nvim-linux-x86_64/bin/nvim /usr/local/bin/nvim && \
     rm nvim-linux-x86_64.tar.gz
 
-# 4. Lazygit
+# 6. Lazygit
 RUN LAZYGIT_VERSION=$(curl -s "https://api.github.com/repos/jesseduffield/lazygit/releases/latest" | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/') && \
     curl -Lo lazygit.tar.gz "https://github.com/jesseduffield/lazygit/releases/latest/download/lazygit_${LAZYGIT_VERSION}_Linux_x86_64.tar.gz" && \
     tar xf lazygit.tar.gz lazygit && \
     install lazygit /usr/local/bin && \
     rm lazygit.tar.gz lazygit
 
-# 5. User Setup
+# 7. Eza & Tmux (System-wide)
+RUN mkdir -p /etc/apt/keyrings && \
+    wget -qO- https://raw.githubusercontent.com/eza-community/eza/main/deb.asc | gpg --dearmor -o /etc/apt/keyrings/gierens.gpg && \
+    echo "deb [signed-by=/etc/apt/keyrings/gierens.gpg] http://deb.gierens.de stable main" | tee /etc/apt/sources.list.d/gierens.list && \
+    apt-get update && apt-get install -y eza tmux
+
+# 8. User Setup & Privilege Escalation
 RUN if id -u 1000 >/dev/null 2>&1; then userdel -r $(id -un 1000); fi && \
     useradd -m -s /bin/bash -u 1000 tazpod && \
     echo "tazpod ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/tazpod
 
+# 9. Inject TazPod CLI (System-wide)
+COPY tazpod /usr/local/bin/tazpod
+RUN chmod +x /usr/local/bin/tazpod
+
+# --- SWITCH TO UNPRIVILEGED USER ---
 USER tazpod
 WORKDIR /home/tazpod
 
-# 6. Node.js via NVM
+# 10. Node.js via NVM (User-specific)
 ENV NVM_DIR="/home/tazpod/.nvm"
 RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash && \
     . $NVM_DIR/nvm.sh && \
     nvm install --lts
 
-# 7. Shell Tools
-RUN curl -sS https://starship.rs/install.sh | sh -s -- -y && \
-    curl -sS https://webinstall.dev/zoxide | bash && \
-    sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin && \
-    ZELLIJ_VERSION=$(curl -s "https://api.github.com/repos/zellij-org/zellij/releases/latest" | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/') && \
-    curl -Lo zellij.tar.gz "https://github.com/zellij-org/zellij/releases/latest/download/zellij-x86_64-unknown-linux-musl.tar.gz" && \
-    tar xf zellij.tar.gz && \
-    sudo install zellij /usr/local/bin && \
-    rm zellij.tar.gz && \
-    sudo mkdir -p /etc/apt/keyrings && \
-    wget -qO- https://raw.githubusercontent.com/eza-community/eza/main/deb.asc | sudo gpg --dearmor -o /etc/apt/keyrings/gierens.gpg && \
-    echo "deb [signed-by=/etc/apt/keyrings/gierens.gpg] http://deb.gierens.de stable main" | sudo tee /etc/apt/sources.list.d/gierens.list && \
-    sudo apt-get update && sudo apt-get install -y eza tmux && \
+# 11. Zoxide & Starship Init (User-specific)
+RUN curl -sS https://webinstall.dev/zoxide | bash && \
     git clone https://github.com/tmux-plugins/tpm /home/tazpod/.tmux/plugins/tpm
 
-# 8. Inject TazPod CLI & Dotfiles
-COPY --chown=tazpod:tazpod tazpod /usr/local/bin/tazpod
-RUN sudo chmod +x /usr/local/bin/tazpod
-
+# 12. Dotfiles & Neovim Plugins
 COPY --chown=tazpod:tazpod dotfiles/ /home/tazpod/
-
-# 9. Final Setup & Headless Plugin Sync
-RUN sudo chown -R tazpod:tazpod /home/tazpod && \
-    sudo ln -sf /home/tazpod/.nvm/versions/node/*/bin/node /usr/local/bin/node && \
+RUN sudo ln -sf /home/tazpod/.nvm/versions/node/*/bin/node /usr/local/bin/node && \
     sudo ln -sf /home/tazpod/.nvm/versions/node/*/bin/npm /usr/local/bin/npm && \
     nvim --headless "+Lazy! sync" +qa || echo "Initial sync done"
