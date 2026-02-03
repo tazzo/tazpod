@@ -1,0 +1,59 @@
+version: '3'
+
+vars:
+  BINARY_NAME: tazpod
+  DOCKER_REPO: tazzo/tazlab.net
+  VERSION:
+    sh: cat VERSION
+
+tasks:
+  build:
+    desc: Compile the Go binary for Linux/AMD64
+    cmds:
+      - 'echo "🔨 Building {{.BINARY_NAME}} {{.VERSION}}..."'
+      - 'GOOS=linux GOARCH=amd64 go build -o bin/{{.BINARY_NAME}} cmd/tazpod/main.go'
+      - 'cp bin/{{.BINARY_NAME}} .'
+
+  docker:build:
+    desc: Build the entire Docker image hierarchy
+    deps: [build]
+    cmds:
+      - 'echo "🏗️  Building Docker layers..."'
+      - 'docker build -t {{.DOCKER_REPO}}:tazpod-base -f .tazpod/Dockerfile.base .'
+      - 'docker build -t {{.DOCKER_REPO}}:tazpod-infisical -f .tazpod/Dockerfile.infisical .'
+      - 'docker build -t {{.DOCKER_REPO}}:tazpod-k8s -f .tazpod/Dockerfile.k8s .'
+      - 'docker build -t {{.DOCKER_REPO}}:tazpod-gemini -f .tazpod/Dockerfile.gemini .'
+
+  docker:push:
+    desc: Push images to registry with tags
+    cmds:
+      - |
+        for layer in tazpod-base tazpod-infisical tazpod-k8s tazpod-gemini; do
+          echo "Pushing $layer..."
+          docker push "{{.DOCKER_REPO}}:$layer"
+          docker tag "{{.DOCKER_REPO}}:$layer" "{{.DOCKER_REPO}}:$layer-{{.VERSION}}"
+          docker push "{{.DOCKER_REPO}}:$layer-{{.VERSION}}"
+        done
+
+  release:
+    desc: Full release cycle (Build -> Push -> Tag -> GitHub)
+    cmds:
+      - task: docker:build
+      - task: docker:push
+      - 'echo "🏷️  Tagging Git..."'
+      - 'git add .'
+      - 'git commit -m "chore: release {{.VERSION}}" || echo "No changes"'
+      - 'git push'
+      - 'git tag -a "{{.VERSION}}" -m "Release {{.VERSION}}"'
+      - 'git push origin "{{.VERSION}}"'
+      - |
+        if command -v gh &> /dev/null; then
+          gh release create "{{.VERSION}}" "bin/{{.BINARY_NAME}}" --repo "tazzo/tazpod" --title "Release {{.VERSION}}" --notes "Full atomic release."
+        fi
+    prompt: This will build and publish version {{.VERSION}}. Continue?
+
+  clean:
+    desc: Cleanup build artifacts
+    cmds:
+      - 'rm -rf bin/'
+      - 'rm -f {{.BINARY_NAME}}'

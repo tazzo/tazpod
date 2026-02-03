@@ -40,6 +40,8 @@ type SecretMapping struct {
 type SecretsConfig struct {
 	Config struct {
 		ProjectID string `yaml:"infisical_project_id"`
+		Env       string `yaml:"infisical_env"`
+		Path      string `yaml:"infisical_path"`
 	} `yaml:"config"`
 	Secrets []SecretMapping `yaml:"secrets"`
 }
@@ -382,19 +384,30 @@ func bridge(local, vault string) {
 func syncSecrets() {
 	fmt.Println("📦 Syncing secrets...")
 	pID := secCfg.Config.ProjectID
-	args := []string{"export", "--format=dotenv", "--silent"}
+	env := secCfg.Config.Env
+	if env == "" { env = "dev" }
+	path := secCfg.Config.Path
+	if path == "" { path = "/" }
+
+	args := []string{"export", "--format=dotenv", "--silent", "--env", env, "--path", path}
 	if pID != "" { args = append(args, "--projectId", pID) }
-	args = append(args, "--env", "dev")
+	
 	out, err := runInfisical(args...)
 	if err == nil && len(out) > 0 { os.WriteFile(EnvFile, out, 0600); os.Chown(EnvFile, TazPodUID, TazPodGID) }
 	for _, s := range secCfg.Secrets {
 		target := filepath.Join(MountPath, s.File)
 		fmt.Printf("⬇️  Pulling [%s] -> [%s]... ", s.Name, s.File)
-		cmdArgs := []string{"secrets", "get", s.Name, "--plain"}
+		cmdArgs := []string{"secrets", "get", s.Name, "--plain", "--env", env, "--path", path}
 		if pID != "" { cmdArgs = append(cmdArgs, "--projectId", pID) }
-		cmdArgs = append(cmdArgs, "--env", "dev")
+		
 		val, err := runInfisical(cmdArgs...)
-		if err == nil && len(strings.TrimSpace(string(val))) > 0 { os.WriteFile(target, val, 0600); os.Chown(target, TazPodUID, TazPodGID); fmt.Println("✅ OK") } else { fmt.Println("❌ FAILED") }
+		if err == nil && len(strings.TrimSpace(string(val))) > 0 {
+			os.WriteFile(target, val, 0600)
+			os.Chown(target, TazPodUID, TazPodGID)
+			fmt.Println("✅ OK")
+		} else {
+			fmt.Printf("❌ FAILED: error=%v, output=%s\n", err, string(val))
+		}
 	}
 }
 
@@ -415,7 +428,12 @@ func internalEnsureAuth() {
 	configPath := filepath.Join(InfisicalLocalHome, "infisical-config.json")
 	if _, err := os.Stat(configPath); os.IsNotExist(err) { internalLogin(); return }
 	pID := secCfg.Config.ProjectID
-	args := []string{"secrets", "--env", "dev", "--silent"}
+	env := secCfg.Config.Env
+	if env == "" { env = "dev" }
+	path := secCfg.Config.Path
+	if path == "" { path = "/" }
+
+	args := []string{"secrets", "--env", env, "--path", path, "--silent"}
 	if pID != "" { args = append(args, "--projectId", pID) }
 	if _, err := runInfisical(args...); err != nil { internalLogin() }
 }
