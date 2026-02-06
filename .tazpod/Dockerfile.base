@@ -11,7 +11,7 @@ ENV LANG=en_US.UTF-8
 # 1. System Essentials, Security & Extra Dev Tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates sudo curl wget git build-essential unzip \
-    cryptsetup-bin e2fsprogs dmsetup procps psmisc \
+    cryptsetup-bin e2fsprogs dmsetup procps psmisc strace \
     gnupg locales ncurses-term x11-xserver-utils \
     bat ripgrep fzf mc fd-find yq \
     python3 python3-pip python3-venv \
@@ -71,13 +71,15 @@ RUN if id -u 1000 >/dev/null 2>&1; then userdel -r $(id -un 1000); fi && \
     useradd -m -s /bin/bash -u 1000 tazpod && \
     echo "tazpod ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/tazpod
 
-# 10. Inject TazPod CLI (System-wide)
-COPY tazpod /usr/local/bin/tazpod
-RUN chmod +x /usr/local/bin/tazpod
-
 # --- SWITCH TO UNPRIVILEGED USER ---
 USER tazpod
 WORKDIR /home/tazpod
+
+# 10. Inject TazPod CLI (User-local)
+RUN mkdir -p /home/tazpod/.local/bin
+COPY --chown=tazpod:tazpod tazpod /home/tazpod/.local/bin/tazpod
+RUN chmod +x /home/tazpod/.local/bin/tazpod
+ENV PATH="/home/tazpod/.local/bin:${PATH}"
 
 # 11. Node.js via NVM (User-specific)
 ENV NVM_DIR="/home/tazpod/.nvm"

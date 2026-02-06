@@ -37,6 +37,7 @@ type SecretsConfig struct {
 		ProjectID string `yaml:"infisical_project_id"`
 		Env       string `yaml:"infisical_env"`
 		Path      string `yaml:"infisical_path"`
+		Domain    string `yaml:"infisical_domain"`
 	} `yaml:"config"`
 	Secrets []SecretMapping `yaml:"secrets"`
 }
@@ -89,10 +90,13 @@ func loadConfigs() {
 	if data, err := os.ReadFile(SecretsYAML); err == nil { yaml.Unmarshal(data, &secCfg) }
 }
 
-func help() { fmt.Printf("🛡️  TazPod CLI v0.1.13 (Deep Debug)\n") }
+func help() { fmt.Printf("🛡️  TazPod CLI v0.1.14 (Ghost Protocol)\n") }
 
 func runInfisicalDebug(args ...string) (string, string, error) {
 	var cmd *exec.Cmd
+	domain := secCfg.Config.Domain; if domain == "" { domain = "https://app.infisical.com" }
+	args = append(args, "--domain", domain)
+
 	if os.Geteuid() == 0 {
 		fullArgs := append([]string{"-u", "tazpod", "infisical"}, args...)
 		cmd = exec.Command("sudo", fullArgs...)
@@ -109,7 +113,7 @@ func runInfisicalDebug(args ...string) (string, string, error) {
 }
 
 func syncSecrets() {
-	fmt.Println("📦 Syncing secrets (v0.1.13)...")
+	fmt.Println("📦 Syncing secrets (v0.1.14)...")
 	pID := secCfg.Config.ProjectID
 	env := secCfg.Config.Env; if env == "" { env = "dev" }
 	globalPath := secCfg.Config.Path; if globalPath == "" { globalPath = "/" }
@@ -149,7 +153,8 @@ func syncSecrets() {
 
 func pull() {
 	if os.Getenv(GhostEnvVar) != "true" {
-		cmd := exec.Command("sudo", "unshare", "--mount", "--propagation", "private", "/usr/local/bin/tazpod", "internal-ghost", "pull")
+		exe, _ := os.Executable()
+		cmd := exec.Command("sudo", "unshare", "--mount", "--propagation", "private", exe, "internal-ghost", "pull")
 		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr; cmd.Run(); return
 	}
 	syncSecrets()
@@ -157,12 +162,14 @@ func pull() {
 
 func initProject() { os.Mkdir(".tazpod", 0755) }
 func unlock() {
-	cmd := exec.Command("sudo", "unshare", "--mount", "--propagation", "private", "/usr/local/bin/tazpod", "internal-ghost")
+	exe, _ := os.Executable()
+	cmd := exec.Command("sudo", "unshare", "--mount", "--propagation", "private", exe, "internal-ghost")
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr; cmd.Run()
 }
 func login() { 
 	if os.Getenv(GhostEnvVar) != "true" {
-		cmd := exec.Command("sudo", "unshare", "--mount", "--propagation", "private", "/usr/local/bin/tazpod", "internal-ghost", "login")
+		exe, _ := os.Executable()
+		cmd := exec.Command("sudo", "unshare", "--mount", "--propagation", "private", exe, "internal-ghost", "login")
 		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr; cmd.Run(); return
 	}
 	runCmd("infisical", "login") 
