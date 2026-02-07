@@ -43,7 +43,7 @@ type SecretsConfig struct {
 }
 
 const (
-	Version       = "v0.1.10-beta27"
+	Version       = "v0.2.0"
 	ConfigPath    = ".tazpod/config.yaml"
 	SecretsYAML   = "/workspace/secrets.yml"
 	EnvFile       = vault.MountPath + "/.env-infisical"
