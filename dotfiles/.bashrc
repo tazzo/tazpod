@@ -69,9 +69,14 @@ tazpod() {
     local res=$?;
     
     # Auto-reload env on key commands
-    if [ "$1" == "unlock" ] || [ "$1" == "pull" ] || [ "$1" == "sync" ] || [ "$1" == "login" ]; then
+    if [ "$1" == "unlock" ] || [ "$1" == "pull" ] || [ "$1" == "sync" ] || [ "$1" == "login" ] || [ "$1" == "lock" ]; then
+        if [ "$1" == "lock" ]; then sleep 0.1; fi
         eval "$(command tazpod __internal_env 2>/dev/null)"
-        echo "🔄 Environment updated."
+        if [ "$1" == "lock" ]; then
+             echo "🔒 Enclave environment cleaned."
+        else
+             echo "🔄 Environment updated."
+        fi
     fi
     return $res;
 }

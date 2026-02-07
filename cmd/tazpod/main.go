@@ -43,7 +43,7 @@ type SecretsConfig struct {
 }
 
 const (
-	Version       = "v0.1.10-beta25"
+	Version       = "v0.1.10-beta27"
 	ConfigPath    = ".tazpod/config.yaml"
 	SecretsYAML   = "/workspace/secrets.yml"
 	EnvFile       = vault.MountPath + "/.env-infisical"
@@ -169,6 +169,13 @@ func pull() {
 	vault.Save("") 
 }
 
+func checkInfisicalLogin() bool {
+	domain := secCfg.Config.Domain; if domain == "" { domain = "https://app.infisical.com" }
+	stdout, _, err := runInfisical("user", "get", "--domain", domain)
+	if err != nil { return false }
+	return strings.Contains(stdout, "email") || strings.Contains(stdout, "@")
+}
+
 func isMounted(path string) bool {
 	data, _ := os.ReadFile("/proc/mounts")
 	return strings.Contains(string(data), path)
@@ -214,13 +221,20 @@ func runCmd(name string, args ...string) {
 }
 
 func printExportEnv() {
-	if _, err := os.Stat(vault.MountPath); os.IsNotExist(err) { return }
+	// Verifichiamo se la cartella dei segreti esiste ed è leggibile
+	// isMounted a volte dà falsi positivi subito dopo un lazy umount
+	_, err := os.Stat(vault.PassCache)
+	mounted := err == nil 
+
 	for _, s := range secCfg.Secrets {
-		if s.Env != "" {
+		if s.Env == "" { continue }
+		if mounted {
 			target := filepath.Join(vault.MountPath, s.File)
 			if _, err := os.Stat(target); err == nil {
 				fmt.Printf("export %s=\"%s\"\n", s.Env, target)
 			}
+		} else {
+			fmt.Printf("unset %s\n", s.Env)
 		}
 	}
 }
