@@ -3,3 +3,4 @@ secrets/
 .tazpod-vault/
 .tazpod/vault/vault.img
 .tazpod/vault/
+.tazpod/.gemini/

@@ -21,6 +21,9 @@ fi
 # --- PATH ENHANCEMENTS ---
 export PATH="$HOME/.local/bin:$PATH"
 
+# --- INFISICAL CONFIG ---
+export INFISICAL_VAULT_BACKEND=file
+
 # --- NVM (Node Version Manager) ---
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
@@ -54,9 +57,8 @@ alias lt="eza --tree --icons"
 alias l="eza -l --icons --git --no-user --no-time"
 alias cat="bat"
 
-# --- TAZPOD CORE (Smart Function v6.5) ---
+# --- TAZPOD CORE (Smart Function v7.2) ---
 tazpod() {
-    # Special case for 'env' to prevent leaking secrets to terminal
     if [ "$1" == "env" ]; then
         eval "$(command tazpod __internal_env 2>/dev/null)"
         echo "🔄 Enclave environment variables refreshed."
@@ -66,41 +68,17 @@ tazpod() {
     command tazpod "$@";
     local res=$?;
     
-    # Outer Shell: Exit on unlock/reinit/pull(if vault was closed)
-    if [ -z "$TAZPOD_GHOST_MODE" ]; then
-        if [ "$1" == "unlock" ] || [ "$1" == "reinit" ] || [ "$1" == "pull" ]; then
-            if [ $res -eq 0 ]; then exit 0; fi;
-        fi
-    
-    # Inner Ghost Shell: Auto-reload env on sync/login/pull
-    else
-        if [ "$1" == "pull" ] || [ "$1" == "sync" ] || [ "$1" == "login" ]; then
-             eval "$(command tazpod __internal_env 2>/dev/null)"
-             echo "🔄 Environment updated."
-        fi
+    # Auto-reload env on key commands
+    if [ "$1" == "unlock" ] || [ "$1" == "pull" ] || [ "$1" == "sync" ] || [ "$1" == "login" ]; then
+        eval "$(command tazpod __internal_env 2>/dev/null)"
+        echo "🔄 Environment updated."
     fi
     return $res;
 }
 
-# Auto-load secrets on startup if vault is open
-if [ -n "$TAZPOD_GHOST_MODE" ]; then
+# Auto-load secrets if already mounted
+if mountpoint -q /home/tazpod/secrets; then
     eval "$(command tazpod __internal_env 2>/dev/null)"
-fi
-
-# Gemini CLI Safety Wrapper
-gemini() {
-    if [ "$TAZPOD_GHOST_MODE" = "true" ]; then
-        command gemini "$@"
-    else
-        echo -e "\033[0;33m🔒 Vault is closed. Gemini memories are in the secure enclave.\033[0m"
-        echo "   Starting unlock procedure... please run 'gemini' again once inside."
-        tazpod unlock
-    fi
-}
-
-# Vault Welcome Message
-if [ "$TAZPOD_GHOST_MODE" = "true" ]; then
-    echo -e "\n\033[1;32m✅ Vault Unlocked. You can now run 'gemini' safely.\033[0m\n"
 fi
 
 # Enable Modern Prompts/Tools
