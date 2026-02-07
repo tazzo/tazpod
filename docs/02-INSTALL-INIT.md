@@ -2,90 +2,70 @@
 
 ## 1. Global Installation
 
-TazPod is distributed as a single static Go binary. We provide a universal installer script that handles OS detection (Linux/macOS) and architecture (AMD64/ARM64).
+TazPod is distributed as a single static Go binary. The universal installer handles OS detection and places the binary in your local path.
 
 **One-Line Install:**
 ```bash
 curl -sSL https://raw.githubusercontent.com/tazzo/tazpod/master/scripts/install.sh | bash
 ```
 
-**What it does:**
-1.  Downloads the latest binary from GitHub Releases.
-2.  Installs it to `~/.local/bin/tazpod`.
-3.  Sets executable permissions.
-4.  Checks if `~/.local/bin` is in your `$PATH`.
+**System Requirements:**
+*   **Docker**: Must be installed and running.
+*   **Permissions**: Your user must be in the `docker` group or have `sudo` access.
 
 ---
 
 ## 2. Project Initialization (`tazpod init`)
 
-TazPod is designed to be **per-project**. You don't just "run TazPod"; you initialize a directory to *be* a TazPod workspace.
+TazPod is project-centric. You initialize a directory to transform it into a secure workspace.
 
 ### The Command
 ```bash
-# Basic init (defaults to k8s image)
+# Initialize with the default Gemini image
 tazpod init
-
-# Specialized init (choose your stack)
-tazpod init base      # Just OS + IDE
-tazpod init infisical # OS + IDE + Secrets Manager
-tazpod init k8s       # OS + IDE + Secrets + DevOps Tools
-tazpod init gemini    # The Full Package (AI + K8s)
 ```
 
 ### What happens during `init`?
 The CLI performs the following actions:
-1.  **Creates `.tazpod/`**: A hidden directory for project-local data.
-2.  **Generates `config.yaml`**: The blueprint for your container.
-3.  **Creates `secrets.yml`**: A template for mapping Infisical secrets.
-4.  **Creates `Dockerfile`**: A sample file in `.tazpod/` to let you customize the image.
-5.  **Secures `.gitignore`**: Automatically ignores the `vault/` and `.gemini/` directories to prevent accidental commits of sensitive data.
+1.  **Creates `.tazpod/`**: A project-local metadata directory.
+2.  **Generates `config.yaml`**: Defines image, container name, and user.
+3.  **Creates `secrets.yml`**: A template for Infisical secret mapping.
+4.  **Secures `.gitignore`**: Prevents accidental commits of `vault/` and `.gemini/` local data.
 
 ---
 
 ## 3. Anatomy of `.tazpod/`
 
-This folder is the brain of your environment.
-
 ```text
 /my-project/
 ├── .tazpod/
-│   ├── config.yaml       # Container configuration
-│   ├── Dockerfile        # Custom build instructions (optional)
-│   ├── .gitignore        # Ignores vault and memory
+│   ├── config.yaml       # Container blueprint
 │   └── vault/            
-│       └── vault.img     # (Created after first use) The Encrypted LUKS Container
+│       └── vault.tar.aes # The Encrypted Secrets Storage
+├── secrets.yml           # Secrets mapping (Safe for Git)
 ```
 
 ### The `config.yaml`
-This file tells the CLI how to behave.
-
 ```yaml
 version: 1.0
-image: "tazzo/tazlab.net:tazpod-gemini" # The Docker image to pull/build
-container_name: "tazpod-myproject-839201" # Unique ID generated during init
-user: "tazpod" # The non-root user inside the container
-features:
-  ghost_mode: true # Enables the Namespace Isolation logic
-  debug: false     # Set to true for verbose CLI logs
+image: "tazzo/tazlab.net:tazpod-gemini"
+container_name: "tazpod-lab"
+user: "tazpod"
 ```
 
 ---
 
-## 4. First Start (`tazpod up`)
+## 4. Lifecycle Commands
 
-Once initialized, you start the daemon:
+### Starting the Pod (`tazpod up`)
+Starts the Docker container in the background. It dynamically mounts your current directory to `/workspace`.
 
-```bash
-tazpod up
-```
+### Entering the Shell (`tazpod enter`)
+Enters the container interactivelly. 
+*   **Auto-Cleanup**: When you type `exit`, TazPod automatically triggers a `lock` to unmount and secure the RAM enclave.
 
-**What happens:**
-1.  **Build/Pull**: If you customized the Dockerfile, it builds it. Otherwise, it pulls the image from Docker Hub.
-2.  **Mounts**:
-    *   Mounts the current directory (`$PWD`) to `/workspace`.
-    *   Mounts the local `.gemini/` folder to `/home/tazpod/.gemini` (for AI persistence).
-3.  **Run**: Starts the container in detached mode (`-d`) with `sleep infinity`. It waits for you.
+### Sinking the Pod (`tazpod down`)
+Stops and removes the container.
 
 ---
 *Next: Dive into the engine in [03-CLI-INTERNALS.md](./03-CLI-INTERNALS.md)*

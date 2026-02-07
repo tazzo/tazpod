@@ -1,77 +1,51 @@
-# The Ghost Mode: Linux Namespaces Explained 👻
+# Secure Memory Isolation: The RAM Enclave ☁️
 
-Ghost Mode is the security feature that sets TazPod apart from standard dev containers. It solves the problem of **Concurrent Access**: how to let *you* see the secrets, but prevent *anyone else* on the same machine from seeing them.
+In version 0.2.0, TazPod has transitioned from kernel-level "Ghost Mode" (Namespaces) to an application-level **RAM Enclave**. This provides similar security benefits with significantly better performance and cross-platform reliability.
 
-## 1. The Linux Mount Namespace
+## 1. The RAM Boundary (tmpfs)
 
-In Linux, the "filesystem tree" is not a global singleton. It is a property of a **Namespace**.
-By default, all processes live in the Global Namespace. If you mount a disk at `/mnt/data`, everyone sees it.
+TazPod leverages **tmpfs**, a Linux temporary filesystem that resides entirely in volatile memory.
 
-TazPod uses the `unshare(CLONE_NEWNS)` syscall.
-This creates a **copy** of the current mount tree for the new process. Changes made inside this new tree (like mounting a decrypted volume) **do not propagate** back to the parent or to other namespaces.
-
-### Visualizing the Isolation
-
-*   **Process A (Docker Daemon)**: Sees `/home/tazpod/secrets` as an empty directory.
-*   **Process B (Intruder)**: `docker exec ls -la /home/tazpod/secrets` -> Empty.
-*   **Process C (You / Ghost)**: `ls -la /home/tazpod/secrets` -> **Full Access**.
-
-The decrypted data exists literally nowhere else but in the memory context of your specific shell session.
+*   **Zero Persistence**: Data in tmpfs is never committed to the physical drive. If the power is lost or the container stops, the secrets are gone.
+*   **Encrypted Sync**: The only way secrets survive between container restarts is by being explicitly "Saved" (re-encrypted) into the `vault.tar.aes` file.
 
 ---
 
-## 2. The Matryoshka Shell Lifecycle 🪆
+## 2. Bridging Auth (The Bind Strategy) 🔗
 
-TazPod implements a nested shell strategy to manage this isolation safely.
+A development environment is useless if your tools (Infisical, Gemini, Git) can't see the secrets. TazPod uses **Bind Mounting** to bridge the RAM Enclave into your home directory.
 
-1.  **Outer Shell**: The entry point. You are `tazpod`. No secrets.
-2.  **Sudo/Unshare**: You request entry. The system elevates to `root` and forks a new namespace.
-3.  **Setup Phase**: The `internal-ghost` (as root) prepares the room. It decrypts LUKS, mounts drives, sets permissions.
-4.  **Inner Shell (Ghost)**: The system drops privileges and gives you a `bash` prompt. You are `tazpod` again, but now the room is furnished with secrets.
-5.  **Teardown**: When you type `exit`, the Inner Shell dies. The Setup Phase resumes, wipes the room (unmount/close), and then the process dies, returning you to the Outer Shell.
+| Real Location (RAM) | Target Path (Home) | Tool |
+| :--- | :--- | :--- |
+| `/home/tazpod/secrets/.infisical` | `~/.infisical` | Infisical CLI |
+| `/home/tazpod/secrets/infisical-keyring` | `~/infisical-keyring` | Infisical Auth |
+| `/workspace/.tazpod/.gemini` | `~/.gemini` | Gemini AI (Persistent) |
+
+### The "Clean Table" Policy
+Before هر mount, TazPod executes a `rm -rf` on the target path. This ensures that old symlinks or plaintext files are purged before the secure RAM enclave is mapped over them.
 
 ---
 
-## 3. The `.bashrc` Integration
+## 3. Environment Variable Cleanup 🧹
 
-To make this seamless, TazPod injects smart functions into the container's `.bashrc`.
+Variables like `GITHUB_TOKEN` or `KUBECONFIG` often point to files within the RAM Enclave. Leaving these set after the enclave is destroyed creates "Ghost Variables" that point to non-existent paths.
 
-**The Core Wrapper:**
-```bash
-tazpod() {
-    # Special case for 'env' to prevent leaking secrets to TTY
-    if [ "$1" == "env" ]; then
-        eval "$(/usr/local/bin/tazpod __internal_env 2>/dev/null)"
-        return 0
-    fi
-    /usr/local/bin/tazpod "$@";
-}
-```
+TazPod solves this via its **Smart Env Function**:
 
-**The Gemini Safety Latch:**
-For AI tools, we add a wrapper that prevents execution outside the vault.
-```bash
-gemini() {
-    if [ "$TAZPOD_GHOST_MODE" = "true" ]; then
-        /usr/local/bin/gemini "$@"
-    else
-        echo "🔒 Vault is closed. Unlocking required..."
-        tazpod unlock
-    fi
-}
-```
+1.  **Unlock**: CLI outputs `export VAR="/home/tazpod/secrets/..."`.
+2.  **Lock**: CLI outputs `unset VAR`.
+3.  **Bash Integration**: The `.bashrc` automatically `eval`s these outputs, ensuring your shell environment is always in sync with the vault state.
 
-## 4. Cross-Platform Compatibility (macOS) 🍏
+---
 
-A common question is: "How can Linux Namespaces and LUKS work on macOS?"
+## 4. Portability: Host vs Container
 
-The answer lies in the **Docker Engine architecture**. On macOS, Docker Desktop or OrbStack run a lightweight Linux VM. When you execute `tazpod` inside the container:
-1.  The syscalls (`unshare`, `mount`) are handled by the **Linux kernel of the VM**, not the host's Darwin kernel.
-2.  The `--privileged` flag allows the container to interact with the VM's Device Mapper.
+Because TazPod v0.2.0 uses standard Docker volume mounts and tmpfs, it works seamlessly across:
+*   **Native Linux** (Ubuntu, Debian, Arch).
+*   **WSL2** (Windows Subsystem for Linux).
+*   **macOS** (via Docker Desktop / OrbStack).
 
-This means TazPod is architected to provide the **same level of security and isolation on a Mac** as it does on a native Linux machine. 
-
-*Disclaimer: Current validation tests have been performed primarily on Linux environments. While the underlying Docker VM technology on macOS supports these kernel features, platform-specific edge cases may exist.*
+The security model remains consistent: Secrets are encrypted at rest on the host disk and only decrypted into the container's volatile memory.
 
 ---
 *Next: Learn how we manage secrets in [05-SECRETS-INFISICAL.md](./05-SECRETS-INFISICAL.md)*

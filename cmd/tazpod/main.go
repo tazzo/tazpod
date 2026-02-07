@@ -3,10 +3,12 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"tazpod/internal/vault"
 
@@ -93,17 +95,25 @@ func help() {
 }
 
 func up() {
+	if cfg.ContainerName == "" {
+		fmt.Println("❌ Error: container_name not found in .tazpod/config.yaml. Please run 'tazpod init' again.")
+		return
+	}
 	fmt.Println("🚀 Starting TazPod Container...")
 	cwd, _ := os.Getwd()
 	cmd := exec.Command("docker", "run", "-d", "--name", cfg.ContainerName, "--privileged", "--network", "host", "-v", cwd+":/workspace", cfg.Image, "sleep", "infinity")
-	if out, err := cmd.CombinedOutput(); err != nil { fmt.Printf("❌ Failed: %s\n", string(out)) } else { fmt.Println("✅ Started.") }
+	if out, err := cmd.CombinedOutput(); err != nil { fmt.Printf("❌ Failed: %s\n", string(out)) } else { fmt.Println("✅ Started: " + cfg.ContainerName) }
 }
 
-func down() { exec.Command("docker", "rm", "-f", cfg.ContainerName).Run(); fmt.Println("✅ Stopped.") }
+func down() { 
+	if cfg.ContainerName == "" { return }
+	exec.Command("docker", "rm", "-f", cfg.ContainerName).Run()
+	fmt.Println("✅ Stopped.") 
+}
 
 func enter() {
+	if cfg.ContainerName == "" { return }
 	binary, _ := exec.LookPath("docker")
-	// Forziamo la directory di lavoro a /workspace
 	args := []string{"docker", "exec", "-it", "-w", "/workspace", cfg.ContainerName, "bash"}
 	cmd := exec.Command(binary, args[1:]...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
@@ -112,7 +122,37 @@ func enter() {
 	exec.Command("docker", "exec", cfg.ContainerName, "tazpod", "lock").Run()
 }
 
-func initProject() { os.Mkdir(".tazpod", 0755); fmt.Println("✅ Project initialized.") }
+func initProject() {
+	os.MkdirAll(".tazpod/vault", 0755)
+	
+	// Generazione Nome Container Unico
+	cwd, _ := os.Getwd()
+	folderName := filepath.Base(cwd)
+	
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	randomSuffix := fmt.Sprintf("%04d", r.Intn(10000))
+	containerName := fmt.Sprintf("tazpod-%s-%s", folderName, randomSuffix)
+
+	// Creazione Config Default
+	newCfg := Config{
+		Image: "tazzo/tazlab.net:tazpod-gemini",
+		ContainerName: containerName,
+		User: "tazpod",
+	}
+	newCfg.Features.GhostMode = true
+	newCfg.Features.Debug = false
+
+	data, _ := yaml.Marshal(&newCfg)
+	os.WriteFile(ConfigPath, data, 0644)
+
+	// Creazione secrets.yml template se non esiste
+	if _, err := os.Stat("secrets.yml"); os.IsNotExist(err) {
+		tmpl := "config:\n  infisical_project_id: \"\"\n  infisical_env: \"dev\"\n  infisical_path: \"/\"\n  infisical_domain: \"https://eu.infisical.com\"\n\nsecrets:\n  - name: EXAMPLE_SECRET\n    file: example-file\n    env: EXAMPLE_ENV\n"
+		os.WriteFile("secrets.yml", []byte(tmpl), 0644)
+	}
+
+	fmt.Printf("✅ Project initialized.\n🐳 Container: %s\n", containerName)
+}
 
 func unlock() { vault.Unlock() }
 
@@ -129,7 +169,6 @@ func pull() {
 
 	fmt.Println("📦 Syncing secrets...")
 	
-	// 1. Prova il sync. Se fallisce per sessione, chiedi login.
 	args := []string{"export", "--format=dotenv", "--silent", "--env", env, "--path", globalPath}
 	if pID != "" { args = append(args, "--projectId", pID) }
 	
@@ -138,8 +177,7 @@ func pull() {
 		if strings.Contains(stderr, "No valid login session") || strings.Contains(stderr, "login") {
 			fmt.Println("👤 Session missing. Logging in...")
 			login()
-			vault.Save("") // Salva subito il token in RAM -> Disco
-			// Riprova il sync
+			vault.Save("") 
 			out, stderr, err = runInfisical(args...)
 		}
 	}
@@ -152,7 +190,6 @@ func pull() {
 		return
 	}
 	
-	// 2. Pull individuali
 	for _, s := range secCfg.Secrets {
 		target := filepath.Join(vault.MountPath, s.File)
 		secretPath := s.Path; if secretPath == "" { secretPath = globalPath }
@@ -221,8 +258,6 @@ func runCmd(name string, args ...string) {
 }
 
 func printExportEnv() {
-	// Verifichiamo se la cartella dei segreti esiste ed è leggibile
-	// isMounted a volte dà falsi positivi subito dopo un lazy umount
 	_, err := os.Stat(vault.PassCache)
 	mounted := err == nil 
 
