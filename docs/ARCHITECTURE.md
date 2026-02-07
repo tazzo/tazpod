@@ -8,7 +8,7 @@ TazPod v0.2.0 is a specialized development enclave designed for **Zero-Trust wor
 
 TazPod operates across three isolated layers to minimize the attack surface:
 
-1.  **Orchestration (Host)**: A Go-based CLI (`tazpod`) that manages the Docker lifecycle and cryptographic operations.
+1.  **Orchestration (Host)**: A Go-based CLI (`tazpod`) that manages the Docker lifecycle, project-specific unique container identifiers, and cryptographic operations.
 2.  **Volatile Enclave (Memory)**: A **tmpfs** RAM disk mounted within the container. Decrypted secrets reside only here.
 3.  **Application (Container)**: Optimized Docker images containing toolstacks (IDE, Infisical, K8s, AI).
 
@@ -16,9 +16,12 @@ TazPod operates across three isolated layers to minimize the attack surface:
 
 ## 2. The RAM Boundary Model ☁️
 
-The core security principle of v0.2.0 is the **RAM-Only Decryption**.
+The core security principle of v0.2.0 is the **RAM-Only Decryption** and **Project Isolation**.
 
-### 2.1 Encryption at Rest
+### 2.1 Project Isolation
+Every project initialized with `tazpod init` receives a unique `container_name` (e.g., `tazpod-<folder>-<rand>`). This allows developers to work on multiple projects simultaneously, each with its own isolated RAM enclave and toolset, without any resource collision.
+
+### 2.2 Encryption at Rest
 Secrets are stored in a compressed TAR archive (`vault.tar.aes`).
 *   **Algorithm**: AES-256-GCM (Authenticated Encryption).
 *   **Derivation**: PBKDF2 (100,000 iterations).

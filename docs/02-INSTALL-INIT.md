@@ -28,7 +28,7 @@ tazpod init
 ### What happens during `init`?
 The CLI performs the following actions:
 1.  **Creates `.tazpod/`**: A project-local metadata directory.
-2.  **Generates `config.yaml`**: Defines image, container name, and user.
+2.  **Generates `config.yaml`**: Defines image, user, and a **unique container name** based on the current folder and a random suffix (e.g., `tazpod-myproject-4829`). This ensures that multiple TazPod projects can run concurrently without naming conflicts.
 3.  **Creates `secrets.yml`**: A template for Infisical secret mapping.
 4.  **Secures `.gitignore`**: Prevents accidental commits of `vault/` and `.gemini/` local data.
 
@@ -49,7 +49,7 @@ The CLI performs the following actions:
 ```yaml
 version: 1.0
 image: "tazzo/tazlab.net:tazpod-gemini"
-container_name: "tazpod-lab"
+container_name: "tazpod-myproject-4829"
 user: "tazpod"
 ```
 
