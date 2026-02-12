@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"tazpod/internal/utils"
 	"tazpod/internal/vault"
 
 	"gopkg.in/yaml.v3"
@@ -180,7 +181,32 @@ func push() {
 }
 
 func pushIdentity() {
-	fmt.Println("☁️  Identity PUSH (S3 Sync) - Not implemented yet")
+	data, err := vault.PackageIdentity()
+	if err != nil {
+		fmt.Printf("❌ Failed to package identity: %v\n", err)
+		return
+	}
+
+	// Save temporarily to disk for upload
+	tmpFile := "/tmp/tazpod-identity.tar.gz"
+	if err := os.WriteFile(tmpFile, data, 0600); err != nil {
+		fmt.Printf("❌ Failed to create temp file: %v\n", err)
+		return
+	}
+	defer os.Remove(tmpFile)
+
+	s3, err := utils.NewS3Client("")
+	if err != nil {
+		fmt.Printf("❌ S3 Client error: %v\n", err)
+		return
+	}
+
+	fmt.Println("☁️  Uploading identity to S3...")
+	if err := s3.UploadFile("identities/default.tar.gz", tmpFile); err != nil {
+		fmt.Printf("❌ Upload failed: %v\n", err)
+		return
+	}
+	fmt.Println("✅ Identity pushed successfully.")
 }
 
 func pull() {
@@ -197,7 +223,31 @@ func pull() {
 }
 
 func pullIdentity() {
-	fmt.Println("☁️  Identity PULL (S3 Sync) - Not implemented yet")
+	s3, err := utils.NewS3Client("")
+	if err != nil {
+		fmt.Printf("❌ S3 Client error: %v\n", err)
+		return
+	}
+
+	tmpFile := "/tmp/tazpod-identity-pull.tar.gz"
+	fmt.Println("☁️  Downloading identity from S3...")
+	if err := s3.DownloadFile("identities/default.tar.gz", tmpFile); err != nil {
+		fmt.Printf("❌ Download failed: %v\n", err)
+		return
+	}
+	defer os.Remove(tmpFile)
+
+	data, err := os.ReadFile(tmpFile)
+	if err != nil {
+		fmt.Printf("❌ Failed to read downloaded identity: %v\n", err)
+		return
+	}
+
+	if err := vault.ExtractIdentity(data); err != nil {
+		fmt.Printf("❌ Failed to extract identity: %v\n", err)
+		return
+	}
+	fmt.Println("✅ Identity pulled and extracted.")
 }
 
 func pullSecrets() {

@@ -65,7 +65,7 @@ func Unlock() {
 			os.Exit(1)
 		}
 		
-		if err := untar(decrypted, MountPath); err != nil { fatal(err.Error()) }
+		if err := Untar(decrypted, MountPath); err != nil { fatal(err.Error()) }
 		fmt.Println("✅ OK")
 	} else {
 		fmt.Println("🆕 New vault initialized.")
@@ -105,7 +105,7 @@ func Save(passphrase string) {
 	}
 
 	fmt.Print("💾 Saving vault to disk... ")
-	rawBytes, err := tarDir(MountPath)
+	rawBytes, err := TarDir(MountPath)
 	if err != nil { fmt.Println("❌ Pack error:", err); return }
 
 	encrypted, err := crypto.Encrypt(rawBytes, passphrase)
@@ -182,7 +182,7 @@ func getPassphrase() string {
 
 func fatal(msg string) { fmt.Println("❌ " + msg); os.Exit(1) }
 
-func untar(data []byte, dest string) error {
+func Untar(data []byte, dest string) error {
 	gr, err := gzip.NewReader(io.NopCloser(strings.NewReader(string(data))))
 	if err != nil { return err }
 	defer gr.Close()
@@ -205,7 +205,7 @@ func untar(data []byte, dest string) error {
 	return nil
 }
 
-func tarDir(src string) ([]byte, error) {
+func TarDir(src string) ([]byte, error) {
 	var buf bytes.Buffer
 	gw := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gw)
@@ -225,3 +225,16 @@ func tarDir(src string) ([]byte, error) {
 	tw.Close(); gw.Close()
 	return buf.Bytes(), nil
 }
+
+// PackageIdentity bundles the entire .tazpod directory for S3 sync
+func PackageIdentity() ([]byte, error) {
+	fmt.Println("📦 Packaging identity (.tazpod)...")
+	return TarDir(".tazpod")
+}
+
+// ExtractIdentity extracts the identity bundle from S3
+func ExtractIdentity(data []byte) error {
+	fmt.Println("📂 Extracting identity (.tazpod)...")
+	return Untar(data, ".")
+}
+
