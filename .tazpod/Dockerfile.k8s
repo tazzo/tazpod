@@ -1,6 +1,6 @@
 # --- TAZPOD LAYER 3: KUBERNETES COMMANDER ---
-# This layer depends on tazzo/tazlab.net:tazpod-infisical
-FROM tazzo/tazlab.net:tazpod-infisical
+# This layer depends on tazzo/tazpod-infisical
+FROM tazzo/tazpod-infisical:latest
 
 USER root
 

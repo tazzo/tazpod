@@ -1,6 +1,6 @@
 # --- TAZPOD LAYER 2: INFISICAL (Secrets) ---
-# This layer depends on tazzo/tazlab.net:tazpod-base
-FROM tazzo/tazlab.net:tazpod-base
+# This layer depends on tazzo/tazpod-base
+FROM tazzo/tazpod-base:latest
 
 USER root
 

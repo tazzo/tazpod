@@ -1,6 +1,6 @@
 # --- TAZPOD LAYER 4: AI ENHANCED ---
-# This layer depends on tazzo/tazlab.net:tazpod-k8s
-FROM tazzo/tazlab.net:tazpod-k8s
+# This layer depends on tazzo/tazpod-k8s
+FROM tazzo/tazpod-k8s:latest
 
 USER root
 
