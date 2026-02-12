@@ -36,7 +36,7 @@ tazpod init
 This will create:
 *   `.tazpod/config.yaml`: The main configuration file.
 *   `.tazpod/Dockerfile`: A template to extend the environment.
-*   `secrets.yml`: A mapping file for your Infisical secrets.
+*   `.tazpod/secrets-sync-config.yml`: A mapping file for your Infisical secrets.
 
 ---
 
@@ -84,11 +84,11 @@ If you just need the IDE tools, you can use the `base` image. Your project files
 
 ### 3. Using Infisical & Secrets
 To access your secrets securely:
-1.  **Unlock**: Run `tazpod pull`. It will ask for your LUKS passphrase and perform a sync.
+1.  **Unlock**: Run `tazpod pull secrets`. It will ask for your LUKS passphrase and perform a sync.
 2.  **Login**: If it's your first time, it will trigger `tazpod login`. The session token will be saved **inside the encrypted vault**.
 3.  **Environment**: Run `tazpod env` to refresh environment variables in your current shell session.
 
-### 4. Secrets Mapping (`secrets.yml`)
+### 4. Secrets Mapping (`.tazpod/secrets-sync-config.yml`)
 Define which secrets to pull from Infisical and where to save them:
 
 ```yaml
