@@ -78,6 +78,7 @@ func main() {
 	case "unlock": unlock()
 	case "lock": vault.Lock()
 	case "pull", "sync": pull()
+	case "push": push()
 	case "login": login()
 	case "save": vault.Save("") 
 	case "__internal_env": printExportEnv()
@@ -162,9 +163,44 @@ func initProject() {
 	fmt.Printf("✅ Project initialized.\n🐳 Container: %s\n", containerName)
 }
 
-func unlock() { vault.Unlock() }
+func unlock() { 
+	vault.SetupIdentity()
+	vault.Unlock() 
+}
+
+func push() {
+	subarg := ""
+	if len(os.Args) > 2 { subarg = os.Args[2] }
+
+	if subarg == "identity" || subarg == "" {
+		pushIdentity()
+	} else {
+		fmt.Printf("❌ Unknown push target: %s\n", subarg)
+	}
+}
+
+func pushIdentity() {
+	fmt.Println("☁️  Identity PUSH (S3 Sync) - Not implemented yet")
+}
 
 func pull() {
+	subarg := ""
+	if len(os.Args) > 2 { subarg = os.Args[2] }
+
+	if subarg == "secrets" {
+		pullSecrets()
+	} else if subarg == "identity" || subarg == "" {
+		pullIdentity()
+	} else {
+		fmt.Printf("❌ Unknown pull target: %s\n", subarg)
+	}
+}
+
+func pullIdentity() {
+	fmt.Println("☁️  Identity PULL (S3 Sync) - Not implemented yet")
+}
+
+func pullSecrets() {
 	if !isMounted(vault.MountPath) {
 		fmt.Println("🔒 Vault locked. Unlocking first...")
 		vault.Unlock()
