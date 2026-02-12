@@ -228,7 +228,7 @@ func pushIdentity() {
 	}
 
 	fmt.Println("☁️  Uploading identity to S3...")
-	if err := s3.UploadFile("identities/default.tar.gz", tmpFile); err != nil {
+	if err := s3.UploadFile("tazpod/identities/global.tar.gz", tmpFile); err != nil {
 		fmt.Printf("❌ Upload failed: %v\n", err)
 		return
 	}
@@ -257,7 +257,7 @@ func pullIdentity() {
 
 	tmpFile := "/tmp/tazpod-identity-pull.tar.gz"
 	fmt.Println("☁️  Downloading identity from S3...")
-	if err := s3.DownloadFile("identities/default.tar.gz", tmpFile); err != nil {
+	if err := s3.DownloadFile("tazpod/identities/global.tar.gz", tmpFile); err != nil {
 		fmt.Printf("❌ Download failed: %v\n", err)
 		return
 	}

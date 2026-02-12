@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	DefaultBucket = "tazlab-longhorn"
+	DefaultBucket = "tazlab-storage"
 	DefaultRegion = "eu-central-1"
 )
 

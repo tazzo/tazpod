@@ -45,7 +45,7 @@ When you exit a `tazpod enter` session, TazPod performs a final `push` before lo
 
 ## 4. Configuration
 
-The sync logic targets the `tazlab-longhorn` bucket in the `eu-central-1` region by default. It uses standard AWS environment variables for authentication:
+The sync logic targets the `tazlab-storage` bucket in the `eu-central-1` region by default. It uses standard AWS environment variables for authentication:
 *   `AWS_ACCESS_KEY_ID`
 *   `AWS_SECRET_ACCESS_KEY`
 
