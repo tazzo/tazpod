@@ -43,6 +43,7 @@ func Unlock() {
 	if utils.IsMounted(MountPath) {
 		fmt.Println("✅ Vault already unlocked (RAM).")
 		loadCachedPass()
+		SetupIdentity()
 		setupBindAuth()
 		return
 	}
@@ -71,7 +72,18 @@ func Unlock() {
 	}
 
 	os.WriteFile(PassCache, []byte(cachedPassphrase), 0600)
+	SetupIdentity()
 	setupBindAuth()
+}
+
+func SetupIdentity() {
+	// Gemini Link (History)
+	os.MkdirAll(GeminiVaultDir, 0755)
+	exec.Command("sudo", "chown", "-R", "tazpod:tazpod", "/workspace/.tazpod").Run()
+	if _, err := os.Lstat(GeminiLocalHome); err == nil {
+		exec.Command("sudo", "rm", "-rf", GeminiLocalHome).Run()
+	}
+	os.Symlink(GeminiVaultDir, GeminiLocalHome)
 }
 
 func Save(passphrase string) {
@@ -118,13 +130,6 @@ func setupBindAuth() {
 
 	bridge(InfisicalLocalHome, InfisicalVaultDir)
 	bridge(InfisicalKeyringLocal, InfisicalKeyringVault)
-	
-	os.MkdirAll(GeminiVaultDir, 0755)
-	exec.Command("sudo", "chown", "-R", "tazpod:tazpod", "/workspace/.tazpod").Run()
-	if _, err := os.Lstat(GeminiLocalHome); err == nil {
-		exec.Command("sudo", "rm", "-rf", GeminiLocalHome).Run()
-	}
-	os.Symlink(GeminiVaultDir, GeminiLocalHome)
 }
 
 func bridge(local, vault string) {
