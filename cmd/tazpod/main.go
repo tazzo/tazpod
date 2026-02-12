@@ -45,8 +45,8 @@ type SecretsConfig struct {
 	Secrets []SecretMapping `yaml:"secrets"`
 }
 
-const (
-	Version       = "v0.2.0-beta29"
+var (
+	Version       = "dev"
 	ConfigPath    = ".tazpod/config.yaml"
 	SecretsYAML   = "/workspace/.tazpod/secrets-sync-config.yml"
 	EnvFile       = vault.MountPath + "/.env-infisical"
