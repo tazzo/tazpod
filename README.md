@@ -101,11 +101,13 @@ secrets:
     env: KUBECONFIG          # Exported environment variable
 ```
 
+*   **Nomadic Identity**: Synchronize your entire environment (Vault, Config, AI Memories) via S3 for seamless portability.
+
 ---
 
 ## 🏗️ Technical Architecture
 
-For a deep dive into the security model, Linux Namespaces, and the Go CLI internal logic, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+For a deep dive into the security model, Linux Namespaces, and the Go CLI internal logic, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/08-NOMADIC-IDENTITY.md](docs/08-NOMADIC-IDENTITY.md).
 
 ---
 *Built with ❤️ by TazLab*

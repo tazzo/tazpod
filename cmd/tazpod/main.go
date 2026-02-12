@@ -83,9 +83,25 @@ func main() {
 	case "login": login()
 	case "save": vault.Save("") 
 	case "__internal_env": printExportEnv()
+	case "__internal_sync_daemon": syncDaemon()
 	default: help()
 	}
 }
+
+func syncDaemon() {
+	for {
+		time.Sleep(5 * time.Minute)
+		if isVaultUnlocked() {
+			pushIdentity()
+		}
+	}
+}
+
+func isVaultUnlocked() bool {
+	_, err := os.Stat(vault.PassCache)
+	return err == nil
+}
+
 
 func loadConfigs() {
 	if data, err := os.ReadFile(ConfigPath); err == nil { yaml.Unmarshal(data, &cfg) }
@@ -111,7 +127,13 @@ func up() {
 	fmt.Println("🚀 Starting TazPod Container...")
 	cwd, _ := os.Getwd()
 	cmd := exec.Command("docker", "run", "-d", "--name", cfg.ContainerName, "--privileged", "--network", "host", "-v", cwd+":/workspace", cfg.Image, "sleep", "infinity")
-	if out, err := cmd.CombinedOutput(); err != nil { fmt.Printf("❌ Failed: %s\n", string(out)) } else { fmt.Println("✅ Started: " + cfg.ContainerName) }
+	if out, err := cmd.CombinedOutput(); err != nil { 
+		fmt.Printf("❌ Failed: %s\n", string(out)) 
+	} else { 
+		fmt.Println("✅ Started: " + cfg.ContainerName) 
+		// Start background sync daemon
+		exec.Command("tazpod", "__internal_sync_daemon").Start()
+	}
 }
 
 func down() { 
@@ -127,7 +149,11 @@ func enter() {
 	cmd := exec.Command(binary, args[1:]...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	cmd.Run()
-	fmt.Println("\n🔒 Session ended. Locking vault...")
+	
+	fmt.Println("\n🔒 Session ended. Securing identity...")
+	if isVaultUnlocked() {
+		pushIdentity()
+	}
 	exec.Command("docker", "exec", cfg.ContainerName, "tazpod", "lock").Run()
 }
 
