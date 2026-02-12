@@ -29,7 +29,7 @@ tazpod init
 The CLI performs the following actions:
 1.  **Creates `.tazpod/`**: A project-local metadata directory.
 2.  **Generates `config.yaml`**: Defines image, user, and a **unique container name** based on the current folder and a random suffix (e.g., `tazpod-myproject-4829`). This ensures that multiple TazPod projects can run concurrently without naming conflicts.
-3.  **Creates `secrets.yml`**: A template for Infisical secret mapping.
+3.  **Creates `.tazpod/secrets-sync-config.yml`**: A template for Infisical secret mapping.
 4.  **Secures `.gitignore`**: Prevents accidental commits of `vault/` and `.gemini/` local data.
 
 ---
@@ -39,10 +39,10 @@ The CLI performs the following actions:
 ```text
 /my-project/
 ├── .tazpod/
-│   ├── config.yaml       # Container blueprint
+│   ├── config.yaml                # Container blueprint
+│   ├── secrets-sync-config.yml     # Secrets mapping (Safe for Git)
 │   └── vault/            
-│       └── vault.tar.aes # The Encrypted Secrets Storage
-├── secrets.yml           # Secrets mapping (Safe for Git)
+│       └── vault.tar.aes          # The Encrypted Secrets Storage
 ```
 
 ### The `config.yaml`

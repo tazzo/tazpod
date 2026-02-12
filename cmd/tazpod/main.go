@@ -45,9 +45,9 @@ type SecretsConfig struct {
 }
 
 const (
-	Version       = "v0.2.0"
+	Version       = "v0.2.0-beta29"
 	ConfigPath    = ".tazpod/config.yaml"
-	SecretsYAML   = "/workspace/secrets.yml"
+	SecretsYAML   = "/workspace/.tazpod/secrets-sync-config.yml"
 	EnvFile       = vault.MountPath + "/.env-infisical"
 	
 	TazPodUID     = 1000
@@ -87,7 +87,14 @@ func main() {
 
 func loadConfigs() {
 	if data, err := os.ReadFile(ConfigPath); err == nil { yaml.Unmarshal(data, &cfg) }
-	if data, err := os.ReadFile(SecretsYAML); err == nil { yaml.Unmarshal(data, &secCfg) }
+	// Try loading from new path, fallback to old for migration? 
+	// Better just use the constant which now points to the new path.
+	if data, err := os.ReadFile(SecretsYAML); err == nil { 
+		yaml.Unmarshal(data, &secCfg) 
+	} else if data, err := os.ReadFile("/workspace/secrets.yml"); err == nil {
+		// Migration fallback
+		yaml.Unmarshal(data, &secCfg)
+	}
 }
 
 func help() { 
@@ -145,10 +152,11 @@ func initProject() {
 	data, _ := yaml.Marshal(&newCfg)
 	os.WriteFile(ConfigPath, data, 0644)
 
-	// Creazione secrets.yml template se non esiste
-	if _, err := os.Stat("secrets.yml"); os.IsNotExist(err) {
+	// Creazione secrets-sync-config.yml template se non esiste
+	newSecretsPath := ".tazpod/secrets-sync-config.yml"
+	if _, err := os.Stat(newSecretsPath); os.IsNotExist(err) {
 		tmpl := "config:\n  infisical_project_id: \"\"\n  infisical_env: \"dev\"\n  infisical_path: \"/\"\n  infisical_domain: \"https://eu.infisical.com\"\n\nsecrets:\n  - name: EXAMPLE_SECRET\n    file: example-file\n    env: EXAMPLE_ENV\n"
-		os.WriteFile("secrets.yml", []byte(tmpl), 0644)
+		os.WriteFile(newSecretsPath, []byte(tmpl), 0644)
 	}
 
 	fmt.Printf("✅ Project initialized.\n🐳 Container: %s\n", containerName)

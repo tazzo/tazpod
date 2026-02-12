@@ -22,7 +22,7 @@ const (
 	VaultDir      = "/workspace/.tazpod/vault"
 	VaultFile     = VaultDir + "/vault.tar.aes"
 	MountPath     = "/home/tazpod/secrets"
-	SecretsYAML   = "/workspace/secrets.yml"
+	SecretsYAML   = "/workspace/.tazpod/secrets-sync-config.yml"
 	
 	// Percorsi speculari per Infisical
 	InfisicalLocalHome    = "/home/tazpod/.infisical"

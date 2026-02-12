@@ -19,6 +19,7 @@ The system operates on three layers:
     *   `utils/`: General utility functions.
 *   `.tazpod/`: Default configuration and Docker build contexts.
     *   `config.yaml`: Default project configuration.
+    *   `secrets-sync-config.yml`: Maps Infisical secrets to local files/env vars within the container.
     *   `Dockerfile.*`: Definitions for the modular image layers.
 *   `bin/`: Destination for compiled binaries.
 *   `docs/`: Comprehensive documentation (Architecture, Installation, Usage).
@@ -26,7 +27,7 @@ The system operates on three layers:
 ### Configuration Files
 *   `Taskfile.yml`: Defines build, test, and release tasks using the `task` tool.
 *   `go.mod`: Go module definition (Go 1.23.2).
-*   `secrets.yml`: Maps Infisical secrets to local files/env vars within the container.
+*   `.tazpod/secrets-sync-config.yml`: Maps Infisical secrets to local files/env vars within the container.
 
 ## Development Workflow
 
@@ -52,5 +53,5 @@ The project uses `Taskfile.yml` for automation:
 
 ## Conventions
 *   **Language:** Go (Idiomatic, utilizing `internal` for private packages).
-*   **Config:** YAML is used for all configuration (`config.yaml`, `secrets.yml`, `Taskfile.yml`).
+*   **Config:** YAML is used for all configuration (`config.yaml`, `.tazpod/secrets-sync-config.yml`, `Taskfile.yml`).
 *   **Security:** "Ghost Mode" logic is critical. Changes to namespace or encryption handling must be carefully reviewed to maintain zero-trust guarantees.

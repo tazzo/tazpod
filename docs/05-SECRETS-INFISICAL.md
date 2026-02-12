@@ -13,9 +13,9 @@ Infisical tokens are volatile by design. TazPod ensures they are persisted **onl
 
 ---
 
-## 2. Declarative Mapping (`secrets.yml`)
+## 2. Declarative Mapping (`.tazpod/secrets-sync-config.yml`)
 
-TazPod uses `secrets.yml` to define which secrets should be pulled from Infisical and how they should be exposed to your environment.
+TazPod uses `.tazpod/secrets-sync-config.yml` to define which secrets should be pulled from Infisical and how they should be exposed to your environment.
 
 ```yaml
 config:
@@ -40,7 +40,7 @@ The `tazpod pull` command is the "brain" of the sync process:
 2.  **Session Check**: It attempts a lightweight sync. If Infisical reports "No valid session", TazPod automatically triggers the `login` flow.
 3.  **Sync**:
     *   Generates a `.env-infisical` file in the Enclave containing all project variables.
-    *   Downloads specific files defined in `secrets.yml`.
+    *   Downloads specific files defined in `.tazpod/secrets-sync-config.yml`.
 4.  **Auto-Save**: Immediately re-encrypts the vault to disk to ensure the latest sync state is persisted.
 
 ---
