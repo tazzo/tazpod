@@ -1,0 +1,58 @@
+# TAZLAB SEMANTIC INDEX PROTOCOL
+
+taxonomy:
+  Software-IT:
+    - Architecture
+    - Development
+    - Debugging
+    - Testing
+    - Refactoring
+  Work:
+    - Meetings
+    - Tasks
+    - Projects
+    - Career_Planning
+  Learning:
+    - Courses
+    - Certifications
+    - Study
+    - Reading
+  Projects:
+    - Hobby
+    - Creativity
+    - Side_Projects
+  Health:
+    - Fitness
+    - Nutrition
+    - Medical
+    - Well-being
+  Family:
+    - Events
+    - Relationships
+    - Home_Management
+  Finance:
+    - Budget
+    - Investments
+    - Taxes
+    - Planning
+  Daily-Life:
+    - Notes
+    - Ideas
+    - Logistics
+    - Miscellaneous
+
+boot_sequence:
+  - category: "Access & Prerequisites"
+    query: "Come si accede alla memoria Mnemosyne, quali chiavi servono e come si sblocca l'IP?"
+
+  - category: "Environment & Architecture"
+    query: "Qual è la struttura attuale del cluster TazLab (Talos, Proxmox, Nodi)?"
+
+  - category: "Core Frameworks (Inner Workings)"
+    query: "Come funzionano internamente ephemeral-castle (IaC, rebirth) e tazlab-k8s (GitOps, Flux)?"
+  
+  - category: "Operational Philosophy & Safety Rules"
+    query: "Quali sono le regole di sicurezza (Read-Before-Write, Minimo Cambiamento) e i principi cardine?"
+  
+  - category: "Technical Debt & Tasks"
+    query: "Quali sono i debiti tecnici aperti e le cose rimaste da fare?"

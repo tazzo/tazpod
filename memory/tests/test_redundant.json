@@ -1,0 +1,10 @@
+[
+  {
+    "role": "user",
+    "content": "Flux non va, come abbiamo fatto prima?"
+  },
+  {
+    "role": "assistant",
+    "content": "Ti ricordi? Abbiamo visto che il GITHUB_TOKEN era scaduto. Lo abbiamo cambiato su Infisical mettendone uno nuovo con permessi repo. Poi abbiamo dato il comando di reconcile e il sistema è tornato verde."
+  }
+]
