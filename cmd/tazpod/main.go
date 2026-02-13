@@ -84,9 +84,26 @@ func main() {
 	case "save": vault.Save("") 
 	case "__internal_env": printExportEnv()
 	case "__internal_sync_daemon": syncDaemon()
+	case "setup-storage": setupStorage()
 	default: help()
 	}
 }
+
+func setupStorage() {
+	loadEnclaveEnv()
+	s3, err := utils.NewS3Client("")
+	if err != nil {
+		fmt.Printf("❌ S3 Client error: %v\n", err)
+		return
+	}
+
+	if err := s3.CreateBucket(); err != nil {
+		fmt.Printf("❌ Error: %v\n", err)
+	} else {
+		fmt.Println("✅ Storage setup complete.")
+	}
+}
+
 
 func syncDaemon() {
 	for {
@@ -207,11 +224,25 @@ func push() {
 }
 
 func pushIdentity() {
+	loadEnclaveEnv()
+	
+	// S3 Authentication Diagnostics
+	ak := os.Getenv("AWS_ACCESS_KEY_ID")
+	sk := os.Getenv("AWS_SECRET_ACCESS_KEY")
+	if ak == "" || sk == "" {
+		fmt.Println("⚠️  Warning: AWS credentials missing in environment.")
+	} else {
+		fmt.Printf("🛡️  Auth Check: ID=%s... (len: %d) | Secret=REDACTED (len: %d)\n", 
+			ak[:4], len(ak), len(sk))
+	}
+
+	start := time.Now()
 	data, err := vault.PackageIdentity()
 	if err != nil {
 		fmt.Printf("❌ Failed to package identity: %v\n", err)
 		return
 	}
+	fmt.Printf("📦 Packaging completed in %v\n", time.Since(start))
 
 	// Save temporarily to disk for upload
 	tmpFile := "/tmp/tazpod-identity.tar.gz"
@@ -227,12 +258,13 @@ func pushIdentity() {
 		return
 	}
 
-	fmt.Println("☁️  Uploading identity to S3...")
+	fmt.Println("☁️  Uploading identity to S3 (bucket: tazlab-storage)...")
+	uploadStart := time.Now()
 	if err := s3.UploadFile("tazpod/identities/global.tar.gz", tmpFile); err != nil {
 		fmt.Printf("❌ Upload failed: %v\n", err)
 		return
 	}
-	fmt.Println("✅ Identity pushed successfully.")
+	fmt.Printf("✅ Identity pushed successfully in %v.\n", time.Since(uploadStart))
 }
 
 func pull() {
@@ -249,6 +281,7 @@ func pull() {
 }
 
 func pullIdentity() {
+	loadEnclaveEnv()
 	s3, err := utils.NewS3Client("")
 	if err != nil {
 		fmt.Printf("❌ S3 Client error: %v\n", err)
@@ -276,6 +309,23 @@ func pullIdentity() {
 	fmt.Println("✅ Identity pulled and extracted.")
 }
 
+func loadEnclaveEnv() {
+	if data, err := os.ReadFile(EnvFile); err == nil {
+		lines := strings.Split(string(data), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") { continue }
+			if strings.Contains(line, "=") {
+				parts := strings.SplitN(line, "=", 2)
+				key := strings.TrimSpace(parts[0])
+				// Clean both single and double quotes
+				val := strings.Trim(strings.TrimSpace(parts[1]), "\"'")
+				os.Setenv(key, val)
+			}
+		}
+	}
+}
+
 func pullSecrets() {
 	if !isMounted(vault.MountPath) {
 		fmt.Println("🔒 Vault locked. Unlocking first...")
@@ -287,41 +337,73 @@ func pullSecrets() {
 	env := secCfg.Config.Env; if env == "" { env = "dev" }
 	globalPath := secCfg.Config.Path; if globalPath == "" { globalPath = "/" }
 
-	fmt.Println("📦 Syncing secrets...")
-	
-	args := []string{"export", "--format=dotenv", "--silent", "--env", env, "--path", globalPath}
-	if pID != "" { args = append(args, "--projectId", pID) }
-	
-	out, stderr, err := runInfisical(args...)
-	if err != nil {
-		if strings.Contains(stderr, "No valid login session") || strings.Contains(stderr, "login") {
-			fmt.Println("👤 Session missing. Logging in...")
-			login()
-			vault.Save("") 
-			out, stderr, err = runInfisical(args...)
+	// Identify all unique paths to sync
+	paths := make(map[string]bool)
+	paths[globalPath] = true
+	for _, s := range secCfg.Secrets {
+		if s.Path != "" {
+			paths[s.Path] = true
 		}
 	}
 
-	if err == nil { 
-		os.WriteFile(EnvFile, []byte(out), 0600)
-		os.Chown(EnvFile, TazPodUID, TazPodGID)
-	} else {
-		fmt.Printf("❌ Sync failed: %s\n", stderr)
-		return
+	secretsMap := make(map[string]string)
+	fmt.Println("📦 Syncing secrets from Infisical...")
+
+	for path := range paths {
+		fmt.Printf("  -> Path: %s... ", path)
+		args := []string{"export", "--format=dotenv", "--silent", "--env", env, "--path", path}
+		if pID != "" { args = append(args, "--projectId", pID) }
+		
+		out, stderr, err := runInfisical(args...)
+		if err != nil {
+			if strings.Contains(stderr, "No valid login session") || strings.Contains(stderr, "login") {
+				fmt.Println("\n👤 Session missing. Logging in...")
+				login()
+				vault.Save("") 
+				out, stderr, err = runInfisical(args...)
+			}
+		}
+
+		if err != nil {
+			fmt.Printf("ERR (%s)\n", stderr)
+			continue
+		}
+
+		// Parse and merge
+		lines := strings.Split(out, "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") { continue }
+			if strings.Contains(line, "=") {
+				parts := strings.SplitN(line, "=", 2)
+				key := strings.TrimSpace(parts[0])
+				val := strings.Trim(strings.TrimSpace(parts[1]), "\"")
+				secretsMap[key] = val
+			}
+		}
+		fmt.Println("OK")
 	}
-	
+
+	// 1. Save main .env-infisical (merged)
+	var envBuf bytes.Buffer
+	for k, v := range secretsMap {
+		envBuf.WriteString(fmt.Sprintf("%s=\"%s\"\n", k, v))
+	}
+	os.WriteFile(EnvFile, envBuf.Bytes(), 0600)
+	os.Chown(EnvFile, TazPodUID, TazPodGID)
+
+	// 2. Write individual files
+	fmt.Println("📂 Extracting secret files...")
 	for _, s := range secCfg.Secrets {
 		target := filepath.Join(vault.MountPath, s.File)
-		secretPath := s.Path; if secretPath == "" { secretPath = globalPath }
-		fmt.Printf("⬇️  %s... ", s.Name)
-		cmdArgs := []string{"secrets", "get", s.Name, "--plain", "--env", env, "--path", secretPath}
-		if pID != "" { cmdArgs = append(cmdArgs, "--projectId", pID) }
-		stdout, _, _ := runInfisical(cmdArgs...)
-		if len(strings.TrimSpace(stdout)) > 0 {
-			os.WriteFile(target, []byte(strings.TrimSpace(stdout)), 0600)
+		fmt.Printf("  -> %s... ", s.Name)
+		if val, ok := secretsMap[s.Name]; ok {
+			os.WriteFile(target, []byte(val), 0600)
 			os.Chown(target, TazPodUID, TazPodGID)
 			fmt.Println("OK")
-		} else { fmt.Println("ERR") }
+		} else {
+			fmt.Println("MISSING")
+		}
 	}
 	vault.Save("") 
 }

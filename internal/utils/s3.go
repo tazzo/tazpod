@@ -8,6 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
 const (
@@ -82,3 +83,19 @@ func (s *S3Client) DownloadFile(key, filePath string) error {
 
 	return nil
 }
+
+// CreateBucket creates the target bucket if it doesn't exist
+func (s *S3Client) CreateBucket() error {
+	fmt.Printf("☁️  Creating bucket %s in %s...\n", s.bucket, DefaultRegion)
+	_, err := s.client.CreateBucket(context.TODO(), &s3.CreateBucketInput{
+		Bucket: aws.String(s.bucket),
+		CreateBucketConfiguration: &types.CreateBucketConfiguration{
+			LocationConstraint: types.BucketLocationConstraintEuCentral1,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create bucket: %v", err)
+	}
+	return nil
+}
+

@@ -7,6 +7,9 @@ USER root
 # Install Gemini CLI (Correct Command)
 RUN npm install -g @google/gemini-cli@latest
 
+# Install OpenCode
+RUN curl -fsSL https://opencode.ai/install | bash
+
 USER tazpod
 WORKDIR /home/tazpod
 

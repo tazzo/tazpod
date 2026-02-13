@@ -211,6 +211,7 @@ func TarDir(src string) ([]byte, error) {
 	tw := tar.NewWriter(gw)
 	filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
 		if err != nil || path == src { return err }
+		
 		relPath, _ := filepath.Rel(src, path)
 		header, _ := tar.FileInfoHeader(info, relPath)
 		header.Name = relPath
