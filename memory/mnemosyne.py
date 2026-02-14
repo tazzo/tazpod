@@ -3,6 +3,7 @@ import sys
 import json
 import re
 import time
+import random
 import requests
 import yaml
 import argparse
@@ -242,19 +243,27 @@ def cmd_sync(engine, target_dir):
     files = sorted(list(target.rglob("*.json")))
     conn = get_db_connection()
     
-    print(f"🔄 Syncing directory: {target.absolute()}", file=sys.stderr)
-    for f in files:
+    total_files = len(files)
+    print(f"🔄 Syncing directory: {target.absolute()} ({total_files} files found)", file=sys.stderr)
+    
+    for i, f in enumerate(files, 1):
         cursor = conn.cursor()
         cursor.execute("SELECT 1 FROM archived_files WHERE filename = %s", (f.name,))
         if cursor.fetchone():
-            print(f"  ⏭️  Already archived: {f.name}", file=sys.stderr)
             cursor.close()
             continue
         cursor.close()
         
+        # Random sleep to avoid rate limits (10-30s)
+        if i > 1:
+            wait_time = random.randint(10, 30)
+            print(f"\n⏳ Cooling down for {wait_time}s before next file...", file=sys.stderr)
+            time.sleep(wait_time)
+
+        print(f"\n🧠 [{i}/{total_files}] Processing {f.name}...", file=sys.stderr)
+        
         # Process full cycle
         with open(f, 'r') as file_handle: content = file_handle.read()
-        print(f"\n🧠 Processing {f.name}...", file=sys.stderr)
         
         facts = []
         start = 0
