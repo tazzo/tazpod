@@ -18,11 +18,18 @@ import (
 
 // --- CONFIGURATION STRUCTS ---
 
+type ProviderConfig struct {
+	DBHost    string `yaml:"db_host"`
+	VPNConfig string `yaml:"vpn_config"`
+}
+
 type Config struct {
-	Image         string `yaml:"image"`
-	ContainerName string `yaml:"container_name"`
-	User          string `yaml:"user"`
-	Features      struct {
+	Image          string `yaml:"image"`
+	ContainerName  string `yaml:"container_name"`
+	User           string `yaml:"user"`
+	ActiveProvider string `yaml:"active_provider"`
+	Providers      map[string]ProviderConfig `yaml:"providers"`
+	Features       struct {
 		GhostMode bool `yaml:"ghost_mode"`
 		Debug     bool `yaml:"debug"`
 	} `yaml:"features"`
@@ -85,9 +92,81 @@ func main() {
 	case "__internal_env": printExportEnv()
 	case "__internal_sync_daemon": syncDaemon()
 	case "setup-storage": setupStorage()
+	case "vpn": vpnCommand()
+	case "memory": memoryCommand()
 	default: help()
 	}
 }
+
+func vpnCommand() {
+	subarg := ""
+	if len(os.Args) > 2 { subarg = os.Args[2] }
+	switch subarg {
+	case "up": vpnUp()
+	case "down": vpnDown()
+	default: fmt.Println("Usage: tazpod vpn [up|down]")
+	}
+}
+
+func vpnUp() {
+	loadEnclaveEnv()
+	provider := cfg.ActiveProvider
+	if provider == "" { provider = "home" }
+	pCfg, ok := cfg.Providers[provider]
+	if !ok {
+		fmt.Printf("❌ Provider %s not found in config.yaml\n", provider)
+		return
+	}
+
+	confContent := os.Getenv(pCfg.VPNConfig)
+	if confContent == "" {
+		fmt.Printf("❌ VPN configuration secret %s not found in environment. Did you run pull secrets?\n", pCfg.VPNConfig)
+		return
+	}
+
+	// Create temp wg0.conf
+	confPath := "/tmp/tazpod-wg0.conf"
+	os.WriteFile(confPath, []byte(confContent), 0600)
+	defer os.Remove(confPath)
+
+	fmt.Printf("🌐 Bringing up VPN for provider %s...\n", provider)
+	// We need sudo for wg-quick. In container it's fine.
+	cmd := exec.Command("sudo", "wg-quick", "up", confPath)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		fmt.Printf("❌ VPN failed: %s\n", string(out))
+	} else {
+		fmt.Println("✅ VPN is UP.")
+	}
+}
+
+func vpnDown() {
+	fmt.Println("🌐 Bringing down VPN...")
+	// We use the known path or name
+	exec.Command("sudo", "wg-quick", "down", "/tmp/tazpod-wg0.conf").Run()
+	fmt.Println("✅ VPN is DOWN.")
+}
+
+func memoryCommand() {
+	subarg := ""
+	if len(os.Args) > 2 { subarg = os.Args[2] }
+	
+	// VPN Auto-Lifecycle
+	vpnUp()
+	defer vpnDown()
+
+	// Prepare arguments for mnemosyne.py
+	pyArgs := []string{"/home/tazpod/memory/mnemosyne.py", subarg}
+	if len(os.Args) > 3 {
+		pyArgs = append(pyArgs, os.Args[3:]...)
+	}
+
+	fmt.Println("🧠 Running Mnemosyne...")
+	cmd := exec.Command("python3", pyArgs...)
+	cmd.Env = append(os.Environ(), "DB_HOST="+cfg.Providers[cfg.ActiveProvider].DBHost)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	cmd.Run()
+}
+
 
 func setupStorage() {
 	loadEnclaveEnv()
@@ -187,9 +266,20 @@ func initProject() {
 
 	// Creazione Config Default
 	newCfg := Config{
-		Image: "tazzo/tazlab.net:tazpod-gemini",
+		Image: "tazzo/tazpod-gemini:latest",
 		ContainerName: containerName,
 		User: "tazpod",
+		ActiveProvider: "home",
+		Providers: map[string]ProviderConfig{
+			"home": {
+				DBHost: "192.168.1.241",
+				VPNConfig: "HOME_WG_CONF",
+			},
+			"aws": {
+				DBHost: "10.0.1.50",
+				VPNConfig: "AWS_WG_CONF",
+			},
+		},
 	}
 	newCfg.Features.GhostMode = true
 	newCfg.Features.Debug = false

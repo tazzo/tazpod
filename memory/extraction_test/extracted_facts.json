@@ -1,0 +1,132 @@
+[
+  {
+    "ts": "2026-02-03T10:33:21Z",
+    "context": "2026-02-03 - Infisical Secret Alignment & Terragrunt Refactoring",
+    "tags": [
+      "Software-IT",
+      "Software-IT: Debugging",
+      "Software-IT: Refactoring"
+    ],
+    "event": "[PROBLEM]: tazpod pull failed to synchronize secrets after they were moved to the sub-path /ephemeral-castle/tazlab-k8s/proxmox in Infisical. [INVESTIGATION]: Executed 'infisical secrets --path /ephemeral-castle/tazlab-k8s/proxmox --projectId 049af2e5-6ec5-4f00-aaf6-e0685ff02801' and confirmed secrets existed but were split (PROXMOX_TOKEN_ID/SECRET instead of PROXMOX_TOKEN). Identified redundant secrets.yml files at /workspace/secrets.yml and /workspace/tazpod/secrets.yml. [FAILURES]: tazpod pull returned '\u274c FAILED' on all entries because it attempted to fetch secrets from the root path '/' or non-existent legacy paths. [SOLUTION]: Updated /workspace/secrets.yml to use project_id 'tazlab-v8-fz' and mapped PROXMOX_TOKEN_ID/SECRET separately. Modified /workspace/ephemeral-castle/clusters/tazlab-k8s/live/env.hcl to reconstruct the credential: 'proxmox_token = \"${get_env(\"PROXMOX_TOKEN_ID\", \"\")}=${get_env(\"PROXMOX_TOKEN_SECRET\", \"\")}\"'. Synchronized both secrets.yml files using 'cp'."
+  },
+  {
+    "ts": "2026-02-03T10:45:04Z",
+    "context": "2026-02-03 - TazPod CLI Path-Awareness Structural Patch",
+    "tags": [
+      "Software-IT",
+      "Software-IT: Debugging",
+      "Software-IT: Development"
+    ],
+    "event": "[PROBLEM]: The TazPod CLI was 'blind' to the infisical_path and infisical_env fields in secrets.yml, defaulting to root path lookups which resulted in sync failures for sub-folder secrets. [INVESTIGATION]: Inspected /workspace/tazpod/cmd/tazpod/main.go. Discovered the SecretsConfig struct (line 40) only included the ProjectID field. The syncSecrets() function (line 280) was hardcoded to '--env dev' and lacked the '--path' flag entirely. [FAILURES]: Manual fetch via 'infisical secrets get GITHUB_TOKEN --path /ephemeral-castle/tazlab-k8s/proxmox' worked, confirming the Go wrapper was the bottleneck. [SOLUTION]: Patched /workspace/tazpod/cmd/tazpod/main.go to extend the SecretsConfig struct, adding 'Env string `yaml:\"infisical_env\"`' and 'Path string `yaml:\"infisical_path\"`'. This structural change allows the CLI to ingest path-based configurations from secrets.yml."
+  },
+  {
+    "ts": "2026-02-13T10:45:00Z",
+    "context": "2026-02-13 - TazPod Refactoring: Dynamic Infisical Config",
+    "tags": [
+      "Software-IT",
+      "Software-IT: Refactoring"
+    ],
+    "event": "[PROBLEM]: Infisical secrets synchronization was hardcoded to the 'dev' environment and root path, limiting flexibility for other environments. [INVESTIGATION]: Inspected `cmd/tazpod/main.go` and the project configuration. [SOLUTION]: Refactored `SecretsConfig` and `SecretMapping` structs in `cmd/tazpod/main.go` to include `infisical_env` and `infisical_path`. Updated `syncSecrets` and `internalEnsureAuth` functions to utilize these dynamic fields. Added logic to fallback to 'dev' and '/' if the fields are empty. Commands executed by the binary now include flags like `--env` and `--path` derived from `secrets.yml`."
+  },
+  {
+    "ts": "2026-02-13T10:57:00Z",
+    "context": "2026-02-13 - Build System Modernization: Taskfile Transition",
+    "tags": [
+      "Software-IT",
+      "Software-IT: Architecture"
+    ],
+    "event": "[PROBLEM]: The build and release process was fragmented across a legacy `Makefile` and multiple disconnected shell scripts (`publish-base.sh`, `release.sh`), leading to non-atomic builds. [INVESTIGATION]: Verified that Docker builds were not automatically triggering a Go compilation of the CLI. [SOLUTION]: Implemented `Taskfile.yml` as the new enterprise build standard. Defined tasks: `build` (Go compilation for linux/amd64), `docker:build` (hierarchical build: base -> infisical -> k8s -> gemini), and `release` (atomic cycle). Created a root `VERSION` file to serve as the single source of truth. Deleted obsolete files: `Makefile`, `scripts/publish.sh`, `scripts/publish-base.sh`, and `scripts/release.sh`."
+  },
+  {
+    "ts": "2026-02-13T11:06:00Z",
+    "context": "2026-02-13 - Build Environment Stabilization",
+    "tags": [
+      "Software-IT",
+      "Software-IT: Debugging"
+    ],
+    "event": "[PROBLEM]: Initial build attempts failed due to missing tools (`task`, `go`) and YAML syntax errors in the new configuration. [INVESTIGATION]: `Taskfile.yml` failed with `invalid keys in command` because command strings containing colons (e.g., `docker build -t ...`) were not quoted. Tool checks showed `task` and `go` were missing in the current ephemeral container. [FAILURES]: Initial installation of `task` failed with `Permission denied` when trying to write to `/usr/local/bin` without sudo. [SOLUTION]: 1. Quoted all command strings in `Taskfile.yml`. 2. Installed `task` via `sudo sh -c \"$(curl --location https://taskfile.dev/install.sh)\" -- -d -b /usr/local/bin`. 3. Installed Go compiler via `sudo apt-get update && sudo apt-get install -y golang-go`. 4. Updated `.tazpod/Dockerfile.base` to include `task` installation for future image generations."
+  },
+  {
+    "ts": "2026-02-03T11:06:26Z",
+    "context": "2026-02-03 - Fixing build environment for TazPod",
+    "tags": [
+      "Software-IT",
+      "Software-IT: Debugging"
+    ],
+    "event": "[PROBLEM]: Attempting to run `task build` for the TazPod project failed with error `task: Failed to run task \"build\": exit status 127` and message `\"go\": executable file not found in $PATH`.\n[INVESTIGATION]: The current development container was found to have only deployment tools (kubectl, flux, terraform, terragrunt) but lacked the Go compiler required for compiling the TazPod source code.\n[FAILURES]: Execution of `task build` failed repeatedly due to the missing `go` binary.\n[SOLUTION]: Installed the Go compiler using `sudo apt-get update && sudo apt-get install -y golang-go`. Verified installation with `go version` which returned `go version go1.22.2 linux/amd64`. This enabled successful compilation of the TazPod binary."
+  },
+  {
+    "ts": "2026-02-03T11:13:48Z",
+    "context": "2026-02-03 - Debugging TazPod Pull Failures",
+    "tags": [
+      "Software-IT",
+      "Software-IT: Debugging",
+      "Software-IT: Development"
+    ],
+    "event": "[PROBLEM]: The `tazpod pull` command failed to synchronize secrets from Infisical, showing only generic `\u274c FAILED` markers without diagnostic information.\n[INVESTIGATION]: Inspected `cmd/tazpod/main.go`. Discovered that the `syncSecrets` function was swallowing the output of the `runInfisical` command. Hypothesized that the Infisical CLI was returning a non-zero exit code due to configuration errors.\n[FAILURES]: Initial attempts to fix the synchronization failed because the root cause was hidden by lack of logging in the Go wrapper.\n[SOLUTION]: Patched `main.go` to provide high-resolution error output. Modified the `syncSecrets` function: replaced `if err == nil ... else { fmt.Println(\"\u274c FAILED\") }` with `else { fmt.Printf(\"\u274c FAILED: error=%v, output=%s\\n\", err, string(val)) }`. This allowed capturing the exact stdout/stderr from the Infisical CLI."
+  },
+  {
+    "ts": "2026-02-03T11:16:38Z",
+    "context": "2026-02-03 - CLI Path Standardization & Dotfiles Refactoring",
+    "tags": [
+      "Software-IT",
+      "Software-IT: Refactoring",
+      "Software-IT: Architecture"
+    ],
+    "event": "[PROBLEM]: Conflicts between multiple TazPod installations (`/usr/local/bin/tazpod` vs `/home/tazpod/.local/bin/tazpod`) and the binary not being in the user's PATH.\n[INVESTIGATION]: Ran `which tazpod` and found it pointing to `/usr/local/bin/`, while the installer script and local builds targeted `~/.local/bin/`. The `tazpod()` bash wrapper in `.bashrc` was hardcoded to `/usr/local/bin/tazpod`.\n[FAILURES]: Manually copying the binary to `/usr/local/bin` required sudo and contradicted the preferred local-first installation strategy.\n[SOLUTION]: Standardized the installation to `~/.local/bin/tazpod`. Updated `/workspace/tazpod/dotfiles/.bashrc` to include `export PATH=\"$HOME/.local/bin:$PATH\"`. Refactored the `tazpod()` shell function to use `command tazpod` instead of hardcoded paths, bumping the internal version to v6.5. This ensures the correct local binary is always used without requiring root privileges for execution."
+  },
+  {
+    "ts": "2026-02-03T11:25:18Z",
+    "context": "2026-02-03 - Infisical Project ID Type Correction",
+    "tags": [
+      "Software-IT",
+      "Software-IT: Debugging"
+    ],
+    "event": "[PROBLEM]: `tazpod pull` returned `Response Code: 404 Not Found` with message `Project with ID 'tazlab-v8-fz' not found during bot lookup`.\n[INVESTIGATION]: Enabled diagnostic logging in TazPod (see Chronicle 2). Discovered that the Infisical CLI interprets the `--projectId` flag strictly as a UUID ID, not as the human-readable project slug.\n[FAILURES]: Previous configuration in `secrets.yml` used the project slug `tazlab-v8-fz`, which caused the API request to `https://eu.infisical.com/api/v3/secrets/raw` to fail during bot lookup.\n[SOLUTION]: Updated `/workspace/secrets.yml` and `/workspace/tazpod/secrets.yml`. Replaced `infisical_project_id: \"tazlab-v8-fz\"` with the actual Project UUID: `049af2e5-6ec5-4f00-aaf6-e0685ff02801`. Verified fix with a successful `tazpod pull` that synchronized all tokens (GITHUB_TOKEN, PROXMOX_TOKEN, etc.) with `\u2705 OK` status."
+  },
+  {
+    "ts": "2026-02-03T11:26:06Z",
+    "context": "2026-02-03 - Infisical Project ID Correction",
+    "tags": [
+      "Software-IT",
+      "Software-IT: Debugging"
+    ],
+    "event": "[PROBLEM]: tazpod pull failed to synchronize secrets because of an incorrect Infisical Project ID configuration in secrets.yml. [INVESTIGATION]: Inspected /workspace/secrets.yml and identified that the project ID was set to a legacy slug ('tazlab-v8-fz') instead of the required UUID for the EU region. [FAILURES]: Secret synchronization failed as the Infisical API rejected the slug-based ID when accessed from the TazPod CLI. [SOLUTION]: Overwrote /workspace/secrets.yml with the correct Project UUID (049af2e5-6ec5-4f00-aaf6-e0685ff02801) and synchronized it to the /workspace/tazpod/ directory. Verified success with 'tazpod pull', which correctly retrieved GITHUB_TOKEN, PROXMOX tokens, CLOUDFLARE_API_TOKEN, and TALOS_SECRETBOX_KEY."
+  },
+  {
+    "ts": "2026-02-03T11:30:29Z",
+    "context": "2026-02-03 - TazPod Image Toolset Expansion",
+    "tags": [
+      "Software-IT",
+      "Software-IT: Refactoring"
+    ],
+    "event": "[PROBLEM]: The TazPod development environment lacked critical tools (Go, Docker CLI, GitHub CLI, Task) required for self-hosting releases and system maintenance. [INVESTIGATION]: Attempting 'task release' failed due to missing executables in the container $PATH. [FAILURES]: Docker builds and GitHub releases could not be performed from within the container. [SOLUTION]: Modified /workspace/tazpod/.tazpod/Dockerfile.base to install docker.io, golang-go, and gh (GitHub CLI). Integrated the go-task orchestrator and modern shell tools (Starship, Zoxide). Updated Dockerfile.k8s to include terraform, terragrunt, flux, and checkov for IaC security scanning. This expansion increased the base image size to ~530MB to ensure full developer independence."
+  },
+  {
+    "ts": "2026-02-03T11:53:23Z",
+    "context": "2026-02-03 - Dockerfile Permission Architecture Fix",
+    "tags": [
+      "Software-IT",
+      "Software-IT: Architecture"
+    ],
+    "event": "[PROBLEM]: Docker image build (v4.3) failed with 'Permission denied' when attempting to install system tools into /usr/local/bin. [INVESTIGATION]: Analyzed Dockerfile.base and found the 'USER tazpod' instruction was placed before system-wide tool installations. [FAILURES]: Installation scripts for Task and Starship failed with exit code 1 because the non-root 'tazpod' user lacked write permissions to /usr/local/bin. [SOLUTION]: Refactored /workspace/tazpod/.tazpod/Dockerfile.base to move 'USER tazpod' and 'WORKDIR' instructions to the end of the file, immediately before user-specific configuration (NVM/dotfiles). Removed redundant 'sudo' prefixes from RUN commands to ensure all system binaries are installed by root during the build process."
+  },
+  {
+    "ts": "2026-02-03T12:31:57Z",
+    "context": "2026-02-03 - Docker Push & Host DNS Troubleshooting",
+    "tags": [
+      "Software-IT",
+      "Software-IT: Debugging"
+    ],
+    "event": "[PROBLEM]: Releasing TazPod v0.1.7 from the host failed during Docker registry push and authentication. [INVESTIGATION]: Logs indicated a '400 Bad Request' on large blob uploads (>500MB) and a DNS resolution failure ('server misbehaving') for auth.docker.io. [FAILURES]: The host's local resolver (systemd-resolved at 127.0.0.53) failed to resolve external endpoints, preventing OAuth token retrieval. [SOLUTION]: Recommended a targeted 'task docker:push' to leverage cached layers. Instructed the user to restart the host DNS resolver via 'sudo systemctl restart systemd-resolved' and verify session state with 'docker login' to overcome registry timeouts."
+  },
+  {
+    "ts": "2026-02-03T13:43:45Z",
+    "context": "2026-02-03 - TazPod Version v0.1.7 Upgrade Protocol",
+    "tags": [
+      "Software-IT",
+      "Software-IT: Development"
+    ],
+    "event": "[PROBLEM]: The active TazPod container was outdated and did not reflect the v0.1.7 patches for secret synchronization. [INVESTIGATION]: Changes to Dockerfiles and compiled binaries require a full container lifecycle restart. [FAILURES]: Direct execution of 'tazpod pull' in an un-upgraded container would continue to use the legacy logic. [SOLUTION]: Defined the 'Atomic Upgrade Protocol' for the user to execute on the host: 1. 'task release' to push updated images. 2. './scripts/install.sh' to download the v0.1.7 binary. 3. 'tazpod down' to terminate the stale instance. 4. 'tazpod up' to instantiate the patched v0.1.7 environment."
+  }
+]
