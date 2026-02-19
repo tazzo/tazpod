@@ -14,7 +14,19 @@ TazPod operates across three isolated layers to minimize the attack surface:
 
 ---
 
-## 2. The RAM Boundary Model ☁️
+## 2. Semantic Memory Layer 🧠
+
+Beyond raw data, TazPod implements a persistent intelligence layer to capture and index technical insights.
+
+### 2.1 Fact Extraction
+Using the **Gemini 2.0 Flash** model via CLI, TazPod parses session logs to extract structured "technical chronicles". This process filters out noise and focuses on problem-solution pairs.
+
+### 2.2 Vector Storage (pgvector)
+Extracted facts are transformed into high-dimensional vectors (embeddings) and stored in a local PostgreSQL instance. This enables semantic search, allowing the environment to provide context-aware suggestions based on past experiences.
+
+---
+
+## 3. The RAM Boundary Model ☁️
 
 The core security principle of v0.2.0 is the **RAM-Only Decryption** and **Project Isolation**.
 

@@ -101,13 +101,28 @@ secrets:
     env: KUBECONFIG          # Exported environment variable
 ```
 
+### 5. VPN & Remote Connectivity
+Connect to your private lab or cloud providers securely:
+```bash
+tazpod vpn up   # Bring up the Wireguard tunnel
+tazpod vpn down # Bring down the tunnel
+```
+
+### 6. Semantic Memory (Mnemosyne)
+Ingest your technical history into a vector database:
+```bash
+tazpod memory sync /workspace/chats/md/ # Bulk ingestion
+tazpod memory next /workspace/chats/md/ # Incremental ingest
+tazpod memory wipe                      # Clear database
+```
+
 *   **Nomadic Identity**: Synchronize your entire environment (Vault, Config, AI Memories) via S3 for seamless portability.
 
 ---
 
 ## 🏗️ Technical Architecture
 
-For a deep dive into the security model, Linux Namespaces, and the Go CLI internal logic, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/08-NOMADIC-IDENTITY.md](docs/08-NOMADIC-IDENTITY.md).
+For a deep dive into the security model, Linux Namespaces, and the Go CLI internal logic, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/08-NOMADIC-IDENTITY.md](docs/08-NOMADIC-IDENTITY.md) and [docs/09-MEMORY-ENGINE.md](docs/09-MEMORY-ENGINE.md).
 
 ---
 *Built with ❤️ by TazLab*

@@ -17,16 +17,15 @@ import psycopg2
 # --- Configuration ---
 DB_HOST = os.getenv("DB_HOST", "192.168.1.241")
 DB_PORT = os.getenv("DB_PORT", "5432")
-DB_NAME = os.getenv("DB_NAME", "mnemosyne")
-DB_USER = os.getenv("DB_USER", "mnemosyne")
+DB_NAME = "mnemosyne"
+DB_USER = "mnemosyne"
 DB_PASS = os.getenv("DB_PASS", "dyUuu54TOA8zGMkc)4JFNLYF")
 EMBEDDING_MODEL = "gemini-embedding-001"
-AI_MODEL = "gemini-flash-latest"
+AI_MODEL = "gemini-2.0-flash-001"
 
 # Paths relative to script
 BASE_DIR = Path(__file__).parent
 EXTRACTION_BLUEPRINT = BASE_DIR / "extraction_blueprint.md"
-DEDUPLICATION_BLUEPRINT = BASE_DIR / "deduplication_blueprint.md"
 INDEX_PATH = BASE_DIR / "INDEX.yaml"
 
 CHUNK_SIZE = 200000
@@ -40,213 +39,186 @@ class MnemosyneEngine:
         self.client = None
         if not self.use_cli:
             if not self.api_key:
-                print("❌ Error: GEMINI_API_KEY not found. Pass it via --api-key or environment.")
+                print("❌ Error: GEMINI_API_KEY not found. Pass it via --api-key or environment.", file=sys.stderr)
                 sys.exit(1)
             self.client = genai.Client(api_key=self.api_key)
         
         self.extraction_prompt = self._load_blueprint(EXTRACTION_BLUEPRINT)
-        self.dedup_prompt_tmpl = self._load_blueprint(DEDUPLICATION_BLUEPRINT)
 
     def _get_api_key(self):
         if os.getenv("GEMINI_API_KEY"): return os.getenv("GEMINI_API_KEY")
         vault_key = "/home/tazpod/secrets/gemini-api-key"
         if os.path.exists(vault_key):
-            with open(vault_key, "r") as f: return f.read().strip().strip("'\"")
+            try:
+                with open(vault_key, "r") as f: return f.read().strip().strip("'\"")
+            except: pass
         return None
 
     def _load_blueprint(self, path):
+        if not os.path.exists(path): return "Estrai fatti tecnici High-Res. Rispondi in JSON array: [{\"context\": \"...\", \"tags\": [\"...\"], \"event\": \"...\"}]"
         with open(path, 'r') as f: return f.read()
 
     def get_embedding(self, text):
+        if not self.api_key: return [0.0] * 3072
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{EMBEDDING_MODEL}:embedContent?key={self.api_key}"
         payload = {"content": {"parts": [{"text": text}]}}
         for _ in range(3):
             try:
                 time.sleep(2)
-                res = requests.post(url, json=payload)
+                res = requests.post(url, json=payload, timeout=10)
                 if res.status_code == 200: return res.json()['embedding']['values']
                 elif res.status_code == 429: time.sleep(30)
             except: pass
         return [0.0] * 3072
 
     def extract_facts(self, log_content):
-        # High-Resolution Extraction using Blueprint
         prompt = f"{self.extraction_prompt}\n\n--- SESSION LOG BELOW ---\n{log_content}"
-        
         if self.use_cli:
             return self._call_cli(prompt, is_json=True)
         else:
             return self._call_sdk(prompt, is_json=True)
 
     def _call_sdk(self, prompt, is_json=False):
-        time.sleep(API_PACE)
-        config = None
-        if is_json:
-            config = types.GenerateContentConfig(response_mime_type='application/json')
-        
-        response = self.client.models.generate_content(
-            model=AI_MODEL, 
-            contents=[prompt],
-            config=config
-        )
-        if is_json:
-            try: return json.loads(response.text)
-            except: return []
-        return response.text
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                time.sleep(API_PACE)
+                config = None
+                if is_json:
+                    config = types.GenerateContentConfig(response_mime_type='application/json')
+                
+                response = self.client.models.generate_content(
+                    model=AI_MODEL, 
+                    contents=[prompt],
+                    config=config
+                )
+                if is_json:
+                    try: return json.loads(response.text)
+                    except: return []
+                return response.text
+            except Exception as e:
+                if attempt < max_retries - 1 and ("503" in str(e) or "UNAVAILABLE" in str(e)):
+                    print(f"    ⏳ SDK 503. Waiting 60s (Attempt {attempt+1}/{max_retries})...", file=sys.stderr)
+                    time.sleep(60)
+                    continue
+                raise e
+        return [] if is_json else ""
 
     def _call_cli(self, prompt, is_json=False):
         stdout = ""
-        try:
-            cmd = ['gemini']
-            if is_json: cmd.extend(['-o', 'json'])
-            
-            # Use Popen to feed prompt via stdin
-            process = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            stdout, stderr = process.communicate(input=prompt)
-            
-            if process.returncode != 0:
-                print(f"    ⚠️ CLI Error: {stderr}")
-                return [] if is_json else ""
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                cmd = ['gemini']
+                if is_json: cmd.extend(['-o', 'json'])
+                
+                process = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                stdout, stderr = process.communicate(input=prompt)
+                
+                # Filtro warning per evitare falsi positivi
+                clean_stderr = "\n".join([line for line in stderr.splitlines() 
+                                        if "DeprecationWarning" not in line and 
+                                        "Loaded cached credentials" not in line and
+                                        "Loading extension" not in line and
+                                        "Hook registry" not in line])
 
-            if is_json:
-                # 1. Parse the global CLI JSON object
-                cli_data = json.loads(stdout)
-                raw_res = cli_data.get('response', '')
-                
-                # 2. Clean markdown if present
-                clean_res = raw_res.replace('```json', '').replace('```', '').strip()
-                
-                # 3. Parse the actual content
-                return json.loads(clean_res)
-            return stdout
-        except Exception as e:
-            # Fallback to regex if full JSON fails
-            match = re.search(r'\[.*\]', stdout, re.DOTALL)
-            if is_json and match:
-                try: return json.loads(match.group(0))
-                except: pass
-            print(f"    ⚠️ CLI Parsing Error: {e}")
-            return [] if is_json else ""
+                if process.returncode != 0:
+                    if "503" in stderr or "UNAVAILABLE" in stderr:
+                        print(f"    ⏳ Gemini busy (503). Waiting 60s...", file=sys.stderr)
+                        time.sleep(60)
+                        continue
+                    if clean_stderr.strip():
+                        print(f"    ⚠️ CLI Error: {clean_stderr}", file=sys.stderr)
+                        raise Exception(f"CLI Error: {clean_stderr}")
+
+                if is_json:
+                    # Rimuoviamo eventuali righe di warning da stdout prima del parse
+                    lines = stdout.splitlines()
+                    json_lines = [l for l in lines if not l.startswith("(") and "Loaded cached credentials" not in l]
+                    clean_stdout = "\n".join(json_lines)
+                    try:
+                        cli_data = json.loads(clean_stdout)
+                        raw_res = cli_data.get('response', '')
+                        clean_res = re.sub(r'```json\s*|\s*```', '', raw_res).strip()
+                        return json.loads(clean_res)
+                    except:
+                        return []
+                return stdout
+            except Exception as e:
+                if attempt < max_retries - 1 and ("503" in str(e) or "UNAVAILABLE" in str(e)):
+                    time.sleep(60)
+                    continue
+                print(f"    ⚠️ CLI Exception: {e}", file=sys.stderr)
+                raise e
+        return [] if is_json else ""
 
     def get_enrichment_decision(self, new_fact, similar_facts):
-        if not similar_facts: return True
-        
-        prompt = self.dedup_prompt_tmpl.replace("{{NEW_FACT}}", new_fact)
-        prompt = prompt.replace("{{EXISTING_SIMILAR_MEMORIES}}", json.dumps(similar_facts))
-        
-        res = ""
-        if self.use_cli:
-            res = self._call_cli(prompt)
-        else:
-            res = self._call_sdk(prompt)
-        
-        return "SAVE" in res.upper()
+        return True 
 
 def get_db_connection():
     return psycopg2.connect(host=DB_HOST, port=DB_PORT, database=DB_NAME, user=DB_USER, password=DB_PASS, connect_timeout=10)
 
-def recover_date(file_path, extracted_facts):
-    # Hierarchy: 1. Filename, 2. Facts TS, 3. File MTime
+def recover_date(file_path, extracted_facts=None):
     fname = os.path.basename(file_path)
     date_match = re.search(r'(\d{4}-\d{2}-\d{2})', fname)
     if date_match:
         try: return datetime.strptime(date_match.group(1), "%Y-%m-%d")
         except: pass
-    
     if extracted_facts and len(extracted_facts) > 0:
         ts = extracted_facts[0].get('ts')
         if ts:
             try: return datetime.fromisoformat(ts.replace('Z', '+00:00'))
             except: pass
-            
     return datetime.fromtimestamp(os.path.getmtime(file_path))
 
-def search_similar(cursor, embedding, limit=3, days=None):
-    vector_str = "[" + ",".join(map(str, embedding)) + "]"
-    sql = "SELECT content FROM memories"
-    params = [vector_str]
-    
-    if days:
-        sql += " WHERE timestamp > NOW() - INTERVAL '%s days'"
-        params.append(str(days))
-    
-    sql += " ORDER BY embedding <=> %s::vector LIMIT %s"
-    params.append(limit)
-    
-    cursor.execute(sql, tuple(params))
-    return [row[0] for row in cursor.fetchall()]
-
 def format_memory(fact):
-    # Mandatory structure: [CONTEXT] | [TAGS] | [EVENT]
     tags_str = ", ".join(fact.get('tags', []))
-    context = fact.get('context', 'No Context')
-    event = fact.get('event', 'No Event')
-    return f"[{context}] | [{tags_str}] | [{event}]"
+    return f"[{fact.get('context', 'No Context')}] | [{tags_str}] | [{fact.get('event', 'No Event')}]"
 
-def cmd_extract(engine, target_path):
-    target = Path(target_path)
-    if not target.is_file():
-        print(f"❌ Error: {target_path} is not a file.", file=sys.stderr)
-        return
-    
-    with open(target, 'r') as f: content = f.read()
-    print(f"🔍 Extracting facts from {target.name}...", file=sys.stderr)
-    
+def cmd_extract(engine, file_path):
+    print(f"🧪 Extracting facts from {file_path} to JSON...", file=sys.stderr)
+    with open(file_path, 'r', encoding='utf-8') as f: content = f.read()
     facts = []
-    # Handle chunking for extraction
     start = 0
     total_len = len(content)
-    chunk_count = (total_len // (CHUNK_SIZE - OVERLAP)) + 1
-    
-    current_chunk = 1
     while start < total_len:
-        print(f"  -> Processing Chunk {current_chunk}/{chunk_count}...", file=sys.stderr)
         chunk = content[start:start+CHUNK_SIZE]
         chunk_facts = engine.extract_facts(chunk)
-        if isinstance(chunk_facts, list): 
-            facts.extend(chunk_facts)
-            print(f"     ✅ Extracted {len(chunk_facts)} facts.", file=sys.stderr)
-        
+        if isinstance(chunk_facts, list): facts.extend(chunk_facts)
         start += (CHUNK_SIZE - OVERLAP)
-        current_chunk += 1
         if start >= total_len: break
-        
-    # Output ONLY the final JSON to stdout
-    print(json.dumps(facts, indent=2))
+    
+    out_file = Path(file_path).with_suffix(".json")
+    with open(out_file, 'w') as f: json.dump(facts, f, indent=2)
+    print(f"✅ Extracted {len(facts)} facts to {out_file}", file=sys.stderr)
 
-def cmd_load(engine, facts_json_path):
-    with open(facts_json_path, 'r') as f: facts = json.load(f)
+def cmd_load(engine, json_path):
+    print(f"📥 Loading facts from {json_path} into DB...", file=sys.stderr)
+    with open(json_path, 'r') as f: facts = json.load(f)
     conn = get_db_connection()
     cursor = conn.cursor()
+    file_date = recover_date(json_path, facts)
     
-    print(f"📥 Loading {len(facts)} facts into database...")
     for fact in facts:
         unified = format_memory(fact)
-        ts = fact.get('ts', datetime.now().isoformat())
         vector = engine.get_embedding(unified)
-        vector_str = "[" + ",".join(map(str, vector)) + "]"
-        similar = search_similar(cursor, vector)
-        
-        decision = engine.get_enrichment_decision(unified, similar)
-        if decision:
-            cursor.execute("INSERT INTO memories (timestamp, content, embedding) VALUES (%s, %s, %s::vector)", (ts, unified, vector_str))
-            conn.commit()
-            print(f"  ✅ SAVED: {fact.get('context')[:50]}...")
-        else:
-            print(f"  ⏭️  SKIPPED (Redundant): {fact.get('context')[:50]}...")
+        cursor.execute("INSERT INTO memories (timestamp, content, embedding) VALUES (%s, %s, %s::vector)", (file_date, unified, vector))
     
     conn.commit()
     conn.close()
+    print(f"✅ Loaded {len(facts)} memories.", file=sys.stderr)
 
-def cmd_sync(engine, target_dir):
+def cmd_sync(engine, target_dir, limit_files=None):
     target = Path(target_dir)
-    files = sorted(list(target.rglob("*.json")))
+    files = sorted(list(target.rglob("*.md")))
     conn = get_db_connection()
-    
     total_files = len(files)
     print(f"🔄 Syncing directory: {target.absolute()} ({total_files} files found)", file=sys.stderr)
     
+    processed = 0
     for i, f in enumerate(files, 1):
+        if limit_files and processed >= limit_files: break
+        
         cursor = conn.cursor()
         cursor.execute("SELECT 1 FROM archived_files WHERE filename = %s", (f.name,))
         if cursor.fetchone():
@@ -254,167 +226,90 @@ def cmd_sync(engine, target_dir):
             continue
         cursor.close()
         
-        # Random sleep to avoid rate limits (10-30s)
         if i > 1:
-            wait_time = random.randint(10, 30)
-            print(f"\n⏳ Cooling down for {wait_time}s before next file...", file=sys.stderr)
-            time.sleep(wait_time)
+            wait = random.randint(5, 15)
+            print(f"\n⏳ Cooling down for {wait}s before next file...", file=sys.stderr)
+            time.sleep(wait)
 
-        print(f"\n🧠 [{i}/{total_files}] Processing {f.name}...", file=sys.stderr)
+        with open(f, 'r', encoding='utf-8') as fh: content = fh.read()
+        total_len = len(content)
+        chunk_count = (total_len // (CHUNK_SIZE - OVERLAP)) + 1
         
-        # Process full cycle
-        with open(f, 'r') as file_handle: content = file_handle.read()
+        print(f"\n🧠 [{i}/{total_files}] Processing: {f.name}", file=sys.stderr)
+        print(f"   📊 Size: {total_len} chars | Chunks: {chunk_count}", file=sys.stderr)
         
-        facts = []
-        start = 0
-        while start < len(content):
-            chunk = content[start:start+CHUNK_SIZE]
-            chunk_facts = engine.extract_facts(chunk)
-            if isinstance(chunk_facts, list): facts.extend(chunk_facts)
-            start += (CHUNK_SIZE - OVERLAP)
-            if start >= len(content): break
+        try:
+            facts = []
+            start, current_chunk = 0, 1
+            while start < total_len:
+                print(f"   -> Analyzing Chunk {current_chunk}/{chunk_count}... ", end="", file=sys.stderr, flush=True)
+                chunk_facts = engine.extract_facts(content[start:start+CHUNK_SIZE])
+                if isinstance(chunk_facts, list):
+                    facts.extend(chunk_facts)
+                    print(f"OK ({len(chunk_facts)} facts)", file=sys.stderr)
+                else:
+                    print("FAILED", file=sys.stderr)
+                start += (CHUNK_SIZE - OVERLAP)
+                current_chunk += 1
+                if start >= total_len: break
+                
+            file_date = recover_date(f, facts)
+            print(f"   📅 Target Date: {file_date.strftime('%Y-%m-%d')}", file=sys.stderr)
             
-        file_date = recover_date(f, facts)
-        
-        cursor = conn.cursor()
-        for fact in facts:
-            unified = format_memory(fact)
-            vector = engine.get_embedding(unified)
-            vector_str = "[" + ",".join(map(str, vector)) + "]"
-            similar = search_similar(cursor, vector)
+            print(f"   📥 Saving {len(facts)} memories... ", file=sys.stderr, flush=True)
+            saved = 0
+            cursor = conn.cursor()
+            for j, fact in enumerate(facts, 1):
+                unified = format_memory(fact)
+                vector = engine.get_embedding(unified)
+                cursor.execute("INSERT INTO memories (timestamp, content, embedding) VALUES (%s, %s, %s::vector)", (file_date, unified, vector))
+                saved += 1
+                if j % 5 == 0 or j == len(facts):
+                    print(f"{j}..", end="", file=sys.stderr, flush=True)
             
-            decision = engine.get_enrichment_decision(unified, similar)
-            if decision:
-                cursor.execute("INSERT INTO memories (timestamp, content, embedding) VALUES (%s, %s, %s::vector)", (file_date, unified, vector_str))
-                conn.commit()
-                print(f"      ✅ SAVED Fact from {file_date.strftime('%Y-%m-%d')}")
-            else:
-                print(f"      ⏭️  SKIPPED (Redundant)")
-        
-        cursor.execute("INSERT INTO archived_files (filename) VALUES (%s)", (f.name,))
-        conn.commit()
-        print(f"  🏁 Finished: {f.name}")
-        cursor.close()
-        
-    conn.close()
-
-def cmd_ask(engine, query, days=None, limit=5):
-    vector = engine.get_embedding(query)
-    vector_str = "[" + ",".join(map(str, vector)) + "]"
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    sql = "SELECT id, timestamp, content FROM memories"
-    params = []
-    
-    if days:
-        sql += " WHERE timestamp > NOW() - INTERVAL %s"
-        params.append(f"{days} days")
-    
-    sql += " ORDER BY embedding <=> %s::vector LIMIT %s"
-    params.append(vector_str)
-    params.append(limit)
-    
-    cursor.execute(sql, tuple(params))
-    rows = cursor.fetchall()
-    
-    print(f"\n🔎 Top {len(rows)} memories for: '{query}'")
-    if days: print(f"📅 Filtered to last {days} days.")
-    print("-" * 40)
-    for row in rows:
-        print(f"\n[ID: {row[0]}] [DATE: {row[1].strftime('%Y-%m-%d')}]")
-        print(row[2])
-    
-    conn.close()
-
-def cmd_list(limit=10):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, timestamp, content FROM memories ORDER BY timestamp DESC LIMIT %s", (limit,))
-    rows = cursor.fetchall()
-    print(f"\n📚 Last {len(rows)} memories:")
-    for row in rows:
-        # Extract title from content (it's the first part before |)
-        title = row[2].split('|')[0].strip('[] ')
-        print(f"  - [{row[0]}] {row[1].strftime('%Y-%m-%d')}: {title[:60]}...")
-    conn.close()
-
-def cmd_delete(memory_id):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM memories WHERE id = %s", (memory_id,))
-    if cursor.rowcount > 0:
-        print(f"✅ Memory {memory_id} deleted.")
-    else:
-        print(f"⚠️ Memory {memory_id} not found.")
-    conn.commit()
+            cursor.execute("INSERT INTO archived_files (filename) VALUES (%s)", (f.name,))
+            conn.commit()
+            print(f" DONE (Saved: {saved})", file=sys.stderr)
+            cursor.close()
+            processed += 1
+        except Exception as e:
+            conn.rollback()
+            print(f"🛑 Error processing {f.name}: {e}. Stopping.", file=sys.stderr)
+            conn.close()
+            sys.exit(1)
+            
     conn.close()
 
 def cmd_wipe():
-    print("⚠️  WARNING: You are about to WIPE all semantic memories and history.")
-    confirm = input("Are you sure? (type 'YES' to confirm): ")
-    if confirm == "YES":
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("TRUNCATE memories; TRUNCATE archived_files;")
-        conn.commit()
-        conn.close()
-        print("💥 Memory wiped.")
-    else:
-        print("Operation cancelled.")
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM memories; DELETE FROM archived_files;")
+    conn.commit()
+    conn.close()
+    print("💥 Memory wiped (DELETE).", file=sys.stderr)
 
 def main():
     parser = argparse.ArgumentParser(description="Mnemosyne: Semantic Memory Engine")
-    parser.add_argument("--use-cli", action="store_true", help="Use 'gemini' CLI instead of SDK")
+    parser.add_argument("--use-cli", action="store_true", help="Use 'gemini' CLI")
     parser.add_argument("--api-key", help="Gemini API Key")
+    parser.add_argument("--no-dedup", action="store_true", help="Disable AI deduplication")
     
-    subparsers = parser.add_subparsers(dest="command", help="Subcommand to run")
-    
-    # Extract
-    p_extract = subparsers.add_parser("extract", help="Extract facts from a log file to JSON")
-    p_extract.add_argument("file", help="Source JSON log file")
-    
-    # Load
-    p_load = subparsers.add_parser("load", help="Load extracted facts from JSON to DB")
-    p_load.add_argument("file", help="Source facts JSON file")
-    
-    # Sync
-    p_sync = subparsers.add_parser("sync", help="Full automated sync of a directory")
-    p_sync.add_argument("dir", nargs="?", default=".", help="Directory to sync (default: current)")
-    
-    # Ask
-    p_ask = subparsers.add_parser("ask", help="Search semantic memory")
-    p_ask.add_argument("query", help="Search query")
-    p_ask.add_argument("-d", "--days", type=int, help="Limit results to last N days")
-    p_ask.add_argument("-n", "--limit", type=int, default=5, help="Number of results to return (default: 5)")
-    
-    # List
-    p_list = subparsers.add_parser("list", help="List recent memories")
-    p_list.add_argument("-n", "--limit", type=int, default=10, help="Number of items to show")
-    
-    # Delete
-    p_delete = subparsers.add_parser("delete", help="Delete a memory by ID")
-    p_delete.add_argument("id", help="UUID of the memory to delete")
-
-    # Wipe
-    p_wipe = subparsers.add_parser("wipe", help="WIPE all memories and history")
+    subparsers = parser.add_subparsers(dest="command")
+    subparsers.add_parser("extract").add_argument("file")
+    subparsers.add_parser("load").add_argument("file")
+    subparsers.add_parser("sync").add_argument("dir", nargs="?", default=".")
+    subparsers.add_parser("next").add_argument("dir")
+    subparsers.add_parser("wipe")
     
     args = parser.parse_args()
-    if not args.command:
-        parser.print_help()
-        return
-
-    # Engine-less commands
-    if args.command == "list": cmd_list(args.limit); return
-    if args.command == "delete": cmd_delete(args.id); return
+    if not args.command: return
     if args.command == "wipe": cmd_wipe(); return
 
     engine = MnemosyneEngine(use_cli=args.use_cli, api_key=args.api_key)
-    
     if args.command == "extract": cmd_extract(engine, args.file)
     elif args.command == "load": cmd_load(engine, args.file)
     elif args.command == "sync": cmd_sync(engine, args.dir)
-    elif args.command == "ask": cmd_ask(engine, args.query, args.days, args.limit)
+    elif args.command == "next": cmd_sync(engine, args.dir, limit_files=1)
 
 if __name__ == "__main__":
     main()

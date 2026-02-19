@@ -1,14 +1,17 @@
 import yaml
 import subprocess
 import os
+from pathlib import Path
 
 # Configurazione
-INDEX_FILE = "/workspace/tazlab-memory/INDEX.yaml"
-ARCHIVIST_SCRIPT = "/workspace/tazlab-memory/tazlab_archivist.py"
+BASE_DIR = Path(__file__).parent.resolve()
+INDEX_FILE = BASE_DIR / "INDEX.yaml"
+MNEMOSYNE_SCRIPT = BASE_DIR / "mnemosyne.py"
+OUTPUT_FILE = Path("/workspace/CURRENT_CONTEXT.md")
 
 def awaken():
-    if not os.path.exists(INDEX_FILE):
-        print("❌ Errore: INDEX.yaml non trovato.")
+    if not INDEX_FILE.exists():
+        print(f"❌ Errore: {INDEX_FILE} non trovato.")
         return
 
     with open(INDEX_FILE, 'r') as f:
@@ -26,29 +29,28 @@ def awaken():
         print(f"🔍 Recupero contesto: {category}...")
         
         try:
-            # Eseguo lo script archivista in modalità ricerca
+            # Eseguo lo script mnemosyne in modalità ask
+            # Usiamo --use-cli per evitare dipendenza da API key per la ricerca se possibile
+            # Nota: Mnemosyne Engine richiede comunque embedding per la ricerca.
+            # Se la chiave manca, tornerà risultati casuali o vuoti.
             result = subprocess.check_output(
-                ["python3", ARCHIVIST_SCRIPT, "search", query],
+                ["python3", str(MNEMOSYNE_SCRIPT), "--use-cli", "--no-dedup", "ask", query],
                 stderr=subprocess.STDOUT,
                 universal_newlines=True
             )
             
-            # Estraggo solo la parte dei ricordi (dopo l'intestazione dello script)
-            parts = result.split("🧠 Ricordi Strategici:")
-            clean_result = parts[1].strip() if len(parts) > 1 else result.strip()
-            
-            full_context += f"## {category}\n{clean_result}\n\n"
+            # Estraggo la parte rilevante
+            full_context += f"## {category}\n{result.strip()}\n\n"
             
         except Exception as e:
             print(f"  ⚠️  Errore durante il recupero di {category}: {e}")
 
     # Salvo il contesto
-    context_file = "/workspace/tazlab-memory/CURRENT_CONTEXT.md"
-    with open(context_file, 'w') as f:
+    with open(OUTPUT_FILE, 'w') as f:
         f.write(full_context)
     
     print("-" * 50)
-    print(f"✨ Risveglio completato! Contesto salvato in: {context_file}")
+    print(f"✨ Risveglio completato! Contesto salvato in: {OUTPUT_FILE}")
 
 if __name__ == "__main__":
     awaken()
