@@ -93,7 +93,6 @@ func main() {
 	case "__internal_sync_daemon": syncDaemon()
 	case "setup-storage": setupStorage()
 	case "vpn": vpnCommand()
-	case "memory": memoryCommand()
 	default: help()
 	}
 }
@@ -146,30 +145,18 @@ func vpnDown() {
 	fmt.Println("✅ VPN is DOWN.")
 }
 
-func memoryCommand() {
-	subarg := ""
-	if len(os.Args) > 2 { subarg = os.Args[2] }
-	
-	// VPN Auto-Lifecycle
-	vpnUp()
-	defer vpnDown()
-
-	// Prepare arguments for mnemosyne.py
-	pyArgs := []string{"/home/tazpod/memory/mnemosyne.py", subarg}
-	if len(os.Args) > 3 {
-		pyArgs = append(pyArgs, os.Args[3:]...)
-	}
-
-	fmt.Println("🧠 Running Mnemosyne...")
-	cmd := exec.Command("python3", pyArgs...)
-	cmd.Env = append(os.Environ(), "DB_HOST="+cfg.Providers[cfg.ActiveProvider].DBHost)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	cmd.Run()
-}
-
 
 func setupStorage() {
 	loadEnclaveEnv()
+	
+	// AWS Credential Resolution
+	ak := resolveSecret(os.Getenv("AWS_ACCESS_KEY_ID"))
+	sk := resolveSecret(os.Getenv("AWS_SECRET_ACCESS_KEY"))
+	if ak != "" && sk != "" {
+		os.Setenv("AWS_ACCESS_KEY_ID", ak)
+		os.Setenv("AWS_SECRET_ACCESS_KEY", sk)
+	}
+
 	s3, err := utils.NewS3Client("")
 	if err != nil {
 		fmt.Printf("❌ S3 Client error: %v\n", err)
@@ -213,6 +200,24 @@ func loadConfigs() {
 
 func help() { 
 	fmt.Printf("🛡️  TazPod CLI %s (RAM Vault)\n", Version)
+	fmt.Println("\nUsage: tazpod <command> [arguments]")
+	fmt.Println("\nLifecycle Commands:")
+	fmt.Println("  init           Initialize a new TazPod project in the current directory")
+	fmt.Println("  up             Start the development container")
+	fmt.Println("  down           Stop and remove the development container")
+	fmt.Println("  ssh | enter    Enter the container shell")
+	fmt.Println("\nVault & Secrets Commands:")
+	fmt.Println("  unlock         Unlock the RAM vault (Ghost Mode)")
+	fmt.Println("  lock           Lock and wipe the RAM vault")
+	fmt.Println("  pull secrets   Sync secrets from Infisical to the vault")
+	fmt.Println("  pull identity  Pull identity (vault & configs) from S3")
+	fmt.Println("  push identity  Push current identity (vault & configs) to S3")
+	fmt.Println("  login          Authenticate with Infisical")
+	fmt.Println("\nUtility Commands:")
+	fmt.Println("  vpn up|down    Manage VPN connection for the active provider")
+	fmt.Println("  memory <cmd>   Interface with Mnemosyne semantic memory")
+	fmt.Println("  setup-storage  Initialize S3 bucket for nomadic identity")
+	fmt.Println("  --version, -v  Show version information")
 }
 
 func up() {
@@ -313,15 +318,40 @@ func push() {
 	}
 }
 
+func resolveSecret(val string) string {
+	val = strings.TrimSpace(val)
+	// Rimuove apici singoli o doppi se presenti
+	for len(val) >= 2 && ((val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'')) {
+		val = val[1 : len(val)-1]
+	}
+
+	// Se sembra un percorso assoluto e il file esiste, leggiamo il contenuto
+	if filepath.IsAbs(val) {
+		if data, err := os.ReadFile(val); err == nil {
+			content := strings.TrimSpace(string(data))
+			// Pulisce anche il contenuto del file (per gli apici)
+			for len(content) >= 2 && ((content[0] == '"' && content[len(content)-1] == '"') || (content[0] == '\'' && content[len(content)-1] == '\'')) {
+				content = content[1 : len(content)-1]
+			}
+			return content
+		}
+	}
+	return val
+}
+
 func pushIdentity() {
 	loadEnclaveEnv()
 	
-	// S3 Authentication Diagnostics
-	ak := os.Getenv("AWS_ACCESS_KEY_ID")
-	sk := os.Getenv("AWS_SECRET_ACCESS_KEY")
+	// AWS Credential Resolution
+	ak := resolveSecret(os.Getenv("AWS_ACCESS_KEY_ID"))
+	sk := resolveSecret(os.Getenv("AWS_SECRET_ACCESS_KEY"))
+	
 	if ak == "" || sk == "" {
 		fmt.Println("⚠️  Warning: AWS credentials missing in environment.")
 	} else {
+		// Re-set clean values for the SDK
+		os.Setenv("AWS_ACCESS_KEY_ID", ak)
+		os.Setenv("AWS_SECRET_ACCESS_KEY", sk)
 		fmt.Printf("🛡️  Auth Check: ID=%s... (len: %d) | Secret=REDACTED (len: %d)\n", 
 			ak[:4], len(ak), len(sk))
 	}
@@ -372,6 +402,15 @@ func pull() {
 
 func pullIdentity() {
 	loadEnclaveEnv()
+	
+	// AWS Credential Resolution
+	ak := resolveSecret(os.Getenv("AWS_ACCESS_KEY_ID"))
+	sk := resolveSecret(os.Getenv("AWS_SECRET_ACCESS_KEY"))
+	if ak != "" && sk != "" {
+		os.Setenv("AWS_ACCESS_KEY_ID", ak)
+		os.Setenv("AWS_SECRET_ACCESS_KEY", sk)
+	}
+
 	s3, err := utils.NewS3Client("")
 	if err != nil {
 		fmt.Printf("❌ S3 Client error: %v\n", err)
@@ -408,8 +447,15 @@ func loadEnclaveEnv() {
 			if strings.Contains(line, "=") {
 				parts := strings.SplitN(line, "=", 2)
 				key := strings.TrimSpace(parts[0])
-				// Clean both single and double quotes
-				val := strings.Trim(strings.TrimSpace(parts[1]), "\"'")
+				val := strings.TrimSpace(parts[1])
+				// Rimuove tutti gli apici esterni (singoli o doppi) in modo iterativo
+				for {
+					if len(val) >= 2 && ((val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'')) {
+						val = val[1 : len(val)-1]
+					} else {
+						break
+					}
+				}
 				os.Setenv(key, val)
 			}
 		}
