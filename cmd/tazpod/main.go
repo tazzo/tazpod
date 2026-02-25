@@ -215,7 +215,6 @@ func help() {
 	fmt.Println("  login          Authenticate with Infisical")
 	fmt.Println("\nUtility Commands:")
 	fmt.Println("  vpn up|down    Manage VPN connection for the active provider")
-	fmt.Println("  memory <cmd>   Interface with Mnemosyne semantic memory")
 	fmt.Println("  setup-storage  Initialize S3 bucket for nomadic identity")
 	fmt.Println("  --version, -v  Show version information")
 }
