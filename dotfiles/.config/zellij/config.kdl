@@ -1,0 +1,6 @@
+// ~/.config/zellij/config.kdl
+mouse_mode true
+copy_on_select true
+copy_clipboard "system"
+// Usa le sequenze OSC 52 per la clipboard
+copy_command "base64" 
