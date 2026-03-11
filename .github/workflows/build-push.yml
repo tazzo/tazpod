@@ -70,13 +70,3 @@ jobs:
           tags: |
             tazzo/tazpod-ai:latest
             tazzo/tazpod-ai:tazpod-ai-${{ github.run_number }}-${{ steps.vars.outputs.sha_short }}
-
-      - name: Build and Push Gemini
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: .tazpod/Dockerfile.gemini
-          push: true
-          tags: |
-            tazzo/tazpod-gemini:latest
-            tazzo/tazpod-gemini:tazpod-gemini-${{ github.run_number }}-${{ steps.vars.outputs.sha_short }}
