@@ -61,6 +61,16 @@ jobs:
             tazzo/tazpod-k8s:latest
             tazzo/tazpod-k8s:tazpod-k8s-${{ github.run_number }}-${{ steps.vars.outputs.sha_short }}
 
+      - name: Build and Push AI
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: .tazpod/Dockerfile.ai
+          push: true
+          tags: |
+            tazzo/tazpod-ai:latest
+            tazzo/tazpod-ai:tazpod-ai-${{ github.run_number }}-${{ steps.vars.outputs.sha_short }}
+
       - name: Build and Push Gemini
         uses: docker/build-push-action@v5
         with:
