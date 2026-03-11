@@ -86,6 +86,14 @@ if mountpoint -q /home/tazpod/secrets; then
     eval "$(command tazpod __internal_env 2>/dev/null)"
 fi
 
+# --- AI TOOL CONFIG SYMLINKS (persistent, no unlock required) ---
+if [ -d /workspace/.tazpod ]; then
+    for _tool in .pi .omp .gemini .claude; do
+        [ ! -e "$HOME/$_tool" ] && ln -sf "/workspace/.tazpod/$_tool" "$HOME/$_tool"
+    done
+    unset _tool
+fi
+
 # Enable Modern Prompts/Tools
 [ -x "$(command -v starship)" ] && eval "$(starship init bash)"
 [ -x "$(command -v zoxide)" ] && eval "$(zoxide init bash)"

@@ -26,16 +26,12 @@ const (
 	
 	// Percorsi speculari per Infisical
 	InfisicalLocalHome    = "/home/tazpod/.infisical"
-	InfisicalKeyringLocal = "/home/tazpod/infisical-keyring"
-	GeminiLocalHome       = "/home/tazpod/.gemini"
-	
-	// Cartelle nel Vault (RAM) - Nomi puliti
-	InfisicalVaultDir     = MountPath + "/.infisical"
-	InfisicalKeyringVault = MountPath + "/infisical-keyring"
-	GeminiVaultDir        = "/workspace/.tazpod/.gemini"
-	
-	PassCache             = MountPath + "/.vault_pass"
-)
+	        InfisicalKeyringLocal = "/home/tazpod/infisical-keyring"
+	        
+	                // Cartelle nel Vault (RAM) - Nomi puliti
+	                InfisicalVaultDir     = MountPath + "/.infisical"
+	                InfisicalKeyringVault = MountPath + "/infisical-keyring"
+	        PassCache             = MountPath + "/.vault_pass")
 
 var cachedPassphrase string
 
@@ -77,13 +73,13 @@ func Unlock() {
 }
 
 func SetupIdentity() {
-	// Gemini Link (History)
-	os.MkdirAll(GeminiVaultDir, 0755)
-	exec.Command("sudo", "chown", "-R", "tazpod:tazpod", "/workspace/.tazpod").Run()
-	if _, err := os.Lstat(GeminiLocalHome); err == nil {
-		exec.Command("sudo", "rm", "-rf", GeminiLocalHome).Run()
+	// Ensure AI tool config dirs exist in workspace
+	for _, dir := range []string{".pi", ".omp", ".gemini", ".claude", ".opencode"} {
+		os.MkdirAll("/workspace/.tazpod/"+dir, 0755)
 	}
-	os.Symlink(GeminiVaultDir, GeminiLocalHome)
+
+        exec.Command("sudo", "chown", "-R", "tazpod:tazpod", "/workspace/.tazpod").Run()
+
 }
 
 func Save(passphrase string) {
