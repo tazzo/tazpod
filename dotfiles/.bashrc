@@ -89,9 +89,14 @@ fi
 # --- AI TOOL CONFIG SYMLINKS (persistent, no unlock required) ---
 if [ -d /workspace/.tazpod ]; then
     for _tool in .pi .omp .gemini .claude; do
-        [ ! -e "$HOME/$_tool" ] && ln -sf "/workspace/.tazpod/$_tool" "$HOME/$_tool"
+        _target="/workspace/.tazpod/$_tool"
+        _link="$HOME/$_tool"
+        # Replace real dirs with symlinks; skip if already a correct symlink
+        if [ ! -L "$_link" ]; then
+            rm -rf "$_link" && ln -sf "$_target" "$_link"
+        fi
     done
-    unset _tool
+    unset _tool _target _link
 fi
 
 # Enable Modern Prompts/Tools
