@@ -91,8 +91,9 @@ if [ -d /workspace/.tazpod ]; then
     for _tool in .pi .omp .gemini .claude; do
         _target="/workspace/.tazpod/$_tool"
         _link="$HOME/$_tool"
-        # Replace real dirs with symlinks; skip if already a correct symlink
-        if [ ! -L "$_link" ]; then
+        mkdir -p "$_target"
+        # Recreate if missing, dangling, or pointing to wrong target
+        if [ ! -L "$_link" ] || [ "$(readlink "$_link")" != "$_target" ]; then
             rm -rf "$_link" && ln -sf "$_target" "$_link"
         fi
     done
