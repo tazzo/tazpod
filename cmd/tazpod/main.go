@@ -270,7 +270,7 @@ func initProject() {
 
 	// Creazione Config Default
 	newCfg := Config{
-		Image: "tazzo/tazpod-gemini:latest",
+		Image: "tazzo/tazpod-ai:latest",
 		ContainerName: containerName,
 		User: "tazpod",
 		ActiveProvider: "home",

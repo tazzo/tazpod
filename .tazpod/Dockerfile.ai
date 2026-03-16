@@ -6,7 +6,8 @@ USER root
 
 # Install Pi Coding Agent (Global npm)
 RUN npm install -g @mariozechner/pi-coding-agent && \
-    ln -sf $(npm config get prefix)/bin/pi /usr/local/bin/pi
+    ln -sf $(npm config get prefix)/bin/pi /usr/local/bin/pi && \
+    npm install -g @google/gemini-cli@latest
 
 # Install oh-my-pi (Global installation for all users)
 RUN curl -fsSL https://raw.githubusercontent.com/can1357/oh-my-pi/main/scripts/install.sh | sh && \

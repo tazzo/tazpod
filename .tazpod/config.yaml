@@ -2,15 +2,15 @@
 version: 1.0
 
 # Final Image
-image: "tazzo/tazlab.net:tazpod-gemini"
+image: "tazzo/tazpod-ai:latest"
 
 # Container Settings
 container_name: "tazpod-lab"
 user: "tazpod"
 
-# Build Settings (Build Gemini layer locally)
+# Build Settings (Build AI layer locally)
 build:
-  dockerfile: ".tazpod/Dockerfile.gemini"
+  dockerfile: ".tazpod/Dockerfile.ai"
   context: "."
 
 # Features
