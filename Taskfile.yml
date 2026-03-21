@@ -20,7 +20,7 @@ tasks:
     cmds:
       - 'echo "🏗️  Building Docker layers..."'
       - 'docker build -t {{.DOCKER_USER}}/tazpod-base:latest -f .tazpod/Dockerfile.base .'
-      - 'docker build -t {{.DOCKER_USER}}/tazpod-infisical:latest -f .tazpod/Dockerfile.infisical .'
+      - 'docker build -t {{.DOCKER_USER}}/tazpod-aws:latest -f .tazpod/Dockerfile.aws .'
       - 'docker build -t {{.DOCKER_USER}}/tazpod-k8s:latest -f .tazpod/Dockerfile.k8s .'
       - 'docker build -t {{.DOCKER_USER}}/tazpod-ai:latest -f .tazpod/Dockerfile.ai .'
 
@@ -28,7 +28,7 @@ tasks:
     desc: Push images to registry (prefer GitHub Actions)
     cmds:
       - |
-        for layer in tazpod-base tazpod-infisical tazpod-k8s tazpod-ai; do
+        for layer in tazpod-base tazpod-aws tazpod-k8s tazpod-ai; do
           echo "Pushing $layer..."
           docker push "{{.DOCKER_USER}}/$layer:latest"
         done

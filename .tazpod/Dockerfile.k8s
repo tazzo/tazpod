@@ -1,6 +1,6 @@
 # --- TAZPOD LAYER 3: KUBERNETES COMMANDER ---
-# This layer depends on tazzo/tazpod-infisical
-FROM tazzo/tazpod-infisical:latest
+# This layer depends on tazzo/tazpod-aws
+FROM tazzo/tazpod-aws:latest
 
 USER root
 
@@ -46,6 +46,12 @@ RUN TERRAFORM_VERSION=$(curl -s https://checkpoint-api.hashicorp.com/v1/check/te
 
 # 7. Install Flux CLI
 RUN curl -s https://fluxcd.io/install.sh | bash
+# 8. Install OCI CLI (Oracle Cloud)
+RUN pip3 install oci-cli --break-system-packages
+
+# 8. Install OCI CLI (Oracle Cloud)
+RUN pip3 install oci-cli --break-system-packages
+
 
 USER tazpod
 WORKDIR /home/tazpod

@@ -1,0 +1,18 @@
+# --- TAZPOD LAYER 2: AWS (Bootstrap & S3) ---
+# This layer depends on tazzo/tazpod-base
+FROM tazzo/tazpod-base:latest
+
+USER root
+
+# Install AWS CLI v2
+RUN curl -sSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip && \
+    unzip -q /tmp/awscliv2.zip -d /tmp && \
+    /tmp/aws/install && \
+    rm -rf /tmp/aws /tmp/awscliv2.zip
+
+USER tazpod
+WORKDIR /home/tazpod
+
+# Banner
+RUN sed -i '/LAYER ACTIVE/d' ~/.bashrc && \
+    echo 'echo -e "\n\033[1;34m☁️  TAZPOD AWS LAYER ACTIVE (SSO + S3)\033[0m\n"' >> ~/.bashrc

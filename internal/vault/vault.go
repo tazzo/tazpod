@@ -22,16 +22,13 @@ const (
 	VaultDir      = "/workspace/.tazpod/vault"
 	VaultFile     = VaultDir + "/vault.tar.aes"
 	MountPath     = "/home/tazpod/secrets"
-	SecretsYAML   = "/workspace/.tazpod/secrets-sync-config.yml"
-	
-	// Percorsi speculari per Infisical
-	InfisicalLocalHome    = "/home/tazpod/.infisical"
-	        InfisicalKeyringLocal = "/home/tazpod/infisical-keyring"
-	        
-	                // Cartelle nel Vault (RAM) - Nomi puliti
-	                InfisicalVaultDir     = MountPath + "/.infisical"
-	                InfisicalKeyringVault = MountPath + "/infisical-keyring"
-	        PassCache             = MountPath + "/.vault_pass")
+
+	// AWS Enclave paths
+	AwsLocalHome  = "/home/tazpod/.aws"
+	AwsVaultDir   = MountPath + "/.aws"
+
+	PassCache     = MountPath + "/.vault_pass"
+)
 
 var cachedPassphrase string
 
@@ -74,12 +71,25 @@ func Unlock() {
 
 func SetupIdentity() {
 	// Ensure AI tool config dirs exist in workspace
-for _, dir := range []string{".pi", ".omp", ".gemini", ".claude"} {
-    os.MkdirAll("/workspace/.tazpod/"+dir, 0755)
-}
+	for _, dir := range []string{".pi", ".omp", ".gemini", ".claude", "aws"} {
+		os.MkdirAll("/workspace/.tazpod/"+dir, 0755)
+	}
 
-        exec.Command("sudo", "chown", "-R", "tazpod:tazpod", "/workspace/.tazpod").Run()
+	// Ensure persistent AWS config is symlinked into the home directory
+	awsPersistent := "/workspace/.tazpod/aws"
+	awsHome := AwsLocalHome
+	os.MkdirAll(awsPersistent, 0755)
+	os.MkdirAll(awsHome, 0755)
+	configSrc := filepath.Join(awsPersistent, "config")
+	configDst := filepath.Join(awsHome, "config")
+	if _, err := os.Lstat(configDst); err == nil {
+		os.Remove(configDst)
+	}
+	if _, err := os.Stat(configSrc); err == nil {
+		os.Symlink(configSrc, configDst)
+	}
 
+	exec.Command("sudo", "chown", "-R", "tazpod:tazpod", "/workspace/.tazpod").Run()
 }
 
 func Save(passphrase string) {
@@ -120,12 +130,10 @@ func loadCachedPass() {
 }
 
 func setupBindAuth() {
-	fmt.Println("🔗 Bridging Enclave Auth...")
-	os.MkdirAll(InfisicalVaultDir, 0700)
-	os.MkdirAll(InfisicalKeyringVault, 0700)
+	fmt.Println("🔗 Bridging AWS Enclave...")
+	os.MkdirAll(AwsVaultDir, 0700)
 
-	bridge(InfisicalLocalHome, InfisicalVaultDir)
-	bridge(InfisicalKeyringLocal, InfisicalKeyringVault)
+	bridge(AwsLocalHome, AwsVaultDir)
 }
 
 func bridge(local, vault string) {
@@ -142,8 +150,7 @@ func bridge(local, vault string) {
 func Lock() {
 	if !utils.IsMounted(MountPath) { return }
 	fmt.Println("🔒 Locking vault...")
-	exec.Command("sudo", "umount", "-l", InfisicalLocalHome).Run()
-	exec.Command("sudo", "umount", "-l", InfisicalKeyringLocal).Run()
+	exec.Command("sudo", "umount", "-l", AwsLocalHome).Run()
 	unmountRAM()
 }
 

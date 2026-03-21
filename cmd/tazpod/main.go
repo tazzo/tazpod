@@ -1,13 +1,11 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"tazpod/internal/utils"
@@ -23,49 +21,36 @@ type ProviderConfig struct {
 	VPNConfig string `yaml:"vpn_config"`
 }
 
+type AwsSsoConfig struct {
+	StartURL  string `yaml:"start_url"`
+	AccountID string `yaml:"account_id"`
+	RoleName  string `yaml:"role_name"`
+	Region    string `yaml:"region"`
+	Profile   string `yaml:"profile"`
+}
+
 type Config struct {
 	Image          string `yaml:"image"`
 	ContainerName  string `yaml:"container_name"`
 	User           string `yaml:"user"`
 	ActiveProvider string `yaml:"active_provider"`
 	Providers      map[string]ProviderConfig `yaml:"providers"`
+	AwsSso         AwsSsoConfig `yaml:"aws_sso"`
 	Features       struct {
 		GhostMode bool `yaml:"ghost_mode"`
 		Debug     bool `yaml:"debug"`
 	} `yaml:"features"`
 }
 
-type SecretMapping struct {
-	Name string `yaml:"name"`
-	File string `yaml:"file"`
-	Env  string `yaml:"env"`
-	Path string `yaml:"path"`
-}
-
-type SecretsConfig struct {
-	Config struct {
-		ProjectID string `yaml:"infisical_project_id"`
-		Env       string `yaml:"infisical_env"`
-		Path      string `yaml:"infisical_path"`
-		Domain    string `yaml:"infisical_domain"`
-	} `yaml:"config"`
-	Secrets []SecretMapping `yaml:"secrets"`
-}
-
 var (
 	Version       = "dev"
 	ConfigPath    = ".tazpod/config.yaml"
-	SecretsYAML   = "/workspace/.tazpod/secrets-sync-config.yml"
-	EnvFile       = vault.MountPath + "/.env-infisical"
 	
 	TazPodUID     = 1000
 	TazPodGID     = 1000
 )
 
-var (
-	cfg    Config
-	secCfg SecretsConfig
-)
+var cfg Config
 
 func main() {
 	if len(os.Args) < 2 { help(); os.Exit(1) }
@@ -108,7 +93,6 @@ func vpnCommand() {
 }
 
 func vpnUp() {
-	loadEnclaveEnv()
 	provider := cfg.ActiveProvider
 	if provider == "" { provider = "home" }
 	pCfg, ok := cfg.Providers[provider]
@@ -147,17 +131,7 @@ func vpnDown() {
 
 
 func setupStorage() {
-	loadEnclaveEnv()
-	
-	// AWS Credential Resolution
-	ak := resolveSecret(os.Getenv("AWS_ACCESS_KEY_ID"))
-	sk := resolveSecret(os.Getenv("AWS_SECRET_ACCESS_KEY"))
-	if ak != "" && sk != "" {
-		os.Setenv("AWS_ACCESS_KEY_ID", ak)
-		os.Setenv("AWS_SECRET_ACCESS_KEY", sk)
-	}
-
-	s3, err := utils.NewS3Client("")
+	s3, err := utils.NewS3Client("", cfg.AwsSso.Profile)
 	if err != nil {
 		fmt.Printf("❌ S3 Client error: %v\n", err)
 		return
@@ -175,7 +149,8 @@ func syncDaemon() {
 	for {
 		time.Sleep(5 * time.Minute)
 		if isVaultUnlocked() {
-			pushIdentity()
+			vault.Save("")
+			pushVault()
 		}
 	}
 }
@@ -188,14 +163,6 @@ func isVaultUnlocked() bool {
 
 func loadConfigs() {
 	if data, err := os.ReadFile(ConfigPath); err == nil { yaml.Unmarshal(data, &cfg) }
-	// Try loading from new path, fallback to old for migration? 
-	// Better just use the constant which now points to the new path.
-	if data, err := os.ReadFile(SecretsYAML); err == nil { 
-		yaml.Unmarshal(data, &secCfg) 
-	} else if data, err := os.ReadFile("/workspace/secrets.yml"); err == nil {
-		// Migration fallback
-		yaml.Unmarshal(data, &secCfg)
-	}
 }
 
 func help() { 
@@ -209,10 +176,10 @@ func help() {
 	fmt.Println("\nVault & Secrets Commands:")
 	fmt.Println("  unlock         Unlock the RAM vault (Ghost Mode)")
 	fmt.Println("  lock           Lock and wipe the RAM vault")
-	fmt.Println("  pull secrets   Sync secrets from Infisical to the vault")
-	fmt.Println("  pull identity  Pull identity (vault & configs) from S3")
-	fmt.Println("  push identity  Push current identity (vault & configs) to S3")
-	fmt.Println("  login          Authenticate with Infisical")
+	fmt.Println("  save           Save the current RAM vault content to disk")
+	fmt.Println("  login          Authenticate with AWS SSO")
+	fmt.Println("  pull [vault|identity] Pull vault or identity from S3 (default: vault, alias: sync)")
+	fmt.Println("  push [vault|identity] Push vault or identity to S3 (default: vault)")
 	fmt.Println("\nUtility Commands:")
 	fmt.Println("  vpn up|down    Manage VPN connection for the active provider")
 	fmt.Println("  setup-storage  Initialize S3 bucket for nomadic identity")
@@ -252,7 +219,8 @@ func enter() {
 	
 	fmt.Println("\n🔒 Session ended. Securing identity...")
 	if isVaultUnlocked() {
-		pushIdentity()
+		vault.Save("")
+		pushVault()
 	}
 	exec.Command("docker", "exec", cfg.ContainerName, "tazpod", "lock").Run()
 }
@@ -284,19 +252,19 @@ func initProject() {
 				VPNConfig: "AWS_WG_CONF",
 			},
 		},
+		AwsSso: AwsSsoConfig{
+			StartURL:  "https://tazlab.awsapps.com/start",
+			AccountID: "123456789012",
+			RoleName:  "TazLabBootstrap",
+			Region:    "eu-central-1",
+			Profile:   "tazlab-bootstrap",
+		},
 	}
 	newCfg.Features.GhostMode = true
 	newCfg.Features.Debug = false
 
 	data, _ := yaml.Marshal(&newCfg)
 	os.WriteFile(ConfigPath, data, 0644)
-
-	// Creazione secrets-sync-config.yml template se non esiste
-	newSecretsPath := ".tazpod/secrets-sync-config.yml"
-	if _, err := os.Stat(newSecretsPath); os.IsNotExist(err) {
-		tmpl := "config:\n  infisical_project_id: \"\"\n  infisical_env: \"dev\"\n  infisical_path: \"/\"\n  infisical_domain: \"https://eu.infisical.com\"\n\nsecrets:\n  - name: EXAMPLE_SECRET\n    file: example-file\n    env: EXAMPLE_ENV\n"
-		os.WriteFile(newSecretsPath, []byte(tmpl), 0644)
-	}
 
 	fmt.Printf("✅ Project initialized.\n🐳 Container: %s\n", containerName)
 }
@@ -306,55 +274,34 @@ func unlock() {
 	vault.Unlock() 
 }
 
+func login() {
+	profile := cfg.AwsSso.Profile
+	if profile == "" { profile = "tazlab-bootstrap" }
+	fmt.Printf("🔑 Authenticating with AWS SSO (profile: %s)...\n", profile)
+	cmd := exec.Command("aws", "sso", "login", "--profile", profile)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if err := cmd.Run(); err != nil {
+		fmt.Printf("❌ AWS SSO login failed: %v\n", err)
+		return
+	}
+	fmt.Println("✅ AWS SSO session active.")
+}
+
 func push() {
 	subarg := ""
 	if len(os.Args) > 2 { subarg = os.Args[2] }
 
-	if subarg == "identity" || subarg == "" {
+	switch subarg {
+	case "vault", "":
+		pushVault()
+	case "identity":
 		pushIdentity()
-	} else {
+	default:
 		fmt.Printf("❌ Unknown push target: %s\n", subarg)
 	}
 }
 
-func resolveSecret(val string) string {
-	val = strings.TrimSpace(val)
-	// Rimuove apici singoli o doppi se presenti
-	for len(val) >= 2 && ((val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'')) {
-		val = val[1 : len(val)-1]
-	}
-
-	// Se sembra un percorso assoluto e il file esiste, leggiamo il contenuto
-	if filepath.IsAbs(val) {
-		if data, err := os.ReadFile(val); err == nil {
-			content := strings.TrimSpace(string(data))
-			// Pulisce anche il contenuto del file (per gli apici)
-			for len(content) >= 2 && ((content[0] == '"' && content[len(content)-1] == '"') || (content[0] == '\'' && content[len(content)-1] == '\'')) {
-				content = content[1 : len(content)-1]
-			}
-			return content
-		}
-	}
-	return val
-}
-
 func pushIdentity() {
-	loadEnclaveEnv()
-	
-	// AWS Credential Resolution
-	ak := resolveSecret(os.Getenv("AWS_ACCESS_KEY_ID"))
-	sk := resolveSecret(os.Getenv("AWS_SECRET_ACCESS_KEY"))
-	
-	if ak == "" || sk == "" {
-		fmt.Println("⚠️  Warning: AWS credentials missing in environment.")
-	} else {
-		// Re-set clean values for the SDK
-		os.Setenv("AWS_ACCESS_KEY_ID", ak)
-		os.Setenv("AWS_SECRET_ACCESS_KEY", sk)
-		fmt.Printf("🛡️  Auth Check: ID=%s... (len: %d) | Secret=REDACTED (len: %d)\n", 
-			ak[:4], len(ak), len(sk))
-	}
-
 	start := time.Now()
 	data, err := vault.PackageIdentity()
 	if err != nil {
@@ -371,7 +318,7 @@ func pushIdentity() {
 	}
 	defer os.Remove(tmpFile)
 
-	s3, err := utils.NewS3Client("")
+	s3, err := utils.NewS3Client("", cfg.AwsSso.Profile)
 	if err != nil {
 		fmt.Printf("❌ S3 Client error: %v\n", err)
 		return
@@ -390,27 +337,18 @@ func pull() {
 	subarg := ""
 	if len(os.Args) > 2 { subarg = os.Args[2] }
 
-	if subarg == "secrets" {
-		pullSecrets()
-	} else if subarg == "identity" || subarg == "" {
+	switch subarg {
+	case "vault", "":
+		pullVault()
+	case "identity":
 		pullIdentity()
-	} else {
+	default:
 		fmt.Printf("❌ Unknown pull target: %s\n", subarg)
 	}
 }
 
 func pullIdentity() {
-	loadEnclaveEnv()
-	
-	// AWS Credential Resolution
-	ak := resolveSecret(os.Getenv("AWS_ACCESS_KEY_ID"))
-	sk := resolveSecret(os.Getenv("AWS_SECRET_ACCESS_KEY"))
-	if ak != "" && sk != "" {
-		os.Setenv("AWS_ACCESS_KEY_ID", ak)
-		os.Setenv("AWS_SECRET_ACCESS_KEY", sk)
-	}
-
-	s3, err := utils.NewS3Client("")
+	s3, err := utils.NewS3Client("", cfg.AwsSso.Profile)
 	if err != nil {
 		fmt.Printf("❌ S3 Client error: %v\n", err)
 		return
@@ -437,176 +375,43 @@ func pullIdentity() {
 	fmt.Println("✅ Identity pulled and extracted.")
 }
 
-func loadEnclaveEnv() {
-	if data, err := os.ReadFile(EnvFile); err == nil {
-		lines := strings.Split(string(data), "\n")
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			if line == "" || strings.HasPrefix(line, "#") { continue }
-			if strings.Contains(line, "=") {
-				parts := strings.SplitN(line, "=", 2)
-				key := strings.TrimSpace(parts[0])
-				val := strings.TrimSpace(parts[1])
-				// Rimuove tutti gli apici esterni (singoli o doppi) in modo iterativo
-				for {
-					if len(val) >= 2 && ((val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'')) {
-						val = val[1 : len(val)-1]
-					} else {
-						break
-					}
-				}
-				os.Setenv(key, val)
-			}
-		}
+func pushVault() {
+	if !utils.FileExist(vault.VaultFile) {
+		fmt.Println("❌ No vault file found. Run 'tazpod save' first.")
+		return
 	}
+
+	s3, err := utils.NewS3Client("", cfg.AwsSso.Profile)
+	if err != nil {
+		fmt.Printf("❌ S3 Client error: %v\n", err)
+		return
+	}
+
+	fmt.Println("☁️  Uploading vault.tar.aes to S3...")
+	start := time.Now()
+	if err := s3.UploadFile("tazpod/vault/vault.tar.aes", vault.VaultFile); err != nil {
+		fmt.Printf("❌ Upload failed: %v\n", err)
+		return
+	}
+	fmt.Printf("✅ Vault pushed successfully in %v.\n", time.Since(start))
 }
 
-func pullSecrets() {
-	if !isMounted(vault.MountPath) {
-		fmt.Println("🔒 Vault locked. Unlocking first...")
-		vault.Unlock()
-		if !isMounted(vault.MountPath) { return }
+func pullVault() {
+	s3, err := utils.NewS3Client("", cfg.AwsSso.Profile)
+	if err != nil {
+		fmt.Printf("❌ S3 Client error: %v\n", err)
+		return
 	}
 
-	pID := secCfg.Config.ProjectID
-	env := secCfg.Config.Env; if env == "" { env = "dev" }
-	globalPath := secCfg.Config.Path; if globalPath == "" { globalPath = "/" }
-
-	// Identify all unique paths to sync
-	paths := make(map[string]bool)
-	paths[globalPath] = true
-	for _, s := range secCfg.Secrets {
-		if s.Path != "" {
-			paths[s.Path] = true
-		}
+	fmt.Println("☁️  Downloading vault.tar.aes from S3...")
+	if err := s3.DownloadFile("tazpod/vault/vault.tar.aes", vault.VaultFile); err != nil {
+		fmt.Printf("❌ Download failed: %v\n", err)
+		return
 	}
-
-	secretsMap := make(map[string]string)
-	fmt.Println("📦 Syncing secrets from Infisical...")
-
-	for path := range paths {
-		fmt.Printf("  -> Path: %s... ", path)
-		args := []string{"export", "--format=dotenv", "--silent", "--env", env, "--path", path}
-		if pID != "" { args = append(args, "--projectId", pID) }
-		
-		out, stderr, err := runInfisical(args...)
-		if err != nil {
-			if strings.Contains(stderr, "No valid login session") || strings.Contains(stderr, "login") {
-				fmt.Println("\n👤 Session missing. Logging in...")
-				login()
-				vault.Save("") 
-				out, stderr, err = runInfisical(args...)
-			}
-		}
-
-		if err != nil {
-			fmt.Printf("ERR (%s)\n", stderr)
-			continue
-		}
-
-		// Parse and merge
-		lines := strings.Split(out, "\n")
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			if line == "" || strings.HasPrefix(line, "#") { continue }
-			if strings.Contains(line, "=") {
-				parts := strings.SplitN(line, "=", 2)
-				key := strings.TrimSpace(parts[0])
-				val := strings.Trim(strings.TrimSpace(parts[1]), "\"")
-				secretsMap[key] = val
-			}
-		}
-		fmt.Println("OK")
-	}
-
-	// 1. Save main .env-infisical (merged)
-	var envBuf bytes.Buffer
-	for k, v := range secretsMap {
-		envBuf.WriteString(fmt.Sprintf("%s=\"%s\"\n", k, v))
-	}
-	os.WriteFile(EnvFile, envBuf.Bytes(), 0600)
-	os.Chown(EnvFile, TazPodUID, TazPodGID)
-
-	// 2. Write individual files
-	fmt.Println("📂 Extracting secret files...")
-	for _, s := range secCfg.Secrets {
-		target := filepath.Join(vault.MountPath, s.File)
-		fmt.Printf("  -> %s... ", s.Name)
-		if val, ok := secretsMap[s.Name]; ok {
-			os.WriteFile(target, []byte(val), 0600)
-			os.Chown(target, TazPodUID, TazPodGID)
-			fmt.Println("OK")
-		} else {
-			fmt.Println("MISSING")
-		}
-	}
-	vault.Save("") 
-}
-
-func checkInfisicalLogin() bool {
-	domain := secCfg.Config.Domain; if domain == "" { domain = "https://app.infisical.com" }
-	stdout, _, err := runInfisical("user", "get", "--domain", domain)
-	if err != nil { return false }
-	return strings.Contains(stdout, "email") || strings.Contains(stdout, "@")
-}
-
-func isMounted(path string) bool {
-	data, _ := os.ReadFile("/proc/mounts")
-	return strings.Contains(string(data), path)
-}
-
-func login() {
-	domain := secCfg.Config.Domain; if domain == "" { domain = "https://app.infisical.com" }
-	runCmd("infisical", "login", "--domain", domain)
-}
-
-func runInfisical(args ...string) (string, string, error) {
-	domain := secCfg.Config.Domain; if domain == "" { domain = "https://app.infisical.com" }
-	hasDomain := false
-	for _, a := range args { if a == "--domain" { hasDomain = true; break } }
-	if !hasDomain { args = append(args, "--domain", domain) }
-
-	cmd := exec.Command("infisical", args...)
-	cmd.Dir = "/workspace"
-	cmd.Env = append(os.Environ(), 
-		"INFISICAL_VAULT_BACKEND=file", 
-		"INFISICAL_API_URL="+domain,
-		"HOME=/home/tazpod", 
-		"USER=tazpod")
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	err := cmd.Run()
-	return stdout.String(), stderr.String(), err
-}
-
-func runCmd(name string, args ...string) {
-	cmd := exec.Command(name, args...)
-	cmd.Dir = "/workspace"
-	if name == "infisical" {
-		domain := secCfg.Config.Domain; if domain == "" { domain = "https://app.infisical.com" }
-		cmd.Env = append(os.Environ(), 
-			"INFISICAL_VAULT_BACKEND=file", 
-			"INFISICAL_API_URL="+domain,
-			"HOME=/home/tazpod", 
-			"USER=tazpod")
-	}
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	cmd.Run()
+	fmt.Println("✅ Vault pulled. Run 'tazpod unlock' to decrypt.")
 }
 
 func printExportEnv() {
-	_, err := os.Stat(vault.PassCache)
-	mounted := err == nil 
-
-	for _, s := range secCfg.Secrets {
-		if s.Env == "" { continue }
-		if mounted {
-			target := filepath.Join(vault.MountPath, s.File)
-			if _, err := os.Stat(target); err == nil {
-				fmt.Printf("export %s=\"%s\"\n", s.Env, target)
-			}
-		} else {
-			fmt.Printf("unset %s\n", s.Env)
-		}
-	}
+	// Placeholder: AWS SSO credentials are managed by the SDK credential chain.
+	// No Infisical secret mappings to export.
 }

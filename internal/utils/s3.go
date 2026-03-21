@@ -22,13 +22,20 @@ type S3Client struct {
 	bucket string
 }
 
-// NewS3Client initializes a new S3 client
-func NewS3Client(bucket string) (*S3Client, error) {
+// NewS3Client initializes a new S3 client with optional SSO profile support
+func NewS3Client(bucket, profile string) (*S3Client, error) {
 	if bucket == "" {
 		bucket = DefaultBucket
 	}
 
-	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(DefaultRegion))
+	opts := []func(*config.LoadOptions) error{
+		config.WithRegion(DefaultRegion),
+	}
+	if profile != "" {
+		opts = append(opts, config.WithSharedConfigProfile(profile))
+	}
+
+	cfg, err := config.LoadDefaultConfig(context.TODO(), opts...)
 	if err != nil {
 		return nil, fmt.Errorf("unable to load SDK config, %v", err)
 	}

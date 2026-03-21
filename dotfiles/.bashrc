@@ -21,9 +21,6 @@ fi
 # --- PATH ENHANCEMENTS ---
 export PATH="$HOME/.local/bin:$PATH"
 
-# --- INFISICAL CONFIG ---
-export INFISICAL_VAULT_BACKEND=file
-
 # --- NVM (Node Version Manager) ---
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
@@ -84,6 +81,7 @@ tazpod() {
 # Auto-load secrets if already mounted
 if mountpoint -q /home/tazpod/secrets; then
     eval "$(command tazpod __internal_env 2>/dev/null)"
+    setup_oci_config
 fi
 
 # --- AI TOOL CONFIG SYMLINKS (persistent, no unlock required) ---

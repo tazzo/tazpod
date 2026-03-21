@@ -41,15 +41,15 @@ jobs:
             tazzo/tazpod-base:latest
             tazzo/tazpod-base:tazpod-base-${{ github.run_number }}-${{ steps.vars.outputs.sha_short }}
 
-      - name: Build and Push Infisical
+      - name: Build and Push AWS
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: .tazpod/Dockerfile.infisical
+          file: .tazpod/Dockerfile.aws
           push: true
           tags: |
-            tazzo/tazpod-infisical:latest
-            tazzo/tazpod-infisical:tazpod-infisical-${{ github.run_number }}-${{ steps.vars.outputs.sha_short }}
+            tazzo/tazpod-aws:latest
+            tazzo/tazpod-aws:tazpod-aws-${{ github.run_number }}-${{ steps.vars.outputs.sha_short }}
 
       - name: Build and Push K8s
         uses: docker/build-push-action@v5
