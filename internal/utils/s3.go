@@ -31,7 +31,8 @@ func NewS3Client(bucket, profile string) (*S3Client, error) {
 	opts := []func(*config.LoadOptions) error{
 		config.WithRegion(DefaultRegion),
 	}
-	if profile != "" {
+	// Skip profile if static credentials are already in env — avoids SSO endpoint timeout.
+	if profile != "" && os.Getenv("AWS_ACCESS_KEY_ID") == "" {
 		opts = append(opts, config.WithSharedConfigProfile(profile))
 	}
 
