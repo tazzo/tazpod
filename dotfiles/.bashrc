@@ -96,6 +96,15 @@ if [ -d /workspace/.tazpod ]; then
         fi
     done
     unset _tool _target _link
+
+    # AWS config: symlink ~/.aws -> /workspace/.tazpod/.aws
+    # Skip if already bind-mounted from the vault enclave (vault unlocked)
+    if ! mountpoint -q "$HOME/.aws" 2>/dev/null; then
+        mkdir -p /workspace/.tazpod/.aws
+        if [ ! -L "$HOME/.aws" ] || [ "$(readlink "$HOME/.aws")" != "/workspace/.tazpod/.aws" ]; then
+            rm -rf "$HOME/.aws" && ln -sf /workspace/.tazpod/.aws "$HOME/.aws"
+        fi
+    fi
 fi
 
 # Enable Modern Prompts/Tools

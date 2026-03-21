@@ -70,23 +70,9 @@ func Unlock() {
 }
 
 func SetupIdentity() {
-	// Ensure AI tool config dirs exist in workspace
-	for _, dir := range []string{".pi", ".omp", ".gemini", ".claude", "aws"} {
+	// Ensure AI tool config dirs exist in workspace (mirrored by .bashrc symlinks)
+	for _, dir := range []string{".pi", ".omp", ".gemini", ".claude", ".aws"} {
 		os.MkdirAll("/workspace/.tazpod/"+dir, 0755)
-	}
-
-	// Ensure persistent AWS config is symlinked into the home directory
-	awsPersistent := "/workspace/.tazpod/aws"
-	awsHome := AwsLocalHome
-	os.MkdirAll(awsPersistent, 0755)
-	os.MkdirAll(awsHome, 0755)
-	configSrc := filepath.Join(awsPersistent, "config")
-	configDst := filepath.Join(awsHome, "config")
-	if _, err := os.Lstat(configDst); err == nil {
-		os.Remove(configDst)
-	}
-	if _, err := os.Stat(configSrc); err == nil {
-		os.Symlink(configSrc, configDst)
 	}
 
 	exec.Command("sudo", "chown", "-R", "tazpod:tazpod", "/workspace/.tazpod").Run()
