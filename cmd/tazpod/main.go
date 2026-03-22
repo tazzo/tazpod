@@ -453,8 +453,29 @@ func pullIdentity() {
 	fmt.Println("✅ Identity pulled and extracted.")
 }
 
+// loadVaultAWSCredentials carica le credenziali AWS dal vault nell'env.
+// Se il vault è sbloccato, i file raw sono in MountPath — usati al posto del profilo SSO.
+func loadVaultAWSCredentials() {
+	if !utils.IsMounted(vault.MountPath) { return }
+	read := func(name string) string {
+		data, err := os.ReadFile(filepath.Join(vault.MountPath, name))
+		if err != nil { return "" }
+		v := strings.TrimSpace(string(data))
+		// Rimuove apici singoli o doppi (es. 'value' o "value")
+		for len(v) >= 2 && ((v[0] == '\'' && v[len(v)-1] == '\'') || (v[0] == '"' && v[len(v)-1] == '"')) {
+			v = v[1 : len(v)-1]
+		}
+		return v
+	}
+	if ak := read("aws-access-key-id"); ak != "" { os.Setenv("AWS_ACCESS_KEY_ID", ak) }
+	if sk := read("aws-secret-access-key"); sk != "" { os.Setenv("AWS_SECRET_ACCESS_KEY", sk) }
+}
+
 func pushVault() {
-	if !utils.FileExist(vault.VaultFile) {
+	loadVaultAWSCredentials()
+	cwd, _ := os.Getwd()
+	vaultFile := filepath.Join(cwd, ".tazpod", "vault", "vault.tar.aes")
+	if !utils.FileExist(vaultFile) {
 		fmt.Println("❌ No vault file found. Run 'tazpod save' first.")
 		return
 	}
@@ -467,7 +488,7 @@ func pushVault() {
 
 	fmt.Println("☁️  Uploading vault.tar.aes to S3...")
 	start := time.Now()
-	if err := s3.UploadFile("tazpod/vault/vault.tar.aes", vault.VaultFile); err != nil {
+	if err := s3.UploadFile("tazpod/vault/vault.tar.aes", vaultFile); err != nil {
 		fmt.Printf("❌ Upload failed: %v\n", err)
 		return
 	}
@@ -475,14 +496,19 @@ func pushVault() {
 }
 
 func pullVault() {
+	loadVaultAWSCredentials()
+	cwd, _ := os.Getwd()
+	vaultFile := filepath.Join(cwd, ".tazpod", "vault", "vault.tar.aes")
+
 	s3, err := utils.NewS3Client("", cfg.AwsSso.Profile)
 	if err != nil {
 		fmt.Printf("❌ S3 Client error: %v\n", err)
 		os.Exit(1)
 	}
 
+	os.MkdirAll(filepath.Join(cwd, ".tazpod", "vault"), 0755)
 	fmt.Println("☁️  Downloading vault.tar.aes from S3...")
-	if err := s3.DownloadFile("tazpod/vault/vault.tar.aes", vault.VaultFile); err != nil {
+	if err := s3.DownloadFile("tazpod/vault/vault.tar.aes", vaultFile); err != nil {
 		fmt.Printf("❌ Download failed: %v\n", err)
 		os.Exit(1)
 	}
