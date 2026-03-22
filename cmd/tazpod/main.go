@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"tazpod/internal/utils"
@@ -53,7 +55,7 @@ var (
 var cfg Config
 
 func main() {
-	if len(os.Args) < 2 { help(); os.Exit(1) }
+	if len(os.Args) < 2 { smartEntry(); return }
 	arg := os.Args[1]
 
 	if arg == "--version" || arg == "-v" {
@@ -272,6 +274,62 @@ func initProject() {
 func unlock() { 
 	vault.SetupIdentity()
 	vault.Unlock() 
+}
+
+func askYN(question string) bool {
+	fmt.Printf("%s [y/N]: ", question)
+	reader := bufio.NewReader(os.Stdin)
+	answer, _ := reader.ReadString('\n')
+	return strings.ToLower(strings.TrimSpace(answer)) == "y"
+}
+
+func ensureContainerUp() {
+	cmd := exec.Command("docker", "exec", cfg.ContainerName, "true")
+	if err := cmd.Run(); err != nil {
+		fmt.Println("⚠️  Container non risponde. Riavvio...")
+		down()
+		up()
+		time.Sleep(2 * time.Second)
+	}
+}
+
+func smartEntry() {
+	// Step 1: controlla se il progetto è inizializzato
+	if _, err := os.Stat(".tazpod"); os.IsNotExist(err) {
+		if !askYN("📂 Nessun progetto trovato. Inizializzare qui?") {
+			return
+		}
+		initProject()
+		loadConfigs()
+	}
+
+	if cfg.ContainerName == "" {
+		fmt.Println("❌ container_name mancante in config.yaml. Esegui 'tazpod init'.")
+		return
+	}
+
+	// Step 2: assicura che il container sia su
+	ensureContainerUp()
+
+	// Step 3: gestione vault
+	if utils.IsMounted(vault.MountPath) {
+		// Vault già in RAM, entra direttamente
+	} else if utils.FileExist(vault.VaultFile) {
+		if askYN("🔐 Vault trovato. Unlock?") {
+			unlock()
+		}
+	} else {
+		if askYN("🔑 Nessun vault locale. Login e download da S3?") {
+			login()
+			pullVault()
+			if askYN("🔐 Vault scaricato. Unlock?") {
+				unlock()
+			}
+		}
+	}
+
+	// Step 4: entra nel container
+	enter()
 }
 
 func login() {
