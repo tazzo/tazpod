@@ -11,7 +11,7 @@ tasks:
     desc: Compile the Go binary for Linux/AMD64
     cmds:
       - 'echo "🔨 Building {{.BINARY_NAME}} {{.VERSION}}..."'
-      - 'GOOS=linux GOARCH=amd64 go build -ldflags "-X main.Version={{.VERSION}}" -o bin/{{.BINARY_NAME}} cmd/tazpod/main.go'
+      - 'GOOS=linux GOARCH=amd64 go build -v -ldflags "-X main.Version={{.VERSION}}" -o bin/{{.BINARY_NAME}} cmd/tazpod/main.go'
       - 'cp bin/{{.BINARY_NAME}} .'
 
   docker:build:

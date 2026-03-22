@@ -42,25 +42,30 @@ func Unlock() {
 	}
 
 	fmt.Println("🔐 TAZPOD UNLOCK (RAM MODE)")
-	cachedPassphrase = getPassphrase()
 
 	mountRAM()
 
 	if utils.FileExist(VaultFile) {
-		fmt.Print("📂 Loading vault... ")
 		data, err := os.ReadFile(VaultFile)
 		if err != nil { fatal(err.Error()) }
-		
-		decrypted, err := crypto.Decrypt(data, cachedPassphrase)
-		if err != nil {
-			fmt.Println("❌ WRONG PASSWORD.")
-			unmountRAM()
-			os.Exit(1)
+
+		var decrypted []byte
+		for attempts := 3; attempts > 0; attempts-- {
+			cachedPassphrase = getPassphrase()
+			decrypted, err = crypto.Decrypt(data, cachedPassphrase)
+			if err == nil { break }
+			fmt.Printf("❌ Password errata. Tentativi rimanenti: %d\n", attempts-1)
+			if attempts == 1 {
+				unmountRAM()
+				fatal("Troppi tentativi falliti. Vault bloccato.")
+			}
 		}
-		
+
+		fmt.Print("📂 Loading vault... ")
 		if err := Untar(decrypted, MountPath); err != nil { fatal(err.Error()) }
 		fmt.Println("✅ OK")
 	} else {
+		cachedPassphrase = getPassphrase()
 		fmt.Println("🆕 New vault initialized.")
 	}
 

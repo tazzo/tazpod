@@ -313,10 +313,9 @@ func smartEntry() {
 	// Step 2: assicura che il container sia su
 	ensureContainerUp()
 
-	// Step 3: gestione vault — login/pull sull'host, unlock dentro il container
+	// Step 3: gestione vault — tutto dentro il container (aws CLI, sudo mount disponibili lì)
 	cwd, _ := os.Getwd()
 	localVault := filepath.Join(cwd, ".tazpod", "vault", "vault.tar.aes")
-	// Controlla se vault già unlocked nel container
 	containerUnlocked := exec.Command("docker", "exec", cfg.ContainerName, "mountpoint", "-q", vault.MountPath).Run() == nil
 	if containerUnlocked {
 		// Vault già in RAM nel container, entra direttamente
@@ -325,24 +324,32 @@ func smartEntry() {
 			execInContainer("tazpod unlock")
 		}
 	} else {
-		if askYN("🔑 Nessun vault locale. Login e download da S3?") {
-			login()
-			pullVault()
-			if askYN("🔐 Vault scaricato. Unlock?") {
-				execInContainer("tazpod unlock")
-			}
+		if askYN("🔑 Nessun vault locale. Bootstrap? (login + pull + unlock)") {
+			// Ogni step in un exec separato: TTY pulito tra uno e l'altro
+			// evita che i keystroke del SSO browser finiscano nel buffer della passphrase
+			if !execInContainer("tazpod login") { goto enterContainer }
+			if !execInContainer("tazpod pull vault") { goto enterContainer }
+			execInContainer("tazpod unlock")
 		}
 	}
+
+enterContainer:
 
 	// Step 4: entra nel container
 	enter()
 }
 
 // execInContainer esegue un comando interattivo nel container (stdin/stdout/stderr passthrough)
-func execInContainer(command string) {
-	cmd := exec.Command("docker", "exec", "-it", cfg.ContainerName, "bash", "-c", command)
+// execInContainer esegue un comando interattivo nel container con TTY dedicato.
+// Ritorna true se il comando è uscito con successo (exit code 0).
+func execInContainer(command string) bool {
+	// AWS_CONFIG_FILE esplicito: bypass del symlink ~/.aws che richiede .bashrc interattivo
+	cmd := exec.Command("docker", "exec", "-it",
+		"-e", "AWS_CONFIG_FILE=/workspace/.tazpod/.aws/config",
+		"-w", "/workspace",
+		cfg.ContainerName, "bash", "-c", command)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	cmd.Run()
+	return cmd.Run() == nil
 }
 
 func login() {
@@ -353,7 +360,7 @@ func login() {
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := cmd.Run(); err != nil {
 		fmt.Printf("❌ AWS SSO login failed: %v\n", err)
-		return
+		os.Exit(1)
 	}
 	fmt.Println("✅ AWS SSO session active.")
 }
@@ -471,13 +478,13 @@ func pullVault() {
 	s3, err := utils.NewS3Client("", cfg.AwsSso.Profile)
 	if err != nil {
 		fmt.Printf("❌ S3 Client error: %v\n", err)
-		return
+		os.Exit(1)
 	}
 
 	fmt.Println("☁️  Downloading vault.tar.aes from S3...")
 	if err := s3.DownloadFile("tazpod/vault/vault.tar.aes", vault.VaultFile); err != nil {
 		fmt.Printf("❌ Download failed: %v\n", err)
-		return
+		os.Exit(1)
 	}
 	fmt.Println("✅ Vault pulled. Run 'tazpod unlock' to decrypt.")
 }
