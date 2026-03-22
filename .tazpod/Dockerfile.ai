@@ -27,3 +27,4 @@ RUN pip3 install --break-system-packages -r /home/tazpod/memory/requirements.txt
 RUN sed -i '/LAYER ACTIVE/d' ~/.bashrc && \
     echo 'export PATH="/home/tazpod/.nvm/versions/node/$(ls /home/tazpod/.nvm/versions/node | head -1)/bin:$PATH"' >> ~/.bashrc && \
     echo 'echo -e "\n\033[1;35m🧠 TAZPOD AI POWERED LAYER ACTIVE (v0.2.3: Pi, oh-my-pi)\033[0m\n"' >> ~/.bashrc
+
