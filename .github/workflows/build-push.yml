@@ -11,32 +11,43 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
       - name: Set Short SHA
         id: vars
         run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
+      - name: Check what changed
+        id: changed
+        run: |
+          if git diff --name-only HEAD~1 HEAD | grep -qE '^(cmd/|internal/|VERSION)'; then
+            echo "cli=true" >> $GITHUB_OUTPUT
+          else
+            echo "cli=false" >> $GITHUB_OUTPUT
+          fi
+          if git diff --name-only HEAD~1 HEAD | grep -qE '^(\.tazpod/Dockerfile|dotfiles/)'; then
+            echo "docker=true" >> $GITHUB_OUTPUT
+          else
+            echo "docker=false" >> $GITHUB_OUTPUT
+          fi
+
+      # --- CLI BUILD & RELEASE ---
+
       - name: Setup Go
+        if: steps.changed.outputs.cli == 'true'
         uses: actions/setup-go@v5
         with:
           go-version: '1.24'
 
       - name: Build CLI
+        if: steps.changed.outputs.cli == 'true'
         run: |
           VERSION=$(cat VERSION)
           GOOS=linux GOARCH=amd64 go build -ldflags "-X main.Version=${VERSION}" -o tazpod cmd/tazpod/main.go
 
-      - name: Check if CLI changed
-        id: cli_changed
-        run: |
-          if git diff --name-only HEAD~1 HEAD | grep -qE '^(cmd/|internal/|VERSION)'; then
-            echo "changed=true" >> $GITHUB_OUTPUT
-          else
-            echo "changed=false" >> $GITHUB_OUTPUT
-          fi
-
       - name: Publish GitHub Release
-        if: steps.cli_changed.outputs.changed == 'true'
+        if: steps.changed.outputs.cli == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -47,13 +58,21 @@ jobs:
             --notes "Automated release from CI" \
             --latest
 
+      # --- DOCKER BUILD & PUSH ---
+
       - name: Login to Docker Hub
+        if: steps.changed.outputs.docker == 'true'
         uses: docker/login-action@v3
         with:
           username: "roberto.tazzoli@gmail.com"
           password: ${{ secrets.DOCKER_PASSWORD }}
 
+      - name: Set up Docker Buildx
+        if: steps.changed.outputs.docker == 'true'
+        uses: docker/setup-buildx-action@v3
+
       - name: Build and Push Base
+        if: steps.changed.outputs.docker == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -62,8 +81,11 @@ jobs:
           tags: |
             tazzo/tazpod-base:latest
             tazzo/tazpod-base:tazpod-base-${{ github.run_number }}-${{ steps.vars.outputs.sha_short }}
+          cache-from: type=gha,scope=tazpod-base
+          cache-to: type=gha,mode=max,scope=tazpod-base
 
       - name: Build and Push AWS
+        if: steps.changed.outputs.docker == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -72,8 +94,11 @@ jobs:
           tags: |
             tazzo/tazpod-aws:latest
             tazzo/tazpod-aws:tazpod-aws-${{ github.run_number }}-${{ steps.vars.outputs.sha_short }}
+          cache-from: type=gha,scope=tazpod-aws
+          cache-to: type=gha,mode=max,scope=tazpod-aws
 
       - name: Build and Push K8s
+        if: steps.changed.outputs.docker == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -82,8 +107,11 @@ jobs:
           tags: |
             tazzo/tazpod-k8s:latest
             tazzo/tazpod-k8s:tazpod-k8s-${{ github.run_number }}-${{ steps.vars.outputs.sha_short }}
+          cache-from: type=gha,scope=tazpod-k8s
+          cache-to: type=gha,mode=max,scope=tazpod-k8s
 
       - name: Build and Push AI
+        if: steps.changed.outputs.docker == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -92,3 +120,5 @@ jobs:
           tags: |
             tazzo/tazpod-ai:latest
             tazzo/tazpod-ai:tazpod-ai-${{ github.run_number }}-${{ steps.vars.outputs.sha_short }}
+          cache-from: type=gha,scope=tazpod-ai
+          cache-to: type=gha,mode=max,scope=tazpod-ai
