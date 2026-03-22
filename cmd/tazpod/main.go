@@ -313,25 +313,36 @@ func smartEntry() {
 	// Step 2: assicura che il container sia su
 	ensureContainerUp()
 
-	// Step 3: gestione vault
-	if utils.IsMounted(vault.MountPath) {
-		// Vault già in RAM, entra direttamente
-	} else if utils.FileExist(vault.VaultFile) {
+	// Step 3: gestione vault — login/pull sull'host, unlock dentro il container
+	cwd, _ := os.Getwd()
+	localVault := filepath.Join(cwd, ".tazpod", "vault", "vault.tar.aes")
+	// Controlla se vault già unlocked nel container
+	containerUnlocked := exec.Command("docker", "exec", cfg.ContainerName, "mountpoint", "-q", vault.MountPath).Run() == nil
+	if containerUnlocked {
+		// Vault già in RAM nel container, entra direttamente
+	} else if utils.FileExist(localVault) {
 		if askYN("🔐 Vault trovato. Unlock?") {
-			unlock()
+			execInContainer("tazpod unlock")
 		}
 	} else {
 		if askYN("🔑 Nessun vault locale. Login e download da S3?") {
 			login()
 			pullVault()
 			if askYN("🔐 Vault scaricato. Unlock?") {
-				unlock()
+				execInContainer("tazpod unlock")
 			}
 		}
 	}
 
 	// Step 4: entra nel container
 	enter()
+}
+
+// execInContainer esegue un comando interattivo nel container (stdin/stdout/stderr passthrough)
+func execInContainer(command string) {
+	cmd := exec.Command("docker", "exec", "-it", cfg.ContainerName, "bash", "-c", command)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	cmd.Run()
 }
 
 func login() {
