@@ -294,6 +294,8 @@ func ensureContainerUp() {
 }
 
 func smartEntry() {
+	loadConfigs()
+
 	// Step 1: controlla se il progetto è inizializzato
 	if _, err := os.Stat(".tazpod"); os.IsNotExist(err) {
 		if !askYN("📂 Nessun progetto trovato. Inizializzare qui?") {
