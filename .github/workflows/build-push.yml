@@ -26,12 +26,21 @@ jobs:
           VERSION=$(cat VERSION)
           GOOS=linux GOARCH=amd64 go build -ldflags "-X main.Version=${VERSION}" -o tazpod cmd/tazpod/main.go
 
+      - name: Check if CLI changed
+        id: cli_changed
+        run: |
+          if git diff --name-only HEAD~1 HEAD | grep -qE '^(cmd/|internal/|VERSION)'; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Publish GitHub Release
+        if: steps.cli_changed.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION=$(cat VERSION)
-          # Delete existing release/tag if present (idempotent)
           gh release delete "${VERSION}" --yes 2>/dev/null || true
           gh release create "${VERSION}" tazpod \
             --title "TazPod ${VERSION}" \
