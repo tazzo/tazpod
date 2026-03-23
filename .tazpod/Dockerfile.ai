@@ -14,10 +14,11 @@ RUN curl -fsSL https://raw.githubusercontent.com/can1357/oh-my-pi/main/scripts/i
     mv /root/.local/bin/omp /usr/local/bin/omp && \
     chmod +x /usr/local/bin/omp
 
-# Install pi-extmgr extension (as tazpod user to populate ~/.pi)
+# Install pi extensions (as tazpod user to populate ~/.pi)
 USER tazpod
 WORKDIR /home/tazpod
-RUN pi install npm:pi-extmgr
+RUN pi install npm:pi-extmgr && \
+    pi install npm:pi-mcp-adapter
 
 # Install Mnemosyne Dependencies
 COPY --chown=tazpod:tazpod memory /home/tazpod/memory
