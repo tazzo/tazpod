@@ -4,39 +4,33 @@ TazPod "Nomadic Identity" allows you to carry your secure development environmen
 
 ## 1. The Sync Scope
 
-When you perform an identity sync, TazPod bundles the entire `.tazpod/` directory, which includes:
-*   **The Encrypted Vault** (`vault.tar.aes`): All your secrets and session tokens.
-*   **Configuration** (`config.yaml`, `secrets-sync-config.yml`).
-*   **Gemini Memories** (`.gemini/`): Your AI assistant's history and learned context.
+When you perform a vault sync, TazPod bundles the encrypted `vault.tar.aes`, which includes:
+*   **Secrets**: All decrypted files in `/home/tazpod/secrets`.
+*   **Session Tokens**: Active AWS SSO sessions, cached passphrases.
+*   **Dotfiles**: Configuration for tools bind-mounted into the vault (`.aws`, `.pi`, etc.).
 
 ---
 
 ## 2. CLI Commands
 
-### Push Identity (`tazpod push`)
-Manually upload your current identity to S3.
+### Push Vault (`tazpod push vault`)
+Manually upload your current vault state to S3.
 ```bash
-tazpod push
-# or
-tazpod push identity
+tazpod push vault
 ```
 
-### Pull Identity (`tazpod pull`)
-Download and restore your identity from S3.
+### Pull Vault (`tazpod pull vault`)
+Download and restore your vault from S3.
 ```bash
-tazpod pull
-# or
-tazpod pull identity
+tazpod pull vault
 ```
-
-> **Note**: To sync Infisical secrets *after* pulling your identity, use `tazpod pull secrets`.
 
 ---
 
 ## 3. Automation
 
 ### Background Sync
-When you start a TazPod session with `tazpod up`, a background daemon is spawned. Every 5 minutes, if the vault is unlocked, it automatically pushes your latest identity state to S3.
+When you start a TazPod session with `tazpod up`, a background daemon is spawned. Every 5 minutes, if the vault is unlocked, it automatically pushes your latest vault state to S3.
 
 ### Session Exit Sync
 When you exit a `tazpod enter` session, TazPod performs a final `push` before locking the vault, ensuring no progress is lost.
@@ -45,9 +39,7 @@ When you exit a `tazpod enter` session, TazPod performs a final `push` before lo
 
 ## 4. Configuration
 
-The sync logic targets the `tazlab-storage` bucket in the `eu-central-1` region by default. It uses standard AWS environment variables for authentication:
-*   `AWS_ACCESS_KEY_ID`
-*   `AWS_SECRET_ACCESS_KEY`
+The sync logic targets the `tazlab-storage` bucket in the `eu-central-1` region by default. It uses **AWS SSO** for authentication, leveraging the profile defined in `.tazpod/config.yaml`.
 
 ---
 *Back to [Overview](../README.md)*

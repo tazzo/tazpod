@@ -21,11 +21,13 @@ This directory contains utility scripts for installing, building, and releasing 
 **What it does:**
 - Builds the images in dependency order:
   1. `tazpod-base` (OS, basic tools)
-  2. `tazpod-infisical` (Secrets management)
+  2. `tazpod-aws` (AWS CLI + SSO tools)
   3. `tazpod-k8s` (Kubernetes tools)
-  4. `tazpod-gemini` (AI/Agentic layer)
+  4. `tazpod-ai` (AI/Agentic layer)
 - If a version argument is provided (e.g., `v1.0.0`), it tags the images with that version (e.g., `tazpod-base-v1.0.0`).
 - Pushes all tagged images (latest and versioned) to the Docker registry.
+
+> **Note**: `publish-base.sh` and `release.sh` are not present on disk. The equivalent operations are managed via `Taskfile.yml` (`task docker:build`, `task release`).
 
 ### 3. `release.sh`
 **Purpose:** Automates the software release lifecycle.  

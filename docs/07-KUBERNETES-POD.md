@@ -1,6 +1,6 @@
 # TazPod in Kubernetes: Remote Enclave ☸️
 
-TazPod v0.2.0 is designed to be highly portable. While it primarily runs locally, the architecture is ready for **Remote Development** inside a Kubernetes cluster.
+TazPod v0.3.x is designed to be highly portable. While it primarily runs locally, the architecture is ready for **Remote Development** inside a Kubernetes cluster.
 
 ## 1. Remote Architecture
 
@@ -16,7 +16,7 @@ In a remote scenario, the TazPod Pod acts as your primary compute engine.
 ## 2. Remote Workflow (Roadmap)
 
 1.  **Deploy**: `tazpod up --remote` applies a manifest to your cluster.
-2.  **Access**: `tazpod enter` uses `kubectl exec` or a secure Wireguard/Tailscale tunnel to provide a TTY.
+2.  **Access**: `tazpod enter` uses `kubectl exec` or a secure Tailscale tunnel (planned) to provide a TTY.
 3.  **Sync**: Files are synced between your local IDE and the Remote Pod via `rsync` over SSH.
 
 ---
@@ -38,8 +38,8 @@ securityContext:
 
 ## 4. Current Limitations
 
-*   **Privileged Pods**: Many enterprise clusters restrict privileged containers. Version 0.3.0 will explore non-privileged RAM isolation.
-*   **Latency**: TTY over `kubectl exec` can be slow. Real SSH over a VPN is the recommended path for remote coding.
+*   **Privileged Pods**: Many enterprise clusters restrict privileged containers. Future versions will explore non-privileged RAM isolation.
+*   **Latency**: TTY over `kubectl exec` can be slow. Real SSH over a VPN (Tailscale) is the recommended path for remote coding.
 
 ---
 *Back to the main overview: [01-OVERVIEW.md](./01-OVERVIEW.md)*

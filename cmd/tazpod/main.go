@@ -517,5 +517,4 @@ func pullVault() {
 
 func printExportEnv() {
 	// Placeholder: AWS SSO credentials are managed by the SDK credential chain.
-	// No Infisical secret mappings to export.
 }

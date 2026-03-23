@@ -1,6 +1,6 @@
 # Secure Memory Isolation: The RAM Enclave ☁️
 
-In version 0.2.0, TazPod has transitioned from kernel-level "Ghost Mode" (Namespaces) to an application-level **RAM Enclave**. This provides similar security benefits with significantly better performance and cross-platform reliability.
+In version 0.3.x, TazPod uses an application-level **RAM Enclave**. This provides security benefits with significantly better performance and cross-platform reliability.
 
 ## 1. The RAM Boundary (tmpfs)
 
@@ -13,39 +13,24 @@ TazPod leverages **tmpfs**, a Linux temporary filesystem that resides entirely i
 
 ## 2. Bridging Auth (The Bind Strategy) 🔗
 
-A development environment is useless if your tools (Infisical, Gemini, Git) can't see the secrets. TazPod uses **Bind Mounting** to bridge the RAM Enclave into your home directory.
+A development environment is useless if your tools (AWS CLI, Gemini, Git) can't see the secrets. TazPod uses **Bind Mounting** to bridge the RAM Enclave into your home directory.
 
 | Real Location (RAM) | Target Path (Home) | Tool |
 | :--- | :--- | :--- |
-| `/home/tazpod/secrets/.infisical` | `~/.infisical` | Infisical CLI |
-| `/home/tazpod/secrets/infisical-keyring` | `~/infisical-keyring` | Infisical Auth |
-| `/workspace/.tazpod/.gemini` | `~/.gemini` | Gemini AI (Persistent) |
+| `/home/tazpod/secrets/.aws` | `~/.aws` | AWS CLI / SSO |
+| `/home/tazpod/secrets/.gemini` | `~/.gemini` | Gemini AI (Persistent Config) |
+| `/home/tazpod/secrets/.claude` | `~/.claude` | Claude AI |
+| `/home/tazpod/secrets/.pi` | `~/.pi` | Pi Coding Agent |
+| `/home/tazpod/secrets/.omp` | `~/.omp` | Oh My Posh |
 
 ### The "Clean Table" Policy
-Before هر mount, TazPod executes a `rm -rf` on the target path. This ensures that old symlinks or plaintext files are purged before the secure RAM enclave is mapped over them.
+Before any mount, TazPod executes a `rm -rf` on the target path. This ensures that old symlinks or plaintext files are purged before the secure RAM enclave is mapped over them.
 
 ---
 
 ## 3. Environment Variable Cleanup 🧹
 
-Variables like `GITHUB_TOKEN` or `KUBECONFIG` often point to files within the RAM Enclave. Leaving these set after the enclave is destroyed creates "Ghost Variables" that point to non-existent paths.
-
-TazPod solves this via its **Smart Env Function**:
-
-1.  **Unlock**: CLI outputs `export VAR="/home/tazpod/secrets/..."`.
-2.  **Lock**: CLI outputs `unset VAR`.
-3.  **Bash Integration**: The `.bashrc` automatically `eval`s these outputs, ensuring your shell environment is always in sync with the vault state.
+Variables like `GITHUB_TOKEN` or `KUBECONFIG` often point to files within the RAM Enclave. Leaving these set after the enclave is destroyed creates "Ghost Variables" that point to nowhere. TazPod automatically cleans up the environment when locking the vault.
 
 ---
-
-## 4. Portability: Host vs Container
-
-Because TazPod v0.2.0 uses standard Docker volume mounts and tmpfs, it works seamlessly across:
-*   **Native Linux** (Ubuntu, Debian, Arch).
-*   **WSL2** (Windows Subsystem for Linux).
-*   **macOS** (via Docker Desktop / OrbStack).
-
-The security model remains consistent: Secrets are encrypted at rest on the host disk and only decrypted into the container's volatile memory.
-
----
-*Next: Learn how we manage secrets in [05-SECRETS-INFISICAL.md](./05-SECRETS-INFISICAL.md)*
+*Next: Manage secrets with AWS SSO in [05-SECRETS-AWS.md](./05-SECRETS-AWS.md)*

@@ -1,4 +1,4 @@
-# Docker Layers & Images 🧅
+# Docker Layers & Images
 
 TazPod follows a **Modular Vertical** strategy. We provide highly optimized base layers that you can combine or extend to fit your specific workflow.
 
@@ -8,27 +8,27 @@ TazPod images are built in a chain to ensure consistency and minimize build time
 
 ```mermaid
 graph TD
-    A[tazpod-base] --> B[tazpod-infisical]
+    A[tazpod-base] --> B[tazpod-aws]
     B --> C[tazpod-k8s]
-    C --> D[tazpod-gemini]
+    C --> D[tazpod-ai]
 ```
 
 ---
 
-## 2. Layer Details (Stable v0.2.0)
+## 2. Layer Details (v0.3.x)
 
-### 🟢 `tazpod-base` (The IDE Foundation)
+### `tazpod-base` (The IDE Foundation)
 *   **OS**: Ubuntu 24.04 LTS (Noble Numbat).
 *   **Editor**: **Neovim** (Stable) with LazyVim.
 *   **Shell**: **Bash** with **Starship** prompt, **Zoxide**, **FZF**, **Eza**, and **Bat**.
 *   **Multiplexer**: **Tmux** (Pre-configured with TPM).
 *   **Runtime**: **Node.js** (LTS via NVM) and **Python 3**.
 
-### 🟡 `tazpod-infisical` (Secrets Ready)
-*   **Adds**: The **Infisical CLI** and the TazPod secret injection logic.
-*   **Purpose**: Secure coding environments that require dynamic secret fetching but don't need heavy DevOps tools.
+### `tazpod-aws` (Cloud Credentials)
+*   **Adds**: **AWS CLI v2**, S3 tools, and the AWS credential chain wired for SSO (`aws sso login`).
+*   **Purpose**: Secure environments that need AWS SSO authentication and S3-backed vault operations.
 
-### 🔵 `tazpod-k8s` (Cloud Native)
+### `tazpod-k8s` (Cloud Native)
 *   **Adds**:
     *   `kubectl`, `helm`, `k9s`.
     *   `talosctl` (Talos OS management).
@@ -36,8 +36,8 @@ graph TD
     *   `terraform`.
 *   **Purpose**: The standard daily driver for DevOps engineers and SREs.
 
-### 🟣 `tazpod-gemini` (AI Enhanced)
-*   **Adds**: `@google/gemini-cli`.
+### `tazpod-ai` (AI Enhanced)
+*   **Adds**: `pi` (pi-coding-agent), `omp` (oh-my-pi), and mnemosyne dependencies.
 *   **Purpose**: An AI-augmented terminal for complex troubleshooting and coding assistance.
 
 ---
@@ -48,7 +48,7 @@ The `init` command generates a `.tazpod/Dockerfile` (Template) that allows you t
 
 ```dockerfile
 # Custom Project Layer
-FROM tazzo/tazlab.net:tazpod-gemini
+FROM tazzo/tazpod-ai
 
 USER root
 RUN apt-get update && apt-get install -y postgresql-client

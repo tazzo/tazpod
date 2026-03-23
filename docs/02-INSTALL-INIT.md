@@ -21,7 +21,7 @@ TazPod is project-centric. You initialize a directory to transform it into a sec
 
 ### The Command
 ```bash
-# Initialize with the default Gemini image
+# Initialize with the default K8s image
 tazpod init
 ```
 
@@ -29,8 +29,7 @@ tazpod init
 The CLI performs the following actions:
 1.  **Creates `.tazpod/`**: A project-local metadata directory.
 2.  **Generates `config.yaml`**: Defines image, user, and a **unique container name** based on the current folder and a random suffix (e.g., `tazpod-myproject-4829`). This ensures that multiple TazPod projects can run concurrently without naming conflicts.
-3.  **Creates `.tazpod/secrets-sync-config.yml`**: A template for Infisical secret mapping.
-4.  **Secures `.gitignore`**: Prevents accidental commits of `vault/` and `.gemini/` local data.
+3.  **Secures `.gitignore`**: Prevents accidental commits of `vault/` local data.
 
 ---
 
@@ -40,7 +39,6 @@ The CLI performs the following actions:
 /my-project/
 ├── .tazpod/
 │   ├── config.yaml                # Container blueprint
-│   ├── secrets-sync-config.yml     # Secrets mapping (Safe for Git)
 │   └── vault/            
 │       └── vault.tar.aes          # The Encrypted Secrets Storage
 ```
@@ -48,9 +46,15 @@ The CLI performs the following actions:
 ### The `config.yaml`
 ```yaml
 version: 1.0
-image: "tazzo/tazlab.net:tazpod-gemini"
+image: "tazzo/tazpod-k8s"
 container_name: "tazpod-myproject-4829"
 user: "tazpod"
+aws_sso:
+  start_url: "https://sso.example.com/start"
+  account_id: "123456789012"
+  role_name: "DeveloperAccess"
+  region: "us-east-1"
+  profile: "tazlab-bootstrap"
 ```
 
 ---
@@ -61,7 +65,7 @@ user: "tazpod"
 Starts the Docker container in the background. It dynamically mounts your current directory to `/workspace`.
 
 ### Entering the Shell (`tazpod enter`)
-Enters the container interactivelly. 
+Enters the container interactively. 
 *   **Auto-Cleanup**: When you type `exit`, TazPod automatically triggers a `lock` to unmount and secure the RAM enclave.
 
 ### Sinking the Pod (`tazpod down`)

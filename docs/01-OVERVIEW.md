@@ -2,7 +2,7 @@
 
 ## 1. Introduction & Philosophy
 
-TazPod v0.2.0 is a refined evolution of the zero-trust development environment. It reconciles **extreme security** with **developer convenience** by moving away from kernel-level complexity (LUKS/Namespaces) towards a more portable and performant **RAM-based architecture**.
+TazPod v0.3.x is a refined evolution of the zero-trust development environment. It reconciles **extreme security** with **developer convenience** by moving away from kernel-level complexity (LUKS/Namespaces) towards a more portable and performant **RAM-based architecture**.
 
 In modern DevOps, we handle critical credentials (Kubeconfigs, Cloud API Keys). TazPod ensures these secrets are protected at rest and volatile during use.
 
@@ -11,7 +11,7 @@ In modern DevOps, we handle critical credentials (Kubeconfigs, Cloud API Keys). 
 
 ---
 
-## 2. High-Level Architecture (v0.2.0)
+## 2. High-Level Architecture (v0.3.x)
 
 TazPod orchestrates three main layers:
 
@@ -25,7 +25,7 @@ TazPod orchestrates three main layers:
 
 ### 🛠️ The Local Developer
 *   **Scenario**: You need AWS credentials for a project but don't want them in your home directory.
-*   **TazPod Solution**: Run `tazpod pull`. It mounts the RAM enclave, pulls keys from Infisical, and saves the updated encrypted vault. When you `exit`, the RAM is wiped.
+*   **TazPod Solution**: Run `tazpod unlock`. It mounts the RAM enclave, pulls vault from S3 via AWS SSO, and saves the updated encrypted vault. When you `exit`, the RAM is wiped.
 
 ### ☸️ The Cluster Admin
 *   **Scenario**: Managing multiple sensitive Kubernetes clusters.
@@ -37,9 +37,9 @@ TazPod orchestrates three main layers:
 
 ---
 
-## 4. Key Differentiators (v0.2.0 vs v0.1.x)
+## 4. Key Differentiators (v0.1.x vs v0.3.x)
 
-| Feature | TazPod v0.1.x (Legacy) | TazPod v0.2.0 (Stable) |
+| Feature | TazPod v0.1.x (Legacy) | TazPod v0.3.x (Current) |
 | :--- | :--- | :--- |
 | **Encryption** | LUKS2 (Disk Image) | AES-256-GCM (File-based) |
 | **Storage** | 512MB Loopback File | Dynamic TAR Archive |

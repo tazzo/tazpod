@@ -18,7 +18,7 @@ You can interact with the memory engine directly via the `tazpod` CLI.
 
 ### `tazpod memory sync [dir]`
 Synchronizes all session logs (`.md` files) in the specified directory (defaults to current) with the semantic database.
-*   It automatically handles VPN connectivity to the database cluster.
+*   It automatically handles VPN connectivity to the database cluster. (**Note**: VPN command is currently UNTESTED and has not been validated.)
 *   It skips already processed files using an `archived_files` tracking table.
 *   It performs "Deep Sniffing" to exclude meta-sessions (sessions about archiving themselves).
 
