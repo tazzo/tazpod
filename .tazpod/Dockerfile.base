@@ -60,11 +60,13 @@ RUN LAZYGIT_VERSION=$(curl -s "https://api.github.com/repos/jesseduffield/lazygi
     install lazygit /usr/local/bin && \
     rm lazygit.tar.gz lazygit
 
-# 8. Eza & Tmux (System-wide)
+# 8. Eza, Tmux & Tailscale (System-wide)
 RUN mkdir -p /etc/apt/keyrings && \
     wget -qO- https://raw.githubusercontent.com/eza-community/eza/main/deb.asc | gpg --dearmor -o /etc/apt/keyrings/gierens.gpg && \
     echo "deb [signed-by=/etc/apt/keyrings/gierens.gpg] http://deb.gierens.de stable main" | tee /etc/apt/sources.list.d/gierens.list && \
-    apt-get update && apt-get install -y eza tmux wireguard-tools resolvconf
+    curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg | sudo tee /usr/share/keyrings/tailscale-archive-keyring.gpg >/dev/null && \
+    curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.tailscale-keyring.list | sudo tee /etc/apt/sources.list.d/tailscale.list >/dev/null && \
+    apt-get update && apt-get install -y eza tmux wireguard-tools resolvconf tailscale
 
 # 9. User Setup & Privilege Escalation
 RUN if id -u 1000 >/dev/null 2>&1; then userdel -r $(id -un 1000); fi && \
