@@ -1,6 +1,6 @@
 # AGENTS.md — tazpod
 
-Go CLI (v0.3.14+) that manages the developer enclave: LUKS-free AES-256-GCM vault,
+Go CLI (v0.3.15+) that manages the developer enclave: LUKS-free AES-256-GCM vault,
 Docker lifecycle, AWS SSO authentication, and S3-based Nomadic Identity.
 
 ## Build & Test
@@ -62,10 +62,10 @@ Identity sync targets S3:
 ## Code Layout
 
 ```
-cmd/tazpod/main.go    entry point
-internal/vault/       AES-256-GCM vault logic
-internal/docker/      container lifecycle
-internal/utils/       S3 and generic utils
+cmd/tazpod/main.go    entry point + container lifecycle (up, down, enter, vpn, smartEntry)
+internal/vault/       AES-256-GCM vault logic (unlock, lock, save, tar/untar)
+internal/crypto/      encrypt/decrypt primitives (AES-GCM, PBKDF2)
+internal/utils/       S3 client and generic utilities (FileExist, IsMounted, RunCmd)
 VERSION               version string, injected via -ldflags
 Taskfile.yml          task runner targets
 ```
@@ -73,6 +73,6 @@ Taskfile.yml          task runner targets
 ## Conventions
 
 - Version read from `VERSION` file, never hardcoded
-- Table-driven tests, one `_test.go` per package
+- Table-driven tests, one `_test.go` per package (coverage improvements tracked in tazpod-logging SDD project)
 - GitHub push: extract token from `/home/tazpod/secrets/github-token`, use
   `git -c credential.helper="!f() { echo 'username=x-access-token'; echo \"password=${TOKEN}\"; }; f" push origin <branch>`
