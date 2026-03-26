@@ -20,10 +20,6 @@ WORKDIR /home/tazpod
 RUN pi install npm:pi-extmgr && \
     pi install npm:pi-mcp-adapter
 
-# Install Mnemosyne Dependencies
-COPY --chown=tazpod:tazpod memory /home/tazpod/memory
-RUN pip3 install --break-system-packages -r /home/tazpod/memory/requirements.txt
-
 # Fix PATH and Banner
 RUN sed -i '/LAYER ACTIVE/d' ~/.bashrc && \
     echo 'export PATH="/home/tazpod/.nvm/versions/node/$(ls /home/tazpod/.nvm/versions/node | head -1)/bin:$PATH"' >> ~/.bashrc && \
