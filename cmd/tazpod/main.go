@@ -229,46 +229,95 @@ func enter() {
 
 func initProject() {
 	os.MkdirAll(".tazpod/vault", 0755)
-	
-	// Generazione Nome Container Unico
+
+	// Generate unique container name (always fresh, never from template)
 	cwd, _ := os.Getwd()
 	folderName := filepath.Base(cwd)
-	
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	randomSuffix := fmt.Sprintf("%04d", r.Intn(10000))
 	containerName := fmt.Sprintf("tazpod-%s-%s", folderName, randomSuffix)
 
-	// Creazione Config Default
-	newCfg := Config{
-		Image: "tazzo/tazpod-ai:latest",
-		ContainerName: containerName,
-		User: "tazpod",
-		ActiveProvider: "home",
-		Providers: map[string]ProviderConfig{
-			"home": {
-				DBHost: "192.168.1.241",
-				VPNConfig: "HOME_WG_CONF",
-			},
-			"aws": {
-				DBHost: "10.0.1.50",
-				VPNConfig: "AWS_WG_CONF",
-			},
-		},
-		AwsSso: AwsSsoConfig{
-			StartURL:  "https://tazlab.awsapps.com/start",
-			AccountID: "123456789012",
-			RoleName:  "TazLabBootstrap",
-			Region:    "eu-central-1",
-			Profile:   "tazlab-bootstrap",
-		},
+	var newCfg Config
+
+	// Try to load defaults from ~/secrets/tazpod-template.yaml
+	templatePath := filepath.Join(os.Getenv("HOME"), "secrets", "tazpod-template.yaml")
+	if data, err := os.ReadFile(templatePath); err == nil {
+		if err := yaml.Unmarshal(data, &newCfg); err == nil {
+			fmt.Printf("📋 Template loaded from %s\n", templatePath)
+		} else {
+			fmt.Printf("⚠️  Template found but invalid YAML (%v) — switching to interactive.\n", err)
+			newCfg = promptInitConfig()
+		}
+	} else {
+		fmt.Println("💬 No template found in ~/secrets/tazpod-template.yaml — configuring interactively.")
+		fmt.Println("   Tip: save your defaults there to skip this step next time.")
+		newCfg = promptInitConfig()
 	}
+
+	// Container name is always generated fresh per project
+	newCfg.ContainerName = containerName
 	newCfg.Features.GhostMode = true
 	newCfg.Features.Debug = false
 
-	data, _ := yaml.Marshal(&newCfg)
-	os.WriteFile(ConfigPath, data, 0644)
+	data, err := yaml.Marshal(&newCfg)
+	if err != nil {
+		fmt.Printf("❌ Failed to serialize config: %v\n", err)
+		return
+	}
+	if err := os.WriteFile(ConfigPath, data, 0644); err != nil {
+		fmt.Printf("❌ Failed to write %s: %v\n", ConfigPath, err)
+		return
+	}
 
 	fmt.Printf("✅ Project initialized.\n🐳 Container: %s\n", containerName)
+}
+
+func promptInitConfig() Config {
+	fmt.Println("\n🛡️  TazPod Init — Enter your configuration")
+	fmt.Println()
+
+	reader := bufio.NewReader(os.Stdin)
+	ask := func(prompt, defaultVal string) string {
+		if defaultVal != "" {
+			fmt.Printf("  %s [%s]: ", prompt, defaultVal)
+		} else {
+			fmt.Printf("  %s: ", prompt)
+		}
+		val, _ := reader.ReadString('\n')
+		val = strings.TrimSpace(val)
+		if val == "" {
+			return defaultVal
+		}
+		return val
+	}
+
+	fmt.Println("── AWS SSO ──────────────────────────────")
+	startURL  := ask("SSO Start URL", "")
+	accountID := ask("Account ID (12 digits)", "")
+	roleName  := ask("Role Name", "")
+	region    := ask("Region", "eu-central-1")
+	profile   := ask("SSO Profile name", "default")
+
+	fmt.Println("\n── Docker ───────────────────────────────")
+	image := ask("Image", "tazzo/tazpod-ai:latest")
+	fmt.Println()
+
+	return Config{
+		Image:          image,
+		User:           "tazpod",
+		ActiveProvider: "home",
+		Providers: map[string]ProviderConfig{
+			"home": {VPNConfig: "HOME_WG_CONF"},
+			"aws":  {VPNConfig: "AWS_WG_CONF"},
+		},
+		AwsSso: AwsSsoConfig{
+			StartURL:  startURL,
+			AccountID: accountID,
+			RoleName:  roleName,
+			Region:    region,
+			Profile:   profile,
+		},
+	}
 }
 
 func unlock() { 

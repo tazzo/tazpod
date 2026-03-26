@@ -46,8 +46,6 @@ RUN TERRAFORM_VERSION=$(curl -s https://checkpoint-api.hashicorp.com/v1/check/te
 
 # 7. Install Flux CLI
 RUN curl -s https://fluxcd.io/install.sh | bash
-# 8. Install OCI CLI (Oracle Cloud)
-RUN pip3 install oci-cli --break-system-packages
 
 # 8. Install OCI CLI (Oracle Cloud)
 RUN pip3 install oci-cli --break-system-packages
