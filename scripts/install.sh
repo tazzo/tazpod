@@ -4,7 +4,7 @@
 # It detects the operating system and architecture, downloads the correct binary,
 # and ensures it is executable and in the user's PATH.
 
-set -e
+set -euo pipefail
 
 # --- CONFIGURATION ---
 REPO="tazzo/tazpod"
