@@ -54,10 +54,10 @@ func Unlock() {
 			cachedPassphrase = getPassphrase()
 			decrypted, err = crypto.Decrypt(data, cachedPassphrase)
 			if err == nil { break }
-			fmt.Printf("❌ Password errata. Tentativi rimanenti: %d\n", attempts-1)
+			fmt.Printf("❌ Wrong passphrase. Attempts remaining: %d\n", attempts-1)
 			if attempts == 1 {
 				unmountRAM()
-				fatal("Troppi tentativi falliti. Vault bloccato.")
+				fatal("Too many failed attempts. Vault locked.")
 			}
 		}
 

@@ -349,7 +349,7 @@ func askYN(question string) bool {
 func ensureContainerUp() {
 	cmd := exec.Command("docker", "exec", cfg.ContainerName, "true")
 	if err := cmd.Run(); err != nil {
-		fmt.Println("⚠️  Container non risponde. Riavvio...")
+		fmt.Println("⚠️  Container not responding. Restarting...")
 		down()
 		up()
 		time.Sleep(2 * time.Second)
@@ -361,7 +361,7 @@ func smartEntry() {
 
 	// Step 1: controlla se il progetto è inizializzato
 	if _, err := os.Stat(".tazpod"); os.IsNotExist(err) {
-		if !askYN("📂 Nessun progetto trovato. Inizializzare qui?") {
+		if !askYN("📂 No project found here. Initialize?") {
 			return
 		}
 		initProject()
@@ -369,7 +369,7 @@ func smartEntry() {
 	}
 
 	if cfg.ContainerName == "" {
-		fmt.Println("❌ container_name mancante in config.yaml. Esegui 'tazpod init'.")
+		fmt.Println("❌ container_name missing in config.yaml. Run 'tazpod init'.")
 		return
 	}
 
@@ -387,7 +387,7 @@ func smartEntry() {
 			execInContainer("tazpod unlock")
 		}
 	} else {
-		if askYN("🔑 Nessun vault locale. Bootstrap? (login + pull + unlock)") {
+		if askYN("🔑 No local vault found. Bootstrap? (login + pull + unlock)") {
 			// Ogni step in un exec separato: TTY pulito tra uno e l'altro
 			// evita che i keystroke del SSO browser finiscano nel buffer della passphrase
 			if !execInContainer("tazpod login") { goto enterContainer }
@@ -517,7 +517,7 @@ func pullIdentity() {
 }
 
 // loadVaultAWSCredentials carica le credenziali AWS dal vault nell'env.
-// Se il vault è sbloccato, i file raw sono in MountPath — usati al posto del profilo SSO.
+// If the vault is unlocked, raw credential files are in MountPath — used instead of the SSO profile.
 func loadVaultAWSCredentials() {
 	if !utils.IsMounted(vault.MountPath) { return }
 	read := func(name string) string {
