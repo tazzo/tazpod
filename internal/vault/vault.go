@@ -69,7 +69,9 @@ func Unlock() {
 		fmt.Println("🆕 New vault initialized.")
 	}
 
-	os.WriteFile(PassCache, []byte(cachedPassphrase), 0600)
+	if err := os.WriteFile(PassCache, []byte(cachedPassphrase), 0600); err != nil {
+		fmt.Printf("⚠️  Could not cache passphrase: %v\n", err)
+	}
 	SetupIdentity()
 	setupBindAuth()
 }
@@ -98,7 +100,9 @@ func Save(passphrase string) {
 		fmt.Println()
 		passphrase = string(b)
 		cachedPassphrase = passphrase
-		os.WriteFile(PassCache, []byte(passphrase), 0600)
+		if err := os.WriteFile(PassCache, []byte(passphrase), 0600); err != nil {
+			fmt.Printf("⚠️  Could not cache passphrase: %v\n", err)
+		}
 	}
 
 	fmt.Print("💾 Saving vault to disk... ")
@@ -108,8 +112,12 @@ func Save(passphrase string) {
 	encrypted, err := crypto.Encrypt(rawBytes, passphrase)
 	if err != nil { fmt.Println("❌ Encrypt error:", err); return }
 
-	os.MkdirAll(VaultDir, 0755)
-	os.WriteFile(VaultFile, encrypted, 0644)
+	if err := os.MkdirAll(VaultDir, 0755); err != nil {
+		fmt.Println("❌ Cannot create vault dir:", err); return
+	}
+	if err := os.WriteFile(VaultFile, encrypted, 0644); err != nil {
+		fmt.Println("❌ Cannot write vault file:", err); return
+	}
 	fmt.Println("✅ Saved.")
 }
 

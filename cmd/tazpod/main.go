@@ -111,7 +111,10 @@ func vpnUp() {
 
 	// Create temp wg0.conf
 	confPath := "/tmp/tazpod-wg0.conf"
-	os.WriteFile(confPath, []byte(confContent), 0600)
+	if err := os.WriteFile(confPath, []byte(confContent), 0600); err != nil {
+		fmt.Printf("❌ Failed to write VPN config: %v\n", err)
+		return
+	}
 	defer os.Remove(confPath)
 
 	fmt.Printf("🌐 Bringing up VPN for provider %s...\n", provider)
@@ -164,7 +167,18 @@ func isVaultUnlocked() bool {
 
 
 func loadConfigs() {
-	if data, err := os.ReadFile(ConfigPath); err == nil { yaml.Unmarshal(data, &cfg) }
+	data, err := os.ReadFile(ConfigPath)
+	if os.IsNotExist(err) {
+		return // no config yet, normal on first run
+	}
+	if err != nil {
+		fmt.Printf("⚠️  Could not read %s: %v\n", ConfigPath, err)
+		return
+	}
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		fmt.Printf("❌ Invalid config %s: %v\n", ConfigPath, err)
+		os.Exit(1)
+	}
 }
 
 func help() { 
