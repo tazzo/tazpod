@@ -229,15 +229,4 @@ func TarDir(src string) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// PackageIdentity bundles the entire .tazpod directory for S3 sync
-func PackageIdentity() ([]byte, error) {
-	fmt.Println("📦 Packaging identity (.tazpod)...")
-	return TarDir(".tazpod")
-}
-
-// ExtractIdentity extracts the identity bundle from S3
-func ExtractIdentity(data []byte) error {
-	fmt.Println("📂 Extracting identity (.tazpod)...")
-	return Untar(data, ".")
-}
 

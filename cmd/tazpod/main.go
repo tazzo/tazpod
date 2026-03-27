@@ -194,11 +194,11 @@ func help() {
 	fmt.Println("  lock           Lock and wipe the RAM vault")
 	fmt.Println("  save           Save the current RAM vault content to disk")
 	fmt.Println("  login          Authenticate with AWS SSO")
-	fmt.Println("  pull [vault|identity] Pull vault or identity from S3 (default: vault, alias: sync)")
-	fmt.Println("  push [vault|identity] Push vault or identity to S3 (default: vault)")
+	fmt.Println("  pull [vault]       Pull vault from S3 (default: vault, alias: sync)")
+	fmt.Println("  push [vault]       Push vault to S3 (default: vault)")
 	fmt.Println("\nUtility Commands:")
 	fmt.Println("  vpn up|down    Manage VPN connection for the active provider")
-	fmt.Println("  setup-storage  Initialize S3 bucket for nomadic identity")
+	fmt.Println("  setup-storage  Initialize S3 bucket")
 	fmt.Println("  --version, -v  Show version information")
 }
 
@@ -435,43 +435,9 @@ func push() {
 	switch subarg {
 	case "vault", "":
 		pushVault()
-	case "identity":
-		pushIdentity()
 	default:
 		fmt.Printf("❌ Unknown push target: %s\n", subarg)
 	}
-}
-
-func pushIdentity() {
-	start := time.Now()
-	data, err := vault.PackageIdentity()
-	if err != nil {
-		fmt.Printf("❌ Failed to package identity: %v\n", err)
-		return
-	}
-	fmt.Printf("📦 Packaging completed in %v\n", time.Since(start))
-
-	// Save temporarily to disk for upload
-	tmpFile := "/tmp/tazpod-identity.tar.gz"
-	if err := os.WriteFile(tmpFile, data, 0600); err != nil {
-		fmt.Printf("❌ Failed to create temp file: %v\n", err)
-		return
-	}
-	defer os.Remove(tmpFile)
-
-	s3, err := utils.NewS3Client("", cfg.AwsSso.Profile)
-	if err != nil {
-		fmt.Printf("❌ S3 Client error: %v\n", err)
-		return
-	}
-
-	fmt.Println("☁️  Uploading identity to S3 (bucket: tazlab-storage)...")
-	uploadStart := time.Now()
-	if err := s3.UploadFile("tazpod/identities/global.tar.gz", tmpFile); err != nil {
-		fmt.Printf("❌ Upload failed: %v\n", err)
-		return
-	}
-	fmt.Printf("✅ Identity pushed successfully in %v.\n", time.Since(uploadStart))
 }
 
 func pull() {
@@ -481,39 +447,9 @@ func pull() {
 	switch subarg {
 	case "vault", "":
 		pullVault()
-	case "identity":
-		pullIdentity()
 	default:
 		fmt.Printf("❌ Unknown pull target: %s\n", subarg)
 	}
-}
-
-func pullIdentity() {
-	s3, err := utils.NewS3Client("", cfg.AwsSso.Profile)
-	if err != nil {
-		fmt.Printf("❌ S3 Client error: %v\n", err)
-		return
-	}
-
-	tmpFile := "/tmp/tazpod-identity-pull.tar.gz"
-	fmt.Println("☁️  Downloading identity from S3...")
-	if err := s3.DownloadFile("tazpod/identities/global.tar.gz", tmpFile); err != nil {
-		fmt.Printf("❌ Download failed: %v\n", err)
-		return
-	}
-	defer os.Remove(tmpFile)
-
-	data, err := os.ReadFile(tmpFile)
-	if err != nil {
-		fmt.Printf("❌ Failed to read downloaded identity: %v\n", err)
-		return
-	}
-
-	if err := vault.ExtractIdentity(data); err != nil {
-		fmt.Printf("❌ Failed to extract identity: %v\n", err)
-		return
-	}
-	fmt.Println("✅ Identity pulled and extracted.")
 }
 
 // loadVaultAWSCredentials carica le credenziali AWS dal vault nell'env.
