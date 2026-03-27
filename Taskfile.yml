@@ -11,7 +11,7 @@ tasks:
     desc: Compile the Go binary for Linux/AMD64
     cmds:
       - 'echo "🔨 Building {{.BINARY_NAME}} {{.VERSION}}..."'
-      - 'GOOS=linux GOARCH=amd64 go build -v -ldflags "-X main.Version={{.VERSION}}" -o bin/{{.BINARY_NAME}} cmd/tazpod/main.go'
+      - 'GOOS=linux GOARCH=amd64 go build -v -ldflags "-X main.Version={{.VERSION}}" -o bin/{{.BINARY_NAME}} ./cmd/tazpod'
       - 'cp bin/{{.BINARY_NAME}} .'
 
   docker:build:
@@ -19,10 +19,10 @@ tasks:
     deps: [build]
     cmds:
       - 'echo "🏗️  Building Docker layers..."'
-      - 'docker build -t {{.DOCKER_USER}}/tazpod-base:latest -f .tazpod/Dockerfile.base .'
-      - 'docker build -t {{.DOCKER_USER}}/tazpod-aws:latest -f .tazpod/Dockerfile.aws .'
-      - 'docker build -t {{.DOCKER_USER}}/tazpod-k8s:latest -f .tazpod/Dockerfile.k8s .'
-      - 'docker build -t {{.DOCKER_USER}}/tazpod-ai:latest -f .tazpod/Dockerfile.ai .'
+      - 'docker build -t {{.DOCKER_USER}}/tazpod-base:latest -t {{.DOCKER_USER}}/tazpod-base:{{.VERSION}} -f .tazpod/Dockerfile.base .'
+      - 'docker build --build-arg BASE_VERSION={{.VERSION}} -t {{.DOCKER_USER}}/tazpod-aws:latest -t {{.DOCKER_USER}}/tazpod-aws:{{.VERSION}} -f .tazpod/Dockerfile.aws .'
+      - 'docker build --build-arg BASE_VERSION={{.VERSION}} -t {{.DOCKER_USER}}/tazpod-k8s:latest -t {{.DOCKER_USER}}/tazpod-k8s:{{.VERSION}} -f .tazpod/Dockerfile.k8s .'
+      - 'docker build --build-arg BASE_VERSION={{.VERSION}} -t {{.DOCKER_USER}}/tazpod-ai:latest -t {{.DOCKER_USER}}/tazpod-ai:{{.VERSION}} -f .tazpod/Dockerfile.ai .'
 
   docker:push:
     desc: Push images to registry (prefer GitHub Actions)
@@ -36,6 +36,7 @@ tasks:
   release:
     desc: Trigger remote build and release via GitHub
     cmds:
+      - 'echo "⚠️  Update CHANGELOG.md before continuing"'
       - 'echo "🚀 Triggering Release {{.VERSION}}..."'
       - 'git add .'
       - 'git commit -m "chore: release {{.VERSION}}" || echo "No changes"'

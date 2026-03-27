@@ -42,6 +42,10 @@ jobs:
         with:
           go-version: '1.24'
 
+      - name: Read Version
+        id: version
+        run: echo "VERSION=$(cat VERSION)" >> $GITHUB_ENV
+
       - name: Vet
         run: go vet ./...
 
@@ -51,7 +55,7 @@ jobs:
       - name: Build CLI
         run: |
           VERSION=$(cat VERSION)
-          GOOS=linux GOARCH=amd64 go build -ldflags "-X main.Version=${VERSION}" -o tazpod cmd/tazpod/main.go
+          GOOS=linux GOARCH=amd64 go build -ldflags "-X main.Version=${VERSION}" -o tazpod ./cmd/tazpod
 
       - name: Publish GitHub Release
         if: steps.changed.outputs.cli == 'true'
@@ -98,8 +102,10 @@ jobs:
           context: .
           file: .tazpod/Dockerfile.aws
           push: true
+          build-args: BASE_VERSION=${{ env.VERSION }}
           tags: |
             tazzo/tazpod-aws:latest
+            tazzo/tazpod-aws:${{ env.VERSION }}
             tazzo/tazpod-aws:tazpod-aws-${{ github.run_number }}-${{ steps.vars.outputs.sha_short }}
           cache-from: type=gha,scope=tazpod-aws
           cache-to: type=gha,mode=max,scope=tazpod-aws
@@ -111,8 +117,10 @@ jobs:
           context: .
           file: .tazpod/Dockerfile.k8s
           push: true
+          build-args: BASE_VERSION=${{ env.VERSION }}
           tags: |
             tazzo/tazpod-k8s:latest
+            tazzo/tazpod-k8s:${{ env.VERSION }}
             tazzo/tazpod-k8s:tazpod-k8s-${{ github.run_number }}-${{ steps.vars.outputs.sha_short }}
           cache-from: type=gha,scope=tazpod-k8s
           cache-to: type=gha,mode=max,scope=tazpod-k8s
@@ -124,8 +132,10 @@ jobs:
           context: .
           file: .tazpod/Dockerfile.ai
           push: true
+          build-args: BASE_VERSION=${{ env.VERSION }}
           tags: |
             tazzo/tazpod-ai:latest
+            tazzo/tazpod-ai:${{ env.VERSION }}
             tazzo/tazpod-ai:tazpod-ai-${{ github.run_number }}-${{ steps.vars.outputs.sha_short }}
           cache-from: type=gha,scope=tazpod-ai
           cache-to: type=gha,mode=max,scope=tazpod-ai

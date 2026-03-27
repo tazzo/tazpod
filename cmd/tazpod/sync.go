@@ -1,9 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"tazpod/internal/utils"
@@ -11,11 +15,41 @@ import (
 )
 
 func syncDaemon() {
+	syncLog := "/tmp/tazpod-sync.log"
+	f, err := os.OpenFile(syncLog, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Printf("❌ Failed to open sync log: %v\n", err)
+		return
+	}
+	defer f.Close()
+
+	daemonLogger := slog.New(slog.NewTextHandler(f, nil))
+	fmt.Printf("🔄 Sync daemon started. Log: %s\n", syncLog)
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
+
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
 	for {
-		time.Sleep(5 * time.Minute)
-		if isVaultUnlocked() {
-			vault.Save("")
-			pushVault()
+		select {
+		case <-ticker.C:
+			if isVaultUnlocked() {
+				daemonLogger.Info("Starting sync cycle")
+				start := time.Now()
+				vault.Save("")
+				if err := pushVaultInternal(); err != nil {
+					daemonLogger.Error("Sync failed", "error", err)
+				} else {
+					daemonLogger.Info("Sync completed", "elapsed", time.Since(start))
+				}
+			} else {
+				daemonLogger.Debug("Vault locked, skipping sync")
+			}
+		case <-ctx.Done():
+			daemonLogger.Info("Sync daemon stopping")
+			return
 		}
 	}
 }
@@ -35,7 +69,7 @@ func pull() {
 	case "vault", "":
 		pullVault()
 	default:
-		fmt.Printf("❌ Unknown pull target: %s\n", subarg)
+		logger.Error("Unknown pull target", "target", subarg)
 	}
 }
 
@@ -49,7 +83,7 @@ func push() {
 	case "vault", "":
 		pushVault()
 	default:
-		fmt.Printf("❌ Unknown push target: %s\n", subarg)
+		logger.Error("Unknown push target", "target", subarg)
 	}
 }
 
@@ -60,40 +94,42 @@ func pullVault() {
 
 	s3, err := utils.NewS3Client("", cfg.AwsSso.Profile)
 	if err != nil {
-		fmt.Printf("❌ S3 Client error: %v\n", err)
+		logger.Error("S3 Client error", "error", err)
 		os.Exit(1)
 	}
 
 	os.MkdirAll(filepath.Join(cwd, ".tazpod", "vault"), 0755)
 	fmt.Println("☁️  Downloading vault.tar.aes from S3...")
 	if err := s3.DownloadFile("tazpod/vault/vault.tar.aes", vaultFile); err != nil {
-		fmt.Printf("❌ Download failed: %v\n", err)
+		logger.Error("Download failed", "error", err)
 		os.Exit(1)
 	}
 	fmt.Println("✅ Vault pulled. Run 'tazpod unlock' to decrypt.")
 }
 
 func pushVault() {
-	loadVaultAWSCredentials()
 	start := time.Now()
+	fmt.Println("☁️  Uploading vault.tar.aes to S3...")
+	if err := pushVaultInternal(); err != nil {
+		logger.Error("Push failed", "error", err)
+		return
+	}
+	fmt.Printf("✅ Vault pushed successfully in %v.\n", time.Since(start))
+}
+
+func pushVaultInternal() error {
+	loadVaultAWSCredentials()
 	cwd, _ := os.Getwd()
 	vaultFile := filepath.Join(cwd, ".tazpod", "vault", "vault.tar.aes")
 
 	if _, err := os.Stat(vaultFile); os.IsNotExist(err) {
-		fmt.Println("❌ No vault file found in .tazpod/vault/vault.tar.aes")
-		return
+		return fmt.Errorf("no vault file found at %s", vaultFile)
 	}
 
 	s3, err := utils.NewS3Client("", cfg.AwsSso.Profile)
 	if err != nil {
-		fmt.Printf("❌ S3 Client error: %v\n", err)
-		return
+		return fmt.Errorf("S3 Client error: %w", err)
 	}
 
-	fmt.Println("☁️  Uploading vault.tar.aes to S3...")
-	if err := s3.UploadFile("tazpod/vault/vault.tar.aes", vaultFile); err != nil {
-		fmt.Printf("❌ Upload failed: %v\n", err)
-		return
-	}
-	fmt.Printf("✅ Vault pushed successfully in %v.\n", time.Since(start))
+	return s3.UploadFile("tazpod/vault/vault.tar.aes", vaultFile)
 }

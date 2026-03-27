@@ -47,7 +47,7 @@ func login() {
 	fmt.Println("🔑 Authenticating with AWS SSO...")
 	cmd := execCommand("aws", "sso", "login", "--profile", cfg.AwsSso.Profile)
 	if err := cmd.Run(); err != nil {
-		fmt.Printf("❌ Login failed: %v\n", err)
+		logger.Error("Login failed", "error", err)
 	} else {
 		fmt.Println("✅ Logged in successfully.")
 	}
@@ -59,11 +59,11 @@ func loadConfigs() {
 		return // no config yet, normal on first run
 	}
 	if err != nil {
-		fmt.Printf("⚠️  Could not read %s: %v\n", ConfigPath, err)
+		logger.Warn("Could not read config", "path", ConfigPath, "error", err)
 		return
 	}
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		fmt.Printf("❌ Invalid config %s: %v\n", ConfigPath, err)
+		logger.Error("Invalid config", "path", ConfigPath, "error", err)
 		os.Exit(1)
 	}
 }

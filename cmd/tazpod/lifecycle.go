@@ -12,7 +12,7 @@ import (
 
 func up() {
 	if cfg.Image == "" {
-		fmt.Println("❌ No image defined in config. Run 'tazpod init' or check .tazpod/config.yaml")
+		logger.Error("No image defined in config. Run 'tazpod init' or check .tazpod/config.yaml")
 		return
 	}
 
@@ -41,7 +41,7 @@ func smartEntry() {
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 
 	if err := cmd.Run(); err != nil {
-		fmt.Printf("❌ Session ended with error: %v\n", err)
+		logger.Error("Session ended with error", "error", err)
 	} else {
 		fmt.Println("\n🔒 Session ended. Securing identity...")
 	}
@@ -70,7 +70,7 @@ func ensureContainerUp() {
 
 	cmd := exec.Command("docker", args...)
 	if err := cmd.Run(); err != nil {
-		fmt.Printf("❌ Failed to create container: %v\n", err)
+		logger.Error("Failed to create container", "error", err)
 		os.Exit(1)
 	}
 }
@@ -78,13 +78,13 @@ func ensureContainerUp() {
 func setupStorage() {
 	s3, err := utils.NewS3Client("", cfg.AwsSso.Profile)
 	if err != nil {
-		fmt.Printf("❌ S3 Client error: %v\n", err)
+		logger.Error("S3 Client error", "error", err)
 		return
 	}
 
 	fmt.Println("☁️  Setting up S3 path tazpod/vault/...")
 	if err := s3.CreateBucket(); err != nil {
-		fmt.Printf("❌ Setup failed: %v\n", err)
+		logger.Error("Setup failed", "error", err)
 		return
 	}
 	fmt.Println("✅ S3 storage ready.")

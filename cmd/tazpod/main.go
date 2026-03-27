@@ -2,11 +2,32 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 )
 
+var logger *slog.Logger
+
 func main() {
+	var debug bool
+	for _, arg := range os.Args {
+		if arg == "--debug" {
+			debug = true
+			break
+		}
+	}
+
 	loadConfigs()
+	if cfg.Features.Debug {
+		debug = true
+	}
+
+	level := slog.LevelInfo
+	if debug {
+		level = slog.LevelDebug
+	}
+
+	logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 
 	if len(os.Args) < 2 {
 		help()
@@ -47,7 +68,7 @@ func main() {
 	case "--version", "-v":
 		fmt.Println(Version)
 	default:
-		fmt.Fprintf(os.Stderr, "❌ Unknown command: %s\n", command)
+		logger.Error("Unknown command", "command", command)
 		os.Exit(1)
 	}
 }

@@ -19,7 +19,7 @@ func vpnCommand() {
 	case "down":
 		vpnDown()
 	default:
-		fmt.Printf("❌ Unknown VPN action: %s\n", action)
+		logger.Error("Unknown VPN action", "action", action)
 		os.Exit(1)
 	}
 }
@@ -31,7 +31,7 @@ func vpnUp() {
 	cmd := exec.Command("sudo", "wg-quick", "up", "wg0")
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	if err := cmd.Run(); err != nil {
-		fmt.Printf("❌ VPN start failed: %v\n", err)
+		logger.Error("VPN start failed", "error", err)
 		return
 	}
 	fmt.Println("✅ VPN tunnel active.")
@@ -42,7 +42,7 @@ func vpnDown() {
 	cmd := exec.Command("sudo", "wg-quick", "down", "wg0")
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	if err := cmd.Run(); err != nil {
-		fmt.Printf("❌ VPN stop failed: %v\n", err)
+		logger.Error("VPN stop failed", "error", err)
 		return
 	}
 	fmt.Println("✅ VPN tunnel stopped.")

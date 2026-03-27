@@ -1,6 +1,7 @@
 # --- TAZPOD LAYER 2: AWS (Bootstrap & S3) ---
 # This layer depends on tazzo/tazpod-base
-FROM tazzo/tazpod-base:latest
+ARG BASE_VERSION=latest
+FROM tazzo/tazpod-base:${BASE_VERSION}
 
 USER root
 

@@ -14,7 +14,7 @@ func initProject() {
 	cwd, _ := os.Getwd()
 	configDir := filepath.Join(cwd, ".tazpod")
 	if _, err := os.Stat(configDir); err == nil {
-		fmt.Printf("⚠️  TazPod is already initialized in %s\n", cwd)
+		logger.Warn("TazPod is already initialized", "path", cwd)
 		return
 	}
 
@@ -47,10 +47,14 @@ func promptInitConfig(c *Config) {
 	fmt.Print("🏠 Home DB Host (IP): ")
 	dbHost, _ := reader.ReadString('\n')
 	dbHost = strings.TrimSpace(dbHost)
-	c.Providers["home"] = ProviderConfig{DBHost: dbHost}
+	if dbHost != "" {
+		c.Providers["home"] = ProviderConfig{DBHost: dbHost}
+	}
 
 	fmt.Print("☁️  AWS DB Host (IP): ")
 	dbHost, _ = reader.ReadString('\n')
 	dbHost = strings.TrimSpace(dbHost)
-	c.Providers["aws"] = ProviderConfig{DBHost: dbHost}
+	if dbHost != "" {
+		c.Providers["aws"] = ProviderConfig{DBHost: dbHost}
+	}
 }

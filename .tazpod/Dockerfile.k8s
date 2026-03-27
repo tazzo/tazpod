@@ -1,6 +1,7 @@
 # --- TAZPOD LAYER 3: KUBERNETES COMMANDER ---
 # This layer depends on tazzo/tazpod-aws
-FROM tazzo/tazpod-aws:latest
+ARG BASE_VERSION=latest
+FROM tazzo/tazpod-aws:${BASE_VERSION}
 
 USER root
 
