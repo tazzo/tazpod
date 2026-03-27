@@ -99,3 +99,4 @@ RUN sudo ln -sf /home/tazpod/.nvm/versions/node/*/bin/node /usr/local/bin/node &
     sudo ln -sf /home/tazpod/.nvm/versions/node/*/bin/npm /usr/local/bin/npm && \
     nvim --headless "+Lazy! sync" +qa || echo "Initial sync done"
 # v0.3.4
+# Layer pinning fix v2
