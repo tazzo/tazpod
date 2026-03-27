@@ -102,7 +102,7 @@ jobs:
           context: .
           file: .tazpod/Dockerfile.aws
           push: true
-          build-args: BASE_VERSION=${{ env.VERSION }}
+          build-args: BASE_VERSION=latest
           tags: |
             tazzo/tazpod-aws:latest
             tazzo/tazpod-aws:${{ env.VERSION }}
@@ -117,7 +117,7 @@ jobs:
           context: .
           file: .tazpod/Dockerfile.k8s
           push: true
-          build-args: BASE_VERSION=${{ env.VERSION }}
+          build-args: BASE_VERSION=latest
           tags: |
             tazzo/tazpod-k8s:latest
             tazzo/tazpod-k8s:${{ env.VERSION }}
@@ -132,7 +132,7 @@ jobs:
           context: .
           file: .tazpod/Dockerfile.ai
           push: true
-          build-args: BASE_VERSION=${{ env.VERSION }}
+          build-args: BASE_VERSION=latest
           tags: |
             tazzo/tazpod-ai:latest
             tazzo/tazpod-ai:${{ env.VERSION }}
