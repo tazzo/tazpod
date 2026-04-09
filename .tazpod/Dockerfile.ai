@@ -1,4 +1,5 @@
 # --- TAZPOD LAYER 4: AI ENHANCED ---
+# Rebuild marker: keep Docker pipeline aligned with CLI/image coupling.
 # This layer depends on tazzo/tazpod-k8s
 ARG BASE_VERSION=latest
 FROM tazzo/tazpod-k8s:${BASE_VERSION}
