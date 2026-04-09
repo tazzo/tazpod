@@ -72,13 +72,16 @@ aws_sso:
 
 ## 🎮 Usage Guide
 
-### 1. Smart Entry (No Arguments)
+### 1. Smart Entry (No Arguments or `enter`)
 
-Just run `tazpod` for the full automated bootstrap flow:
+Run either `tazpod` or `tazpod enter` for the guided smart bootstrap flow:
 1.  **Init**: Setup project if missing.
-2.  **Up**: Ensure container is running.
-3.  **Bootstrap**: If vault is missing, perform `login` (SSO) → `pull vault` (S3).
-4.  **Unlock**: Decrypt vault to RAM, setup bind mounts, and enter.
+2.  **Up**: Ensure the container is running or create it if needed.
+3.  **Vault check**:
+    - if vault is already unlocked, proceed directly
+    - if local vault exists, offer `unlock`
+    - if local vault is missing, offer `login` (SSO) → `pull vault` (S3) → `unlock`
+4.  **Enter**: open the shell after readiness is satisfied.
 
 ### 2. Vault & Sync Commands
 

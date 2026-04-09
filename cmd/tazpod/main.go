@@ -30,8 +30,8 @@ func main() {
 	logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 
 	if len(os.Args) < 2 {
-		help()
-		os.Exit(1)
+		smartEntry()
+		return
 	}
 
 	command := os.Args[1]

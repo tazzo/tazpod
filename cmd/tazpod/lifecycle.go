@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"os/exec"
@@ -8,6 +9,7 @@ import (
 	"strings"
 
 	"tazpod/internal/utils"
+	"tazpod/internal/vault"
 )
 
 func up() {
@@ -34,8 +36,15 @@ func enter() {
 	smartEntry()
 }
 
-func smartEntry() {
-	ensureContainerUp()
+func askYN(question string) bool {
+	fmt.Printf("%s [y/N]: ", question)
+	reader := bufio.NewReader(os.Stdin)
+	answer, _ := reader.ReadString('\n')
+	answer = strings.TrimSpace(strings.ToLower(answer))
+	return answer == "y" || answer == "yes"
+}
+
+func enterShell() {
 	fmt.Printf("🚀 Entering %s...\n", cfg.ContainerName)
 	cmd := exec.Command("docker", "exec", "-it", "-w", "/workspace", cfg.ContainerName, "/bin/bash")
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
@@ -46,6 +55,63 @@ func smartEntry() {
 		fmt.Println("\n🔒 Session ended. Securing identity...")
 	}
 	lock()
+}
+
+func execInContainer(command string) bool {
+	cmd := exec.Command("docker", "exec", "-it",
+		"-e", "AWS_CONFIG_FILE=/workspace/.tazpod/.aws/config",
+		"-w", "/workspace",
+		cfg.ContainerName, "bash", "-lc", command)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	return cmd.Run() == nil
+}
+
+func smartEntry() {
+	if _, err := os.Stat(".tazpod"); os.IsNotExist(err) {
+		if !askYN("📂 No TazPod project found here. Initialize it now?") {
+			return
+		}
+		initProject()
+		loadConfigs()
+	}
+
+	if cfg.ContainerName == "" {
+		logger.Error("No container_name defined in config. Run 'tazpod init' or check .tazpod/config.yaml")
+		return
+	}
+
+	ensureContainerUp()
+
+	cwd, _ := os.Getwd()
+	localVault := filepath.Join(cwd, ".tazpod", "vault", "vault.tar.aes")
+	containerUnlocked := exec.Command("docker", "exec", cfg.ContainerName, "mountpoint", "-q", vault.MountPath).Run() == nil
+
+	if containerUnlocked {
+		enterShell()
+		return
+	}
+
+	if utils.FileExist(localVault) {
+		if askYN("🔐 Local vault found. Unlock now?") {
+			execInContainer("tazpod unlock")
+		}
+		enterShell()
+		return
+	}
+
+	if askYN("🔑 No local vault found. Bootstrap now? (login + pull + unlock)") {
+		if !execInContainer("tazpod login") {
+			enterShell()
+			return
+		}
+		if !execInContainer("tazpod pull vault") {
+			enterShell()
+			return
+		}
+		execInContainer("tazpod unlock")
+	}
+
+	enterShell()
 }
 
 func ensureContainerUp() {

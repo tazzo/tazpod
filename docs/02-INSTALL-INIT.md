@@ -64,8 +64,16 @@ aws_sso:
 ### Starting the Pod (`tazpod up`)
 Starts the Docker container in the background. It dynamically mounts your current directory to `/workspace`.
 
-### Entering the Shell (`tazpod enter`)
-Enters the container interactively. 
+### Smart Entry (`tazpod` or `tazpod enter`)
+Both plain `tazpod` and `tazpod enter` use the guided smart-entry flow.
+The CLI can:
+1. initialize `.tazpod/` if missing,
+2. ensure the container exists and is running,
+3. detect whether the vault is already unlocked,
+4. offer `unlock` when a local vault exists,
+5. offer bootstrap through `login` -> `pull vault` -> `unlock` when the local vault is missing,
+6. then enter the container shell.
+
 *   **Auto-Cleanup**: When you type `exit`, TazPod automatically triggers a `lock` to unmount and secure the RAM enclave.
 
 ### Sinking the Pod (`tazpod down`)
