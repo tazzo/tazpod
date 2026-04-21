@@ -4,4 +4,5 @@ secrets/
 .tazpod/vault/vault.img
 .tazpod/vault/
 .tazpod/.gemini/
+.tazpod/.opencode/
 bin/

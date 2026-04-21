@@ -105,6 +105,33 @@ if [ -d /workspace/.tazpod ]; then
             rm -rf "$HOME/.aws" && ln -sf /workspace/.tazpod/.aws "$HOME/.aws"
         fi
     fi
+
+    # OpenCode: persist config, auth, sessions, and state in workspace
+    _opencode_root="/workspace/.tazpod/.opencode"
+    mkdir -p "$_opencode_root/config" "$_opencode_root/data" "$_opencode_root/state" "$_opencode_root/cache"
+
+    mkdir -p "$HOME/.config" "$HOME/.local/share" "$HOME/.local/state" "$HOME/.cache"
+    if [ ! -L "$HOME/.config/opencode" ] || [ "$(readlink "$HOME/.config/opencode")" != "$_opencode_root/config" ]; then
+        rm -rf "$HOME/.config/opencode" && ln -sf "$_opencode_root/config" "$HOME/.config/opencode"
+    fi
+    if [ ! -L "$HOME/.local/share/opencode" ] || [ "$(readlink "$HOME/.local/share/opencode")" != "$_opencode_root/data" ]; then
+        rm -rf "$HOME/.local/share/opencode" && ln -sf "$_opencode_root/data" "$HOME/.local/share/opencode"
+    fi
+    if [ ! -L "$HOME/.local/state/opencode" ] || [ "$(readlink "$HOME/.local/state/opencode")" != "$_opencode_root/state" ]; then
+        rm -rf "$HOME/.local/state/opencode" && ln -sf "$_opencode_root/state" "$HOME/.local/state/opencode"
+    fi
+    if [ ! -L "$HOME/.cache/opencode" ] || [ "$(readlink "$HOME/.cache/opencode")" != "$_opencode_root/cache" ]; then
+        rm -rf "$HOME/.cache/opencode" && ln -sf "$_opencode_root/cache" "$HOME/.cache/opencode"
+    fi
+    if [ ! -f "$_opencode_root/config/tui.json" ]; then
+        cat > "$_opencode_root/config/tui.json" <<'EOF'
+{
+  "$schema": "https://opencode.ai/tui.json",
+  "mouse": false
+}
+EOF
+    fi
+    unset _opencode_root
 fi
 
 # Enable Modern Prompts/Tools

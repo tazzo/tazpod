@@ -6,10 +6,10 @@ FROM tazzo/tazpod-k8s:${BASE_VERSION}
 
 USER root
 
-# Install Pi Coding Agent (Global npm)
-RUN npm install -g @mariozechner/pi-coding-agent && \
+# Install AI CLIs (Global npm)
+RUN npm install -g @mariozechner/pi-coding-agent @google/gemini-cli@latest opencode-ai && \
     ln -sf $(npm config get prefix)/bin/pi /usr/local/bin/pi && \
-    npm install -g @google/gemini-cli@latest
+    ln -sf $(npm config get prefix)/bin/opencode /usr/local/bin/opencode
 
 # Install oh-my-pi (Global installation for all users)
 RUN curl -fsSL https://raw.githubusercontent.com/can1357/oh-my-pi/main/scripts/install.sh | sh && \
@@ -26,4 +26,3 @@ RUN pi install npm:pi-extmgr && \
 RUN sed -i '/LAYER ACTIVE/d' ~/.bashrc && \
     echo 'export PATH="/home/tazpod/.nvm/versions/node/$(ls /home/tazpod/.nvm/versions/node | head -1)/bin:$PATH"' >> ~/.bashrc && \
     echo 'echo -e "\n\033[1;35m🧠 TAZPOD AI POWERED LAYER ACTIVE (v0.2.3: Pi, oh-my-pi)\033[0m\n"' >> ~/.bashrc
-
