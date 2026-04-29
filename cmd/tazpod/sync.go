@@ -55,6 +55,9 @@ func syncDaemon() {
 }
 
 func isVaultUnlocked() bool {
+	if !utils.IsMounted(vault.MountPath) {
+		return false
+	}
 	_, err := os.Stat(vault.PassCache)
 	return err == nil
 }
@@ -66,11 +69,28 @@ func pull() {
 	}
 
 	switch subarg {
-	case "vault", "":
+	case "", "vault":
 		pullVault()
+	case "image":
+		updateImage()
 	default:
 		logger.Error("Unknown pull target", "target", subarg)
 	}
+}
+
+func updateImage() {
+	if cfg.Image == "" {
+		logger.Error("No image configured", "config", ConfigPath)
+		return
+	}
+
+	fmt.Printf("🐳 Pulling image %s...\n", cfg.Image)
+	cmd := execCommand("docker", "pull", cfg.Image)
+	if err := cmd.Run(); err != nil {
+		logger.Error("Image pull failed", "image", cfg.Image, "error", err)
+		return
+	}
+	fmt.Println("✅ Image updated.")
 }
 
 func push() {

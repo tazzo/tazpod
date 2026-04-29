@@ -7,7 +7,7 @@ FROM tazzo/tazpod-k8s:${BASE_VERSION}
 USER root
 
 # Install AI CLIs (Global npm)
-RUN npm install -g @mariozechner/pi-coding-agent @google/gemini-cli@latest opencode-ai && \
+RUN npm install -g @mariozechner/pi-coding-agent@latest @google/gemini-cli@latest opencode-ai@latest && \
     ln -sf $(npm config get prefix)/bin/pi /usr/local/bin/pi && \
     ln -sf $(npm config get prefix)/bin/opencode /usr/local/bin/opencode
 

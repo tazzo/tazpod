@@ -129,6 +129,10 @@ func ensureContainerUp() {
 	cwd, _ := os.Getwd()
 	fmt.Printf("🛠️  Creating container %s...\n", cfg.ContainerName)
 	args := []string{"run", "-d", "--name", cfg.ContainerName,
+		"--cap-add", "SYS_ADMIN",
+		"--security-opt", "apparmor=unconfined",
+		"--dns", "1.1.1.1",
+		"--dns", "1.0.0.1",
 		"-v", cwd + ":/workspace",
 		"-v", filepath.Join(os.Getenv("HOME"), ".ssh") + ":/home/tazpod/.ssh:ro",
 		"-e", "HOST_CWD=" + cwd,

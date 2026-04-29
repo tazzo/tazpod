@@ -53,6 +53,8 @@ func main() {
 		save()
 	case "sync", "pull":
 		pull()
+	case "update":
+		updateImage()
 	case "push":
 		push()
 	case "login":

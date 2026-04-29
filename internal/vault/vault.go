@@ -38,13 +38,17 @@ func Unlock() {
 		fmt.Println("✅ Vault already unlocked (RAM).")
 		loadCachedPass()
 		SetupIdentity()
-		setupBindAuth()
+		if err := setupBindAuth(); err != nil {
+			fatal(err.Error())
+		}
 		return
 	}
 
 	fmt.Println("🔐 TAZPOD UNLOCK (RAM MODE)")
 
-	mountRAM()
+	if err := mountRAM(); err != nil {
+		fatal(err.Error())
+	}
 
 	if utils.FileExist(VaultFile) {
 		data, err := os.ReadFile(VaultFile)
@@ -80,7 +84,9 @@ func Unlock() {
 		slog.Warn("Could not cache passphrase", "error", err)
 	}
 	SetupIdentity()
-	setupBindAuth()
+	if err := setupBindAuth(); err != nil {
+		fatal(err.Error())
+	}
 }
 
 func SetupIdentity() {
@@ -147,22 +153,35 @@ func loadCachedPass() {
 	}
 }
 
-func setupBindAuth() {
+func setupBindAuth() error {
 	fmt.Println("🔗 Bridging AWS Enclave...")
-	os.MkdirAll(AwsVaultDir, 0700)
+	if err := os.MkdirAll(AwsVaultDir, 0700); err != nil {
+		return fmt.Errorf("cannot create AWS vault dir: %w", err)
+	}
 
-	bridge(AwsLocalHome, AwsVaultDir)
+	if err := bridge(AwsLocalHome, AwsVaultDir); err != nil {
+		return err
+	}
+	return nil
 }
 
-func bridge(local, vault string) {
+func bridge(local, vault string) error {
 	if utils.IsMounted(local) {
 		exec.Command("sudo", "umount", "-l", local).Run()
 	}
 	exec.Command("sudo", "rm", "-rf", local).Run()
-	os.MkdirAll(local, 0755)
+	if err := os.MkdirAll(local, 0755); err != nil {
+		return fmt.Errorf("cannot create bind target %s: %w", local, err)
+	}
 
 	fmt.Printf("  -> Binding %s\n", local)
-	exec.Command("sudo", "mount", "--bind", vault, local).Run()
+	if err := exec.Command("sudo", "mount", "--bind", vault, local).Run(); err != nil {
+		return fmt.Errorf("bind mount failed for %s -> %s: %w", vault, local, err)
+	}
+	if !utils.IsMounted(local) {
+		return fmt.Errorf("bind mount did not materialize at %s", local)
+	}
+	return nil
 }
 
 func Lock() {
@@ -174,11 +193,19 @@ func Lock() {
 	unmountRAM()
 }
 
-func mountRAM() {
-	os.MkdirAll(MountPath, 0755)
+func mountRAM() error {
+	if err := os.MkdirAll(MountPath, 0755); err != nil {
+		return fmt.Errorf("cannot create vault mount path: %w", err)
+	}
 	exec.Command("sudo", "umount", "-l", MountPath).Run()
 	cmd := exec.Command("sudo", "mount", "-t", "tmpfs", "-o", "size=64M,mode=0700,uid=1000,gid=1000", "tmpfs", MountPath)
-	cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("tmpfs mount failed at %s: %w", MountPath, err)
+	}
+	if !utils.IsMounted(MountPath) {
+		return fmt.Errorf("tmpfs mount did not materialize at %s", MountPath)
+	}
+	return nil
 }
 
 func unmountRAM() {
