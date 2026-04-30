@@ -132,7 +132,7 @@ func pushVault() {
 	fmt.Println("☁️  Uploading vault.tar.aes to S3...")
 	if err := pushVaultInternal(); err != nil {
 		logger.Error("Push failed", "error", err)
-		return
+		os.Exit(1)
 	}
 	fmt.Printf("✅ Vault pushed successfully in %v.\n", time.Since(start))
 }

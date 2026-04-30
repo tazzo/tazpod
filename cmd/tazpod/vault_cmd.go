@@ -73,22 +73,27 @@ func loadVaultAWSCredentials() {
 	if !utils.IsMounted(vault.MountPath) {
 		return
 	}
-	read := func(name string) string {
-		data, err := os.ReadFile(filepath.Join(vault.MountPath, name))
-		if err != nil {
-			return ""
+	read := func(names ...string) string {
+		for _, name := range names {
+			data, err := os.ReadFile(filepath.Join(vault.MountPath, name))
+			if err != nil {
+				continue
+			}
+			v := strings.TrimSpace(string(data))
+			for len(v) >= 2 && ((v[0] == '\'' && v[len(v)-1] == '\'') || (v[0] == '"' && v[len(v)-1] == '"')) {
+				v = v[1 : len(v)-1]
+			}
+			if v != "" {
+				return v
+			}
 		}
-		v := strings.TrimSpace(string(data))
-		for len(v) >= 2 && ((v[0] == '\'' && v[len(v)-1] == '\'') || (v[0] == '"' && v[len(v)-1] == '"')) {
-			v = v[1 : len(v)-1]
-		}
-		return v
+		return ""
 	}
 
-	if key := read("aws_access_key_id"); key != "" {
+	if key := read("aws_access_key_id", "aws-access-key-id"); key != "" {
 		os.Setenv("AWS_ACCESS_KEY_ID", key)
 	}
-	if secret := read("aws_secret_access_key"); secret != "" {
+	if secret := read("aws_secret_access_key", "aws-secret-access-key"); secret != "" {
 		os.Setenv("AWS_SECRET_ACCESS_KEY", secret)
 	}
 }

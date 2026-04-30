@@ -16,47 +16,45 @@ resolve_secret() {
 }
 
 mint_authkey() {
-  local oauth_id oauth_secret api_key tailnet token authkey
+  local api_key tailnet authkey
 
-  oauth_id="$(resolve_secret "${SECRETS_DIR}/tailscale-oauth-client-id" 2>/dev/null || true)"
-  oauth_secret="$(resolve_secret "${SECRETS_DIR}/tailscale-oauth-client-secret" 2>/dev/null || true)"
-
-  if [[ -n "$oauth_id" && -n "$oauth_secret" ]]; then
-    token="$(curl --silent --show-error --fail \
-      --request POST \
-      --header 'Content-Type: application/x-www-form-urlencoded' \
-      --data-urlencode "client_id=${oauth_id}" \
-      --data-urlencode "client_secret=${oauth_secret}" \
-      --data 'grant_type=client_credentials' \
-      --data 'scope=auth_keys' \
-      https://api.tailscale.com/api/v2/oauth/token | python3 -c 'import json,sys; print(json.load(sys.stdin).get("access_token", ""))')"
-
-    if [[ -n "$token" ]]; then
-      authkey="$(curl --silent --show-error --fail \
-        --request POST \
-        --header "Authorization: Bearer ${token}" \
-        --header 'Content-Type: application/json' \
-        --data '{"capabilities":{"devices":{"create":{"reusable":true,"ephemeral":true,"preauthorized":true,"tags":["tag:tazpod"]}}},"expirySeconds":3600,"description":"tazpod hostnet tun test"}' \
-        https://api.tailscale.com/api/v2/tailnet/-/keys | python3 -c 'import json,sys; print(json.load(sys.stdin).get("key", ""))')"
-      if [[ -n "$authkey" ]]; then
-        printf '%s' "$authkey"
-        return 0
-      fi
+  # API key path is simpler and always available via vault
+  api_key="$(resolve_secret "${SECRETS_DIR}/tailscale-api-key" 2>/dev/null || true)"
+  tailnet="$(resolve_secret "${SECRETS_DIR}/tailscale-tailnet" 2>/dev/null || true)"
+  if [[ -n "$api_key" && -n "$tailnet" ]]; then
+    authkey="$(curl --silent --show-error --fail \
+      --user "${api_key}:" \
+      --header 'Content-Type: application/json' \
+      --data '{"capabilities":{"devices":{"create":{"reusable":true,"ephemeral":true,"preauthorized":true,"tags":["tag:tazpod"]}}},"expirySeconds":3600,"description":"tazpod hostnet tun test"}' \
+      "https://api.tailscale.com/api/v2/tailnet/${tailnet}/keys" | python3 -c 'import json,sys; print(json.load(sys.stdin)["key"])')"
+    if [[ -n "$authkey" ]]; then
+      printf '%s' "$authkey"
+      return 0
     fi
   fi
 
-  api_key="$(resolve_secret "${SECRETS_DIR}/tailscale-api-key" 2>/dev/null || true)"
-  tailnet="$(resolve_secret "${SECRETS_DIR}/tailscale-tailnet" 2>/dev/null || true)"
-  [[ -n "$api_key" && -n "$tailnet" ]] || {
-    echo "Missing Tailscale auth material in ~/secrets" >&2
-    return 1
-  }
+  echo "Warning: Tailscale API key auth failed, trying OAuth fallback..." >&2
+  local oauth_id oauth_secret token
+  oauth_id="$(resolve_secret "${SECRETS_DIR}/tailscale-oauth-client-id" 2>/dev/null || true)"
+  oauth_secret="$(resolve_secret "${SECRETS_DIR}/tailscale-oauth-client-secret" 2>/dev/null || true)"
+  [[ -n "$oauth_id" && -n "$oauth_secret" ]] || { echo "No Tailscale auth material available." >&2; return 1; }
+
+  token="$(curl --silent --show-error --fail \
+    --request POST \
+    --header 'Content-Type: application/x-www-form-urlencoded' \
+    --data-urlencode "client_id=${oauth_id}" \
+    --data-urlencode "client_secret=${oauth_secret}" \
+    --data 'grant_type=client_credentials' \
+    --data 'scope=auth_keys' \
+    https://api.tailscale.com/api/v2/oauth/token 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("access_token", ""))')"
+  [[ -n "$token" ]] || { echo "OAuth token failed." >&2; return 1; }
 
   authkey="$(curl --silent --show-error --fail \
-    --user "${api_key}:" \
+    --request POST \
+    --header "Authorization: Bearer ${token}" \
     --header 'Content-Type: application/json' \
     --data '{"capabilities":{"devices":{"create":{"reusable":true,"ephemeral":true,"preauthorized":true,"tags":["tag:tazpod"]}}},"expirySeconds":3600,"description":"tazpod hostnet tun test"}' \
-    "https://api.tailscale.com/api/v2/tailnet/${tailnet}/keys" | python3 -c 'import json,sys; print(json.load(sys.stdin)["key"])')"
+    https://api.tailscale.com/api/v2/tailnet/-/keys | python3 -c 'import json,sys; print(json.load(sys.stdin).get("key", ""))')"
   printf '%s' "$authkey"
 }
 
