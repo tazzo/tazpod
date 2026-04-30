@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+HOSTNAME_ARG="${1:-$(hostname)}"
+STATE_DIR="/var/lib/tailscale"
+SOCKET_DIR="/var/run/tailscale"
+SOCKET_PATH="${SOCKET_DIR}/tailscaled.sock"
+STATE_PATH="${STATE_DIR}/tailscaled.state"
+LOG_PATH="/tmp/tailscaled-hostnet.log"
+SECRETS_DIR="${HOME}/secrets"
+
+resolve_secret() {
+  local path="$1"
+  [[ -f "$path" ]] || return 1
+  tr -d "'\"\t \n" < "$path"
+}
+
+mint_authkey() {
+  local oauth_id oauth_secret api_key tailnet token authkey
+
+  oauth_id="$(resolve_secret "${SECRETS_DIR}/tailscale-oauth-client-id" 2>/dev/null || true)"
+  oauth_secret="$(resolve_secret "${SECRETS_DIR}/tailscale-oauth-client-secret" 2>/dev/null || true)"
+
+  if [[ -n "$oauth_id" && -n "$oauth_secret" ]]; then
+    token="$(curl --silent --show-error --fail \
+      --request POST \
+      --header 'Content-Type: application/x-www-form-urlencoded' \
+      --data-urlencode "client_id=${oauth_id}" \
+      --data-urlencode "client_secret=${oauth_secret}" \
+      --data 'grant_type=client_credentials' \
+      --data 'scope=auth_keys' \
+      https://api.tailscale.com/api/v2/oauth/token | python3 -c 'import json,sys; print(json.load(sys.stdin).get("access_token", ""))')"
+
+    if [[ -n "$token" ]]; then
+      authkey="$(curl --silent --show-error --fail \
+        --request POST \
+        --header "Authorization: Bearer ${token}" \
+        --header 'Content-Type: application/json' \
+        --data '{"capabilities":{"devices":{"create":{"reusable":true,"ephemeral":true,"preauthorized":true,"tags":["tag:tazpod"]}}},"expirySeconds":3600,"description":"tazpod hostnet tun test"}' \
+        https://api.tailscale.com/api/v2/tailnet/-/keys | python3 -c 'import json,sys; print(json.load(sys.stdin).get("key", ""))')"
+      if [[ -n "$authkey" ]]; then
+        printf '%s' "$authkey"
+        return 0
+      fi
+    fi
+  fi
+
+  api_key="$(resolve_secret "${SECRETS_DIR}/tailscale-api-key" 2>/dev/null || true)"
+  tailnet="$(resolve_secret "${SECRETS_DIR}/tailscale-tailnet" 2>/dev/null || true)"
+  [[ -n "$api_key" && -n "$tailnet" ]] || {
+    echo "Missing Tailscale auth material in ~/secrets" >&2
+    return 1
+  }
+
+  authkey="$(curl --silent --show-error --fail \
+    --user "${api_key}:" \
+    --header 'Content-Type: application/json' \
+    --data '{"capabilities":{"devices":{"create":{"reusable":true,"ephemeral":true,"preauthorized":true,"tags":["tag:tazpod"]}}},"expirySeconds":3600,"description":"tazpod hostnet tun test"}' \
+    "https://api.tailscale.com/api/v2/tailnet/${tailnet}/keys" | python3 -c 'import json,sys; print(json.load(sys.stdin)["key"])')"
+  printf '%s' "$authkey"
+}
+
+echo "tailscaled log: ${LOG_PATH}"
+sudo mkdir -p "$STATE_DIR" "$SOCKET_DIR"
+
+if ! pgrep -x tailscaled >/dev/null 2>&1; then
+  sudo tailscaled --state="$STATE_PATH" --socket="$SOCKET_PATH" >"$LOG_PATH" 2>&1 &
+  sleep 2
+fi
+
+AUTHKEY="$(mint_authkey)"
+sudo tailscale --socket="$SOCKET_PATH" up --reset --authkey="$AUTHKEY" --hostname="$HOSTNAME_ARG" --ssh --accept-routes --accept-dns=false
+
+echo "tailscale is up"
+sudo tailscale --socket="$SOCKET_PATH" status

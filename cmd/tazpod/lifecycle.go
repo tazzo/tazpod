@@ -138,6 +138,22 @@ func ensureContainerUp() {
 		"-e", "HOST_CWD=" + cwd,
 		cfg.Image, "sleep", "infinity"}
 
+	if os.Getenv("TAZPOD_CONTAINER_MODE") == "hostnet-tun" {
+		fmt.Println("🧪 Experimental runtime: host network + /dev/net/tun + NET_ADMIN")
+		args = []string{"run", "-d", "--name", cfg.ContainerName,
+			"--network", "host",
+			"--cap-add", "SYS_ADMIN",
+			"--cap-add", "NET_ADMIN",
+			"--device", "/dev/net/tun",
+			"--security-opt", "apparmor=unconfined",
+			"--dns", "1.1.1.1",
+			"--dns", "1.0.0.1",
+			"-v", cwd + ":/workspace",
+			"-v", filepath.Join(os.Getenv("HOME"), ".ssh") + ":/home/tazpod/.ssh:ro",
+			"-e", "HOST_CWD=" + cwd,
+			cfg.Image, "sleep", "infinity"}
+	}
+
 	cmd := exec.Command("docker", args...)
 	if err := cmd.Run(); err != nil {
 		logger.Error("Failed to create container", "error", err)
