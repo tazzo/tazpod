@@ -84,21 +84,25 @@ if mountpoint -q /home/tazpod/secrets; then
     setup_oci_config
 fi
 
-# --- VAULT AUTO-LOCK ON LAST SHELL EXIT ---
-vault_maybe_lock() {
-    local me=$$
+# --- VAULT AUTO-LOCK ON LAST SHELL EXIT (Session ID) ---
+_vault_maybe_lock() {
+    local me=$$ my_sid
+    my_sid=$(ps -o sid= -p "$me" 2>/dev/null | tr -d ' ')
     for p in $(pgrep -x bash 2>/dev/null); do
         [ "$p" = "$me" ] && continue
         local ppid
         ppid=$(awk '/^PPid:/{print $2}' /proc/$p/status 2>/dev/null)
         [ "$ppid" = "0" ] && continue
+        local sid
+        sid=$(ps -o sid= -p "$p" 2>/dev/null | tr -d ' ')
+        [ "$sid" = "$my_sid" ] && continue
         local tty
         tty=$(readlink /proc/$p/fd/0 2>/dev/null)
         case "$tty" in /dev/pts/*) return ;; esac
     done
     command tazpod lock
 }
-trap 'vault_maybe_lock' EXIT
+trap '_vault_maybe_lock' EXIT
 
 # --- AI TOOL CONFIG SYMLINKS (persistent, no unlock required) ---
 if [ -d /workspace/.tazpod ]; then
