@@ -84,6 +84,16 @@ if mountpoint -q /home/tazpod/secrets; then
     setup_oci_config
 fi
 
+# --- VAULT AUTO-LOCK ON LAST SHELL EXIT ---
+vault_maybe_lock() {
+    local others
+    others=$(pgrep -x bash 2>/dev/null | grep -cv "^$$$" || true)
+    if [ "${others:-1}" -le 0 ] 2>/dev/null; then
+        command tazpod lock
+    fi
+}
+trap 'vault_maybe_lock' EXIT
+
 # --- AI TOOL CONFIG SYMLINKS (persistent, no unlock required) ---
 if [ -d /workspace/.tazpod ]; then
     for _tool in .pi .omp .gemini .claude; do
