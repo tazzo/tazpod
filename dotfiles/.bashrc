@@ -91,7 +91,7 @@ vault_maybe_lock() {
         [ "$p" = "$me" ] && continue
         local ppid
         ppid=$(awk '/^PPid:/{print $2}' /proc/$p/status 2>/dev/null)
-        [ "$ppid" = "0" ] || [ "$ppid" = "1" ] && continue
+        [ "$ppid" = "0" ] && continue
         local tty
         tty=$(readlink /proc/$p/fd/0 2>/dev/null)
         case "$tty" in /dev/pts/*) return ;; esac
