@@ -54,7 +54,6 @@ func enterShell() {
 	} else {
 		fmt.Println("\n🔒 Session ended. Securing identity...")
 	}
-	execInContainer("tazpod lock")
 }
 
 func execInContainer(command string) bool {
