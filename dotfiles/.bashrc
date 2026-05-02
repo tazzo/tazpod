@@ -86,11 +86,17 @@ fi
 
 # --- VAULT AUTO-LOCK ON LAST SHELL EXIT ---
 vault_maybe_lock() {
-    local others
-    others=$(pgrep -x bash 2>/dev/null | grep -cv "^$$$" || true)
-    if [ "${others:-1}" -le 0 ] 2>/dev/null; then
-        command tazpod lock
-    fi
+    local me=$$
+    for p in $(pgrep -x bash 2>/dev/null); do
+        [ "$p" = "$me" ] && continue
+        local ppid
+        ppid=$(awk '/^PPid:/{print $2}' /proc/$p/status 2>/dev/null)
+        [ "$ppid" = "0" ] || [ "$ppid" = "1" ] && continue
+        local tty
+        tty=$(readlink /proc/$p/fd/0 2>/dev/null)
+        case "$tty" in /dev/pts/*) return ;; esac
+    done
+    command tazpod lock
 }
 trap 'vault_maybe_lock' EXIT
 
