@@ -84,23 +84,31 @@ if mountpoint -q /home/tazpod/secrets; then
     setup_oci_config
 fi
 
-# --- VAULT AUTO-LOCK ON LAST SHELL EXIT (Session ID) ---
-_vault_maybe_lock() {
-    local me=$$ my_sid
-    my_sid=$(ps -o sid= -p "$me" 2>/dev/null | tr -d ' ')
-    for p in $(pgrep -x bash 2>/dev/null); do
-        [ "$p" = "$me" ] && continue
-        local ppid
-        ppid=$(awk '/^PPid:/{print $2}' /proc/$p/status 2>/dev/null)
-        [ "$ppid" = "0" ] && continue
-        local sid
-        sid=$(ps -o sid= -p "$p" 2>/dev/null | tr -d ' ')
-        [ "$sid" = "$my_sid" ] && continue
-        local tty
-        tty=$(readlink /proc/$p/fd/0 2>/dev/null)
-        case "$tty" in /dev/pts/*) return ;; esac
+# --- VAULT AUTO-LOCK ON LAST SHELL EXIT (Marker Files) ---
+_TAZPOD_SHELL_MARKER_DIR=/tmp/.tazpod-shells
+_TAZPOD_SHELL_MARKER="$_TAZPOD_SHELL_MARKER_DIR/$$"
+mkdir -p "$_TAZPOD_SHELL_MARKER_DIR" 2>/dev/null
+
+_clean_stale_tazpod_markers() {
+    local f pid
+    for f in "$_TAZPOD_SHELL_MARKER_DIR"/*; do
+        [ -e "$f" ] || continue
+        pid="${f##*/}"
+        [ -n "$pid" ] || { rm -f "$f"; continue; }
+        [ -d "/proc/$pid" ] || { rm -f "$f"; continue; }
+        [ "$(cat "/proc/$pid/comm" 2>/dev/null)" = "bash" ] || { rm -f "$f"; continue; }
     done
-    command tazpod lock
+}
+
+_clean_stale_tazpod_markers
+printf 'tty=%s sid=%s\n' "$(tty 2>/dev/null || printf 'none')" "$(ps -o sid= -p $$ 2>/dev/null | tr -d ' ')" > "$_TAZPOD_SHELL_MARKER"
+
+_vault_maybe_lock() {
+    rm -f "$_TAZPOD_SHELL_MARKER"
+    _clean_stale_tazpod_markers
+    if ! find "$_TAZPOD_SHELL_MARKER_DIR" -mindepth 1 -maxdepth 1 -type f | read -r _; then
+        command tazpod lock
+    fi
 }
 trap '_vault_maybe_lock' EXIT
 
