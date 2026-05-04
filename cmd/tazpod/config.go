@@ -27,6 +27,8 @@ type Features struct {
 
 type AwsSsoConfig struct {
 	Profile string `yaml:"profile"`
+	Bucket  string `yaml:"bucket"`
+	Region  string `yaml:"region"`
 }
 
 type ProviderConfig struct {

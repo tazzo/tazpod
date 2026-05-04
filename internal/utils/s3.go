@@ -22,16 +22,19 @@ type S3Client struct {
 	bucket string
 }
 
-// NewS3Client initializes a new S3 client with optional SSO profile support
-func NewS3Client(bucket, profile string) (*S3Client, error) {
+// NewS3Client initializes a new S3 client with optional SSO profile support.
+// bucket and region may be empty to use the built-in defaults.
+func NewS3Client(bucket, region, profile string) (*S3Client, error) {
 	if bucket == "" {
 		bucket = DefaultBucket
 	}
+	if region == "" {
+		region = DefaultRegion
+	}
 
 	opts := []func(*config.LoadOptions) error{
-		config.WithRegion(DefaultRegion),
+		config.WithRegion(region),
 	}
-	// Skip profile if static credentials are already in env — avoids SSO endpoint timeout.
 	if profile != "" && os.Getenv("AWS_ACCESS_KEY_ID") == "" {
 		opts = append(opts, config.WithSharedConfigProfile(profile))
 	}

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"tazpod/internal/utils"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -30,6 +32,11 @@ func initProject() {
 		GhostMode:     true,
 		Features: Features{
 			Debug: false,
+		},
+		AwsSso: AwsSsoConfig{
+			Profile: "tazlab",
+			Bucket:  utils.DefaultBucket,
+			Region:  utils.DefaultRegion,
 		},
 		Providers: make(map[string]ProviderConfig),
 	}
@@ -56,5 +63,26 @@ func promptInitConfig(c *Config) {
 	dbHost = strings.TrimSpace(dbHost)
 	if dbHost != "" {
 		c.Providers["aws"] = ProviderConfig{DBHost: dbHost}
+	}
+
+	fmt.Printf("☁️  S3 Bucket [%s]: ", c.AwsSso.Bucket)
+	input, _ := reader.ReadString('\n')
+	input = strings.TrimSpace(input)
+	if input != "" {
+		c.AwsSso.Bucket = input
+	}
+
+	fmt.Printf("🌍  S3 Region [%s]: ", c.AwsSso.Region)
+	input, _ = reader.ReadString('\n')
+	input = strings.TrimSpace(input)
+	if input != "" {
+		c.AwsSso.Region = input
+	}
+
+	fmt.Printf("🔑 AWS SSO Profile [%s]: ", c.AwsSso.Profile)
+	input, _ = reader.ReadString('\n')
+	input = strings.TrimSpace(input)
+	if input != "" {
+		c.AwsSso.Profile = input
 	}
 }

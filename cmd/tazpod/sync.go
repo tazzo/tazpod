@@ -112,7 +112,7 @@ func pullVault() {
 	cwd, _ := os.Getwd()
 	vaultFile := filepath.Join(cwd, ".tazpod", "vault", "vault.tar.aes")
 
-	s3, err := utils.NewS3Client("", cfg.AwsSso.Profile)
+	s3, err := utils.NewS3Client(cfg.AwsSso.Bucket, cfg.AwsSso.Region, cfg.AwsSso.Profile)
 	if err != nil {
 		logger.Error("S3 Client error", "error", err)
 		os.Exit(1)
@@ -146,7 +146,7 @@ func pushVaultInternal() error {
 		return fmt.Errorf("no vault file found at %s", vaultFile)
 	}
 
-	s3, err := utils.NewS3Client("", cfg.AwsSso.Profile)
+	s3, err := utils.NewS3Client(cfg.AwsSso.Bucket, cfg.AwsSso.Region, cfg.AwsSso.Profile)
 	if err != nil {
 		return fmt.Errorf("S3 Client error: %w", err)
 	}

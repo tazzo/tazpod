@@ -148,7 +148,7 @@ func ensureContainerUp() {
 }
 
 func setupStorage() {
-	s3, err := utils.NewS3Client("", cfg.AwsSso.Profile)
+	s3, err := utils.NewS3Client(cfg.AwsSso.Bucket, cfg.AwsSso.Region, cfg.AwsSso.Profile)
 	if err != nil {
 		logger.Error("S3 Client error", "error", err)
 		return
