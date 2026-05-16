@@ -126,6 +126,14 @@ func ensureContainerUp() {
 	}
 
 	cwd, _ := os.Getwd()
+	fmt.Printf("🐳 Pulling image %s...\n", cfg.Image)
+	pullCmd := exec.Command("docker", "pull", cfg.Image)
+	pullCmd.Stdout = os.Stdout
+	pullCmd.Stderr = os.Stderr
+	if err := pullCmd.Run(); err != nil {
+		logger.Error("Failed to pull image", "image", cfg.Image, "error", err)
+		os.Exit(1)
+	}
 	fmt.Printf("🛠️  Creating container %s...\n", cfg.ContainerName)
 	args := []string{"run", "-d", "--name", cfg.ContainerName,
 		"--network", "host",
