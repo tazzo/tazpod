@@ -128,6 +128,7 @@ func ensureContainerUp() {
 	cwd, _ := os.Getwd()
 	fmt.Printf("🐳 Pulling image %s...\n", cfg.Image)
 	pullCmd := exec.Command("docker", "pull", cfg.Image)
+	pullCmd.Stdin = os.Stdin
 	pullCmd.Stdout = os.Stdout
 	pullCmd.Stderr = os.Stderr
 	if err := pullCmd.Run(); err != nil {
