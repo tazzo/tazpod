@@ -44,6 +44,19 @@ func save() {
 }
 
 func login() {
+	if !awsProfileExists(cfg.AwsSso.Profile) {
+		fmt.Printf("🔧 AWS profile '%s' not found in ~/.aws/config.\n", cfg.AwsSso.Profile)
+		if askYN("Run 'aws configure sso' to set it up now?") {
+			cmd := execCommand("aws", "configure", "sso", "--profile", cfg.AwsSso.Profile)
+			if err := cmd.Run(); err != nil {
+				logger.Error("AWS SSO configuration failed", "error", err)
+				return
+			}
+		} else {
+			return
+		}
+	}
+
 	fmt.Println("🔑 Authenticating with AWS SSO...")
 	cmd := execCommand("aws", "sso", "login", "--profile", cfg.AwsSso.Profile)
 	if err := cmd.Run(); err != nil {
@@ -51,6 +64,18 @@ func login() {
 	} else {
 		fmt.Println("✅ Logged in successfully.")
 	}
+}
+
+func awsProfileExists(profile string) bool {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return false
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".aws", "config"))
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(data), "["+"profile "+profile+"]")
 }
 
 func loadConfigs() {
