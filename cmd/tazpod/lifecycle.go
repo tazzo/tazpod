@@ -90,6 +90,9 @@ func smartEntry() {
 		return
 	}
 
+	exec.Command("docker", "exec", cfg.ContainerName, "sh", "-c",
+		"mkdir -p /workspace/.tazpod/.aws && rm -rf /home/tazpod/.aws 2>/dev/null; ln -sfn /workspace/.tazpod/.aws /home/tazpod/.aws").Run()
+
 	if utils.FileExist(localVault) {
 		if askYN("🔐 Local vault found. Unlock now?") {
 			execInContainer("tazpod unlock")
@@ -99,11 +102,10 @@ func smartEntry() {
 	}
 
 	if askYN("🔑 No local vault found. Bootstrap now? (login + pull + unlock)") {
-		home, _ := os.UserHomeDir()
-		awsConfigPath := filepath.Join(home, ".aws", "config")
+		awsConfigPath := filepath.Join(cwd, ".tazpod", ".aws", "config")
 		profilePattern := "[" + "profile " + cfg.AwsSso.Profile + "]"
 		if configData, err := os.ReadFile(awsConfigPath); err != nil || !strings.Contains(string(configData), profilePattern) {
-			fmt.Printf("🔧 AWS profile '%s' not found in ~/.aws/config.\n", cfg.AwsSso.Profile)
+			fmt.Printf("🔧 AWS profile '%s' not found.\n", cfg.AwsSso.Profile)
 			if askYN("Run 'aws configure sso' in the container to set it up now?") {
 				execInContainer("aws configure sso --profile " + cfg.AwsSso.Profile)
 			}
@@ -135,8 +137,6 @@ func ensureContainerUp() {
 	}
 
 	cwd, _ := os.Getwd()
-	awsDir := filepath.Join(os.Getenv("HOME"), ".aws")
-	os.MkdirAll(awsDir, 0755)
 	fmt.Printf("🛠️  Creating container %s (might pull image first)...\n", cfg.ContainerName)
 	args := []string{"run", "-d", "--name", cfg.ContainerName,
 		"--network", "host",
@@ -148,7 +148,6 @@ func ensureContainerUp() {
 		"--dns", "1.0.0.1",
 		"-v", cwd + ":/workspace",
 		"-v", filepath.Join(os.Getenv("HOME"), ".ssh") + ":/home/tazpod/.ssh:ro",
-		"-v", awsDir + ":/home/tazpod/.aws",
 		"-e", "HOST_CWD=" + cwd,
 		cfg.Image, "sleep", "infinity"}
 
