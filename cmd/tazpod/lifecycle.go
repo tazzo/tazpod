@@ -126,16 +126,7 @@ func ensureContainerUp() {
 	}
 
 	cwd, _ := os.Getwd()
-	fmt.Printf("🐳 Pulling image %s...\n", cfg.Image)
-	pullCmd := exec.Command("docker", "pull", cfg.Image)
-	pullCmd.Stdin = os.Stdin
-	pullCmd.Stdout = os.Stdout
-	pullCmd.Stderr = os.Stderr
-	if err := pullCmd.Run(); err != nil {
-		logger.Error("Failed to pull image", "image", cfg.Image, "error", err)
-		os.Exit(1)
-	}
-	fmt.Printf("🛠️  Creating container %s...\n", cfg.ContainerName)
+	fmt.Printf("🛠️  Creating container %s (might pull image first)...\n", cfg.ContainerName)
 	args := []string{"run", "-d", "--name", cfg.ContainerName,
 		"--network", "host",
 		"--cap-add", "SYS_ADMIN",
@@ -150,6 +141,9 @@ func ensureContainerUp() {
 		cfg.Image, "sleep", "infinity"}
 
 	cmd := exec.Command("docker", args...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		logger.Error("Failed to create container", "error", err)
 		os.Exit(1)
