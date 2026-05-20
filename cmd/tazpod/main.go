@@ -9,6 +9,10 @@ import (
 var logger *slog.Logger
 
 func main() {
+	loadConfigs()
+	initLogger()
+
+	// Sovrascrive level da config o --debug per retrocompatibilità
 	var debug bool
 	for _, arg := range os.Args {
 		if arg == "--debug" {
@@ -16,18 +20,12 @@ func main() {
 			break
 		}
 	}
-
-	loadConfigs()
 	if cfg.Features.Debug {
 		debug = true
 	}
-
-	level := slog.LevelInfo
 	if debug {
-		level = slog.LevelDebug
+		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	}
-
-	logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 
 	if len(os.Args) < 2 {
 		smartEntry()
@@ -59,6 +57,8 @@ func main() {
 		push()
 	case "login":
 		login()
+	case "list":
+		list()
 	case "vpn":
 		vpnCommand()
 	case "setup-storage":

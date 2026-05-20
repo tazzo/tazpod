@@ -11,6 +11,10 @@ var (
 	Version    = "dev" // Overridden at build time via ldflags
 )
 
+type VaultConfig struct {
+	Retention int `yaml:"retention"`
+}
+
 type Config struct {
 	Image         string                    `yaml:"image"`
 	ContainerName string                    `yaml:"container_name"`
@@ -18,6 +22,7 @@ type Config struct {
 	GhostMode     bool                      `yaml:"ghost_mode"`
 	Features      Features                  `yaml:"features"`
 	AwsSso        AwsSsoConfig              `yaml:"aws_sso"`
+	Vault         VaultConfig               `yaml:"vault"`
 	Providers     map[string]ProviderConfig `yaml:"providers"`
 }
 

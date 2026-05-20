@@ -253,6 +253,11 @@ OP_EOF
     fi
 fi
 
+# Auto-start sync daemon (solo se non già in esecuzione)
+if ! pgrep -x tazpod > /dev/null 2>&1; then
+    { tazpod __internal_sync_daemon &> /tmp/tazpod-sync.log & }
+fi
+
 # Enable Modern Prompts/Tools
 [ -x "$(command -v starship)" ] && eval "$(starship init bash)"
 [ -x "$(command -v zoxide)" ] && eval "$(zoxide init bash)"

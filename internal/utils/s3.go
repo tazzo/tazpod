@@ -4,12 +4,26 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
+
+// ObjectInfo contains metadata for an S3 object.
+type ObjectInfo struct {
+	Key          string
+	LastModified time.Time
+	Size         int64
+}
+
+func derefInt64(v *int64) int64 {
+	if v == nil { return 0 }
+	return *v
+}
 
 const (
 	DefaultBucket = "tazlab-storage"
@@ -92,6 +106,89 @@ func (s *S3Client) DownloadFile(key, filePath string) error {
 		return fmt.Errorf("unable to save file %v, %v", filePath, err)
 	}
 
+	return nil
+}
+
+// HeadObject retrieves metadata for an object without downloading it.
+func (s *S3Client) HeadObject(key string) (map[string]string, error) {
+	result, err := s.client.HeadObject(context.TODO(), &s3.HeadObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("head object %s: %w", key, err)
+	}
+	return result.Metadata, nil
+}
+
+// UploadFileWithMetadata uploads a file with custom metadata.
+func (s *S3Client) UploadFileWithMetadata(key, filePath string, metadata map[string]string) error {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf("unable to open file %v, %v", filePath, err)
+	}
+	defer file.Close()
+
+	_, err = s.client.PutObject(context.TODO(), &s3.PutObjectInput{
+		Bucket:   aws.String(s.bucket),
+		Key:      aws.String(key),
+		Body:     file,
+		Metadata: metadata,
+	})
+	if err != nil {
+		return fmt.Errorf("unable to upload file %v to bucket %v, %v", filePath, s.bucket, err)
+	}
+	return nil
+}
+
+// ListObjects lists objects under the given prefix, handling pagination.
+func (s *S3Client) ListObjects(prefix string) ([]ObjectInfo, error) {
+	var objects []ObjectInfo
+	paginator := s3.NewListObjectsV2Paginator(s.client, &s3.ListObjectsV2Input{
+		Bucket: aws.String(s.bucket),
+		Prefix: aws.String(prefix),
+	})
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(context.TODO())
+		if err != nil {
+			return nil, fmt.Errorf("list objects %s: %w", prefix, err)
+		}
+		for _, obj := range page.Contents {
+			if obj.Key == nil || obj.LastModified == nil {
+				continue
+			}
+			objects = append(objects, ObjectInfo{
+				Key:          *obj.Key,
+				LastModified: *obj.LastModified,
+				Size:         derefInt64(obj.Size),
+			})
+		}
+	}
+	sort.Slice(objects, func(i, j int) bool {
+		return objects[i].LastModified.Before(objects[j].LastModified)
+	})
+	return objects, nil
+}
+
+// DeleteObjects deletes multiple objects from the bucket.
+func (s *S3Client) DeleteObjects(keys []string) error {
+	if len(keys) == 0 {
+		return nil
+	}
+	identifiers := make([]types.ObjectIdentifier, len(keys))
+	for i, k := range keys {
+		identifiers[i] = types.ObjectIdentifier{Key: aws.String(k)}
+	}
+	_, err := s.client.DeleteObjects(context.TODO(), &s3.DeleteObjectsInput{
+		Bucket: aws.String(s.bucket),
+		Delete: &types.Delete{
+			Objects: identifiers,
+			Quiet:   aws.Bool(true),
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("delete objects: %w", err)
+	}
 	return nil
 }
 

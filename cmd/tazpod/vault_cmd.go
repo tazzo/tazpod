@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,7 +40,9 @@ func lock() {
 }
 
 func save() {
-	vault.Save("")
+	if _, err := vault.Save(""); err != nil {
+		slog.Warn("Save completed with errors", "error", err)
+	}
 	fmt.Println("💾 Vault content saved and encrypted to disk.")
 }
 
@@ -90,6 +93,22 @@ func loadConfigs() {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		logger.Error("Invalid config", "path", ConfigPath, "error", err)
 		os.Exit(1)
+	}
+	if cfg.Vault.Retention <= 0 {
+		cfg.Vault.Retention = 50
+	}
+}
+
+func list() {
+	subarg := ""
+	if len(os.Args) > 2 {
+		subarg = os.Args[2]
+	}
+	switch subarg {
+	case "vault-history":
+		listVaultHistory()
+	default:
+		fmt.Println("Usage: tazpod list vault-history")
 	}
 }
 

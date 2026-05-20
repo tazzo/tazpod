@@ -4,6 +4,8 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log/slog"
@@ -20,9 +22,10 @@ import (
 )
 
 const (
-	VaultDir  = "/workspace/.tazpod/vault"
-	VaultFile = VaultDir + "/vault.tar.aes"
-	MountPath = "/home/tazpod/secrets"
+	VaultDir         = "/workspace/.tazpod/vault"
+	VaultFile        = VaultDir + "/vault.tar.aes"
+	ContentHashFile  = VaultDir + "/last-content.hash"
+	MountPath        = "/home/tazpod/secrets"
 
 	// AWS Enclave paths
 	AwsLocalHome = "/home/tazpod/.aws"
@@ -98,10 +101,10 @@ func SetupIdentity() {
 	exec.Command("sudo", "chown", "-R", "tazpod:tazpod", "/workspace/.tazpod").Run()
 }
 
-func Save(passphrase string) {
+func Save(passphrase string) (string, error) {
 	if !utils.IsMounted(MountPath) {
 		fmt.Println("⚠️  Vault is not mounted.")
-		return
+		return "", fmt.Errorf("vault not mounted")
 	}
 
 	loadCachedPass()
@@ -124,24 +127,33 @@ func Save(passphrase string) {
 	rawBytes, err := TarDir(MountPath)
 	if err != nil {
 		slog.Error("Pack error", "error", err)
-		return
+		return "", err
+	}
+
+	// Content hash del plaintext (prima della crittografia)
+	h := sha256.Sum256(rawBytes)
+	contentHash := hex.EncodeToString(h[:])
+
+	if err := os.WriteFile(ContentHashFile, []byte(contentHash), 0644); err != nil {
+		slog.Warn("Cannot write content hash", "error", err)
 	}
 
 	encrypted, err := crypto.Encrypt(rawBytes, passphrase)
 	if err != nil {
 		slog.Error("Encrypt error", "error", err)
-		return
+		return contentHash, err
 	}
 
 	if err := os.MkdirAll(VaultDir, 0755); err != nil {
 		slog.Error("Cannot create vault dir", "error", err)
-		return
+		return contentHash, err
 	}
 	if err := os.WriteFile(VaultFile, encrypted, 0644); err != nil {
 		slog.Error("Cannot write vault file", "error", err)
-		return
+		return contentHash, err
 	}
 	fmt.Println("✅ Saved.")
+	return contentHash, nil
 }
 
 func loadCachedPass() {
