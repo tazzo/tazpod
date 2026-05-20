@@ -134,6 +134,11 @@ func Save(passphrase string) (string, error) {
 	h := sha256.Sum256(rawBytes)
 	contentHash := hex.EncodeToString(h[:])
 
+	if err := os.MkdirAll(VaultDir, 0755); err != nil {
+		slog.Error("Cannot create vault dir", "error", err)
+		return contentHash, err
+	}
+
 	if err := os.WriteFile(ContentHashFile, []byte(contentHash), 0644); err != nil {
 		slog.Warn("Cannot write content hash", "error", err)
 	}
@@ -144,10 +149,6 @@ func Save(passphrase string) (string, error) {
 		return contentHash, err
 	}
 
-	if err := os.MkdirAll(VaultDir, 0755); err != nil {
-		slog.Error("Cannot create vault dir", "error", err)
-		return contentHash, err
-	}
 	if err := os.WriteFile(VaultFile, encrypted, 0644); err != nil {
 		slog.Error("Cannot write vault file", "error", err)
 		return contentHash, err
