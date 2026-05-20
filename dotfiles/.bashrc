@@ -210,6 +210,47 @@ OP_EOF
     fi
 
     unset _opencode_root
+
+    # --- SECURE KEYRING FOR ANTIGRAVITY / AGY ---
+    _keyring_root="/workspace/.tazpod/keyrings"
+    mkdir -p "$_keyring_root"
+    mkdir -p "$HOME/.local/share"
+    if [ ! -L "$HOME/.local/share/keyrings" ] || [ "$(readlink "$HOME/.local/share/keyrings")" != "$_keyring_root" ]; then
+        rm -rf "$HOME/.local/share/keyrings" && ln -sf "$_keyring_root" "$HOME/.local/share/keyrings"
+    fi
+    unset _keyring_root
+
+    if [ -x "$(command -v gnome-keyring-daemon)" ]; then
+        # Ensure D-Bus session bus is running and shared across shells
+        _dbus_env_file="/tmp/.tazpod-dbus-env"
+        if [ -f "$_dbus_env_file" ]; then
+            source "$_dbus_env_file" >/dev/null 2>&1
+        fi
+        
+        if [ -z "$DBUS_SESSION_BUS_PID" ] || ! kill -0 "$DBUS_SESSION_BUS_PID" 2>/dev/null; then
+            eval $(dbus-launch --sh-syntax 2>/dev/null)
+            if [ -n "$DBUS_SESSION_BUS_ADDRESS" ]; then
+                echo "export DBUS_SESSION_BUS_ADDRESS=\"$DBUS_SESSION_BUS_ADDRESS\"" > "$_dbus_env_file"
+                echo "export DBUS_SESSION_BUS_PID=\"$DBUS_SESSION_BUS_PID\"" >> "$_dbus_env_file"
+            fi
+        fi
+        
+        # Start and unlock gnome-keyring-daemon if not already running
+        if ! pgrep -u "$USER" gnome-keyring-daemon >/dev/null 2>&1; then
+            mkdir -p ~/.local/share/keyrings
+            echo -n "tazpod" | gnome-keyring-daemon --unlock --components=secrets >/dev/null 2>&1
+            eval $(echo -n "tazpod" | gnome-keyring-daemon --daemonize --login --components=secrets 2>/dev/null)
+            if [ -n "$GNOME_KEYRING_CONTROL" ]; then
+                echo "export GNOME_KEYRING_CONTROL=\"$GNOME_KEYRING_CONTROL\"" >> "$_dbus_env_file"
+            fi
+        else
+            if [ -z "$GNOME_KEYRING_CONTROL" ]; then
+                eval $(gnome-keyring-daemon --start 2>/dev/null)
+            fi
+        fi
+        export GNOME_KEYRING_CONTROL
+        unset _dbus_env_file
+    fi
 fi
 
 # Enable Modern Prompts/Tools
