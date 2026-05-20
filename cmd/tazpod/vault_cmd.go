@@ -84,10 +84,12 @@ func awsProfileExists(profile string) bool {
 func loadConfigs() {
 	data, err := os.ReadFile(ConfigPath)
 	if os.IsNotExist(err) {
-		return // no config yet, normal on first run
+		cfg.Vault.Retention = 50
+		return
 	}
 	if err != nil {
 		logger.Warn("Could not read config", "path", ConfigPath, "error", err)
+		cfg.Vault.Retention = 50
 		return
 	}
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
