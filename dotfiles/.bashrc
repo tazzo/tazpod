@@ -114,7 +114,7 @@ trap '_vault_maybe_lock' EXIT
 
 # --- AI TOOL CONFIG SYMLINKS (persistent, no unlock required) ---
 if [ -d /workspace/.tazpod ]; then
-    for _tool in .pi .omp .gemini .claude; do
+    for _tool in .pi .omp .gemini .claude .antigravity .antigravitycli; do
         _target="/workspace/.tazpod/$_tool"
         _link="$HOME/$_tool"
         mkdir -p "$_target"

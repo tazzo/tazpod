@@ -16,11 +16,12 @@ RUN curl -fsSL https://raw.githubusercontent.com/can1357/oh-my-pi/main/scripts/i
     mv /root/.local/bin/omp /usr/local/bin/omp && \
     chmod +x /usr/local/bin/omp
 
-# Install pi extensions (as tazpod user to populate ~/.pi)
+# Install pi extensions & Antigravity CLI (as tazpod user to populate local states)
 USER tazpod
 WORKDIR /home/tazpod
 RUN pi install npm:pi-extmgr && \
-    pi install npm:pi-mcp-adapter
+    pi install npm:pi-mcp-adapter && \
+    curl -fsSL https://antigravity.google/cli/install.sh | bash
 
 # Fix PATH and Banner
 RUN sed -i '/LAYER ACTIVE/d' ~/.bashrc && \
