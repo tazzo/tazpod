@@ -35,6 +35,8 @@ func main() {
 	command := os.Args[1]
 
 	switch command {
+	case "help", "--help", "-h":
+		help()
 	case "init":
 		initProject()
 	case "up":
