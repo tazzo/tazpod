@@ -253,6 +253,13 @@ OP_EOF
     fi
 fi
 
+# --- TAILSCALE AUTO-START (singleton check, detached) ---
+_TAILSCALE_SOCK="/workspace/AGENTS.ctx/tools/tailscale/state/tailscaled.sock"
+if ! tailscale --socket="${_TAILSCALE_SOCK}" status >/dev/null 2>&1; then
+    setsid /workspace/AGENTS.ctx/tools/tailscale/start.sh > /tmp/tailscale-startup.log 2>&1 &
+fi
+unset _TAILSCALE_SOCK
+
 # Auto-start sync daemon (solo se non già in esecuzione)
 if ! pgrep -x tazpod > /dev/null 2>&1; then
     { tazpod __internal_sync_daemon &> /tmp/tazpod-sync.log & }
