@@ -1,0 +1,4 @@
+onboarding = false
+
+[ui]
+mouse_capture = true

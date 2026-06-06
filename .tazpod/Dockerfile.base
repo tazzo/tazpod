@@ -83,6 +83,9 @@ RUN mkdir -p /etc/apt/keyrings && \
     curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.tailscale-keyring.list | sudo tee /etc/apt/sources.list.d/tailscale.list >/dev/null && \
     apt-get update && apt-get install -y eza tmux wireguard-tools resolvconf tailscale
 
+# 8.5 Herdr (System-wide)
+RUN curl -fsSL https://herdr.dev/install.sh | HERDR_INSTALL_DIR=/usr/local/bin sh
+
 # 9. User Setup & Privilege Escalation
 RUN if id -u 1000 >/dev/null 2>&1; then userdel -r $(id -un 1000); fi && \
     useradd -m -s /bin/bash -u 1000 tazpod && \
