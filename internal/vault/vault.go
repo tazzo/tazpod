@@ -94,7 +94,7 @@ func Unlock() {
 
 func SetupIdentity() {
 	// Ensure AI tool config dirs exist in workspace (mirrored by .bashrc symlinks)
-	for _, dir := range []string{".pi", ".omp", ".gemini", ".claude", ".aws", ".opencode"} {
+	for _, dir := range []string{".pi", ".omp", ".gemini", ".claude", ".aws", ".opencode", ".herdr"} {
 		os.MkdirAll("/workspace/.tazpod/"+dir, 0755)
 	}
 

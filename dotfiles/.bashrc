@@ -210,6 +210,16 @@ OP_EOF
     fi
 
     unset _opencode_root
+ 
+    # Herdr: persist config, logs, and sockets in workspace
+    _herdr_root="/workspace/.tazpod/.herdr"
+    mkdir -p "$_herdr_root"
+    mkdir -p "$HOME/.config"
+    if [ ! -L "$HOME/.config/herdr" ] || [ "$(readlink "$HOME/.config/herdr")" != "$_herdr_root" ]; then
+        rm -rf "$HOME/.config/herdr" && ln -sf "$_herdr_root" "$HOME/.config/herdr"
+    fi
+    unset _herdr_root
+
 
     # --- SECURE KEYRING FOR ANTIGRAVITY / AGY ---
     _keyring_root="/workspace/.tazpod/keyrings"
