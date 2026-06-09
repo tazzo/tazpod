@@ -4,8 +4,7 @@
 # --- LSP ROOT MARKERS (per OMP auto-detect) ---
 if [ -d /workspace ]; then
     for _lsp_marker in /workspace/setup.py /workspace/go.mod /workspace/Makefile; do
-        [ -f "$_lsp_marker" ] || touch "$_lsp_marker"
-    done
+        [ -f "$_lsp_marker" ] || touch "$_lsp_marker"  # ensure root markers for LSP auto-detect
     unset _lsp_marker
 fi
 # If not running interactively, don't do anything
