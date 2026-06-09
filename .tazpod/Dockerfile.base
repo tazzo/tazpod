@@ -18,9 +18,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xclip xsel jq \
     ffmpeg 7zip poppler-utils ffmpegthumbnailer imagemagick chafa \
     iputils-ping tree btop ncdu duf tldr zip dnsutils man-db \
-    docker.io golang-go \
+    docker.io golang-go clangd \
     gnome-keyring dbus-x11 libsecret-1-0 && \
-    pip3 install --break-system-packages google-genai psycopg2-binary google-cloud-alloydb-connector && \
+    pip3 install --break-system-packages google-genai psycopg2-binary google-cloud-alloydb-connector python-lsp-server && \
     locale-gen en_US.UTF-8 && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
@@ -99,13 +99,18 @@ WORKDIR /home/tazpod
 RUN mkdir -p /home/tazpod/.local/bin
 COPY --chown=tazpod:tazpod tazpod /home/tazpod/.local/bin/tazpod
 RUN chmod +x /home/tazpod/.local/bin/tazpod
-ENV PATH="/home/tazpod/.local/bin:${PATH}"
+ENV PATH="/home/tazpod/.local/bin:/home/tazpod/go/bin:${PATH}"
 
 # 11. Node.js via NVM (User-specific)
 ENV NVM_DIR="/home/tazpod/.nvm"
 RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash && \
     . $NVM_DIR/nvm.sh && \
     nvm install --lts
+
+# 11.5 Language Servers (LSP) per OMP coding agent
+RUN . $NVM_DIR/nvm.sh && \
+    go install golang.org/x/tools/gopls@latest && \
+    npm install -g yaml-language-server bash-language-server
 
 # 12. Zoxide & Starship Init (User-specific)
 RUN curl -sS https://webinstall.dev/zoxide | bash && \
