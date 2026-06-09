@@ -1,5 +1,13 @@
 # ~/.bashrc: executed by bash(1) for non-login shells.
 
+
+# --- LSP ROOT MARKERS (per OMP auto-detect) ---
+if [ -d /workspace ]; then
+    for _lsp_marker in /workspace/setup.py /workspace/go.mod /workspace/Makefile; do
+        [ -f "$_lsp_marker" ] || touch "$_lsp_marker"
+    done
+    unset _lsp_marker
+fi
 # If not running interactively, don't do anything
 case $- in
 *i*) ;;
@@ -262,6 +270,7 @@ OP_EOF
         unset _dbus_env_file
     fi
 fi
+
 
 # --- TAILSCALE AUTO-START (singleton check, detached) ---
 _TAILSCALE_SOCK="/workspace/AGENTS.ctx/tools/tailscale/state/tailscaled.sock"
