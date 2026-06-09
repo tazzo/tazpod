@@ -7,23 +7,26 @@ FROM tazzo/tazpod-k8s:${BASE_VERSION}
 USER root
 
 # Install AI CLIs (Global npm)
-RUN npm install -g @mariozechner/pi-coding-agent@latest @google/gemini-cli@latest opencode-ai@latest && \
+RUN echo "Cache-bust: 2026-06-09 (pi, gemini-cli, opencode)" && \
+    npm install -g @mariozechner/pi-coding-agent@latest @google/gemini-cli@latest opencode-ai@latest && \
     ln -sf $(npm config get prefix)/bin/pi /usr/local/bin/pi && \
     ln -sf $(npm config get prefix)/bin/opencode /usr/local/bin/opencode
 
 # Install oh-my-pi (Global installation for all users)
-RUN curl -fsSL https://raw.githubusercontent.com/can1357/oh-my-pi/main/scripts/install.sh | sh && \
+RUN echo "Cache-bust: 2026-06-09 (oh-my-pi)" && \
+    curl -fsSL https://raw.githubusercontent.com/can1357/oh-my-pi/main/scripts/install.sh | sh && \
     mv /root/.local/bin/omp /usr/local/bin/omp && \
     chmod +x /usr/local/bin/omp
 
 # Install pi extensions & Antigravity CLI (as tazpod user to populate local states)
 USER tazpod
 WORKDIR /home/tazpod
-RUN pi install npm:pi-extmgr && \
+RUN echo "Cache-bust: 2026-06-09 (pi-extmgr, pi-mcp-adapter, antigravity)" && \
+    pi install npm:pi-extmgr && \
     pi install npm:pi-mcp-adapter && \
     curl -fsSL https://antigravity.google/cli/install.sh | bash
 
 # Fix PATH and Banner
 RUN sed -i '/LAYER ACTIVE/d' ~/.bashrc && \
     echo 'export PATH="/home/tazpod/.nvm/versions/node/$(ls /home/tazpod/.nvm/versions/node | head -1)/bin:$PATH"' >> ~/.bashrc && \
-    echo 'echo -e "\n\033[1;35m🧠 TAZPOD AI POWERED LAYER ACTIVE (v0.2.3: Pi, oh-my-pi)\033[0m\n"' >> ~/.bashrc
+    echo 'echo -e "\n\033[1;35m🧠 TAZPOD AI POWERED LAYER ACTIVE (v0.2.3: Pi, oh-my-pi, opencode, agy)\033[0m\n"' >> ~/.bashrc
