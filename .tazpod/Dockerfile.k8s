@@ -1,4 +1,5 @@
 # --- TAZPOD LAYER 3: KUBERNETES COMMANDER ---
+# Rebuild: LSP servers (pylsp, gopls, clangd, yaml-ls, bash-ls) now in base
 # This layer depends on tazzo/tazpod-aws
 ARG BASE_VERSION=latest
 FROM tazzo/tazpod-aws:${BASE_VERSION}

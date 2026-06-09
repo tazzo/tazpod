@@ -1,4 +1,5 @@
 # --- TAZPOD LAYER 4: AI ENHANCED ---
+# Rebuild: LSP servers (pylsp, gopls, clangd, yaml-ls, bash-ls) now in base layer
 # Rebuild marker: keep Docker pipeline aligned with CLI/image coupling.
 # This layer depends on tazzo/tazpod-k8s
 ARG BASE_VERSION=latest
