@@ -181,21 +181,6 @@ jobs:
           cache-from: type=gha,scope=tazpod-aws
           cache-to: type=gha,mode=max,scope=tazpod-aws
 
-      - name: Build and Push K8s
-        if: steps.changed.outputs.k8s == 'true'
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: .tazpod/Dockerfile.k8s
-          push: true
-          build-args: BASE_VERSION=latest
-          tags: |
-            tazzo/tazpod-k8s:latest
-            tazzo/tazpod-k8s:${{ env.VERSION }}
-            tazzo/tazpod-k8s:tazpod-k8s-${{ github.run_number }}-${{ steps.vars.outputs.sha_short }}
-          cache-from: type=gha,scope=tazpod-k8s
-          cache-to: type=gha,mode=max,scope=tazpod-k8s
-
       - name: Build and Push AI
         if: steps.changed.outputs.ai == 'true'
         uses: docker/build-push-action@v6
@@ -203,7 +188,9 @@ jobs:
           context: .
           file: .tazpod/Dockerfile.ai
           push: true
-          build-args: BASE_VERSION=latest
+          build-args: |
+            BASE_VERSION=latest
+            CACHE_BUST=${{ github.event_name == 'workflow_dispatch' && inputs.rebuild-ai == 'true' && github.run_number || '' }}
           tags: |
             tazzo/tazpod-ai:latest
             tazzo/tazpod-ai:${{ env.VERSION }}

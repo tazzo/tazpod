@@ -3,26 +3,29 @@
 # Rebuild marker: keep Docker pipeline aligned with CLI/image coupling.
 # This layer depends on tazzo/tazpod-k8s
 ARG BASE_VERSION=latest
+
+# Dynamic cache bust: set to re-install AI tools on dispatch rebuild
+ARG CACHE_BUST=
+
 FROM tazzo/tazpod-k8s:${BASE_VERSION}
 
 USER root
 
 # Install AI CLIs (Global npm)
-RUN echo "Cache-bust: 2026-06-09 (pi, gemini-cli, opencode)" && \
+RUN echo "Cache-bust: 2026-06-09 (pi, gemini-cli, opencode) ${CACHE_BUST}" && \
     npm install -g @mariozechner/pi-coding-agent@latest @google/gemini-cli@latest opencode-ai@latest && \
     ln -sf $(npm config get prefix)/bin/pi /usr/local/bin/pi && \
     ln -sf $(npm config get prefix)/bin/opencode /usr/local/bin/opencode
 
 # Install oh-my-pi (Global installation for all users)
-RUN echo "Cache-bust: 2026-06-09 (oh-my-pi)" && \
+RUN echo "Cache-bust: 2026-06-09 (oh-my-pi) ${CACHE_BUST}" && \
     curl -fsSL https://raw.githubusercontent.com/can1357/oh-my-pi/main/scripts/install.sh | sh && \
     mv /root/.local/bin/omp /usr/local/bin/omp && \
     chmod +x /usr/local/bin/omp
 
-# Install pi extensions & Antigravity CLI (as tazpod user to populate local states)
 USER tazpod
 WORKDIR /home/tazpod
-RUN echo "Cache-bust: 2026-06-09 (pi-extmgr, pi-mcp-adapter, antigravity)" && \
+RUN echo "Cache-bust: 2026-06-09 (pi-extmgr, pi-mcp-adapter, antigravity) ${CACHE_BUST}" && \
     pi install npm:pi-extmgr && \
     pi install npm:pi-mcp-adapter && \
     curl -fsSL https://antigravity.google/cli/install.sh | bash
