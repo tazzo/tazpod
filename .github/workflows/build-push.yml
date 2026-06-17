@@ -5,7 +5,27 @@ on:
     branches:
       - master
   workflow_dispatch:
-
+    inputs:
+      rebuild-ai:
+        description: 'Force rebuild of AI layer (opencode, pi, omp)'
+        required: false
+        default: false
+        type: boolean
+      rebuild-k8s:
+        description: 'Force rebuild of K8s layer'
+        required: false
+        default: false
+        type: boolean
+      rebuild-aws:
+        description: 'Force rebuild of AWS layer'
+        required: false
+        default: false
+        type: boolean
+      rebuild-base:
+        description: 'Force rebuild of Base layer'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -62,6 +82,29 @@ jobs:
                 ;;
             esac
           done
+
+          # Override with workflow_dispatch inputs (manual trigger)
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            if [[ "${{ inputs.rebuild-base }}" == "true" ]]; then
+              echo "base=true" >> $GITHUB_OUTPUT
+              echo "aws=true" >> $GITHUB_OUTPUT
+              echo "k8s=true" >> $GITHUB_OUTPUT
+              echo "ai=true" >> $GITHUB_OUTPUT
+              echo "any_docker=true" >> $GITHUB_OUTPUT
+            fi
+            if [[ "${{ inputs.rebuild-aws }}" == "true" ]]; then
+              echo "aws=true" >> $GITHUB_OUTPUT
+              echo "any_docker=true" >> $GITHUB_OUTPUT
+            fi
+            if [[ "${{ inputs.rebuild-k8s }}" == "true" ]]; then
+              echo "k8s=true" >> $GITHUB_OUTPUT
+              echo "any_docker=true" >> $GITHUB_OUTPUT
+            fi
+            if [[ "${{ inputs.rebuild-ai }}" == "true" ]]; then
+              echo "ai=true" >> $GITHUB_OUTPUT
+              echo "any_docker=true" >> $GITHUB_OUTPUT
+            fi
+          fi
 
       # --- CLI BUILD & RELEASE ---
 
