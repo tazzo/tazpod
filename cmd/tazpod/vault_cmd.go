@@ -15,16 +15,6 @@ import (
 func unlock() {
 	vault.Unlock()
 	fmt.Println("🔓 Vault unlocked to ~/secrets (RAM only).")
-
-	// AWS SSO bridge: bind ~/secrets/.aws to ~/.aws
-	home, _ := os.UserHomeDir()
-	source := filepath.Join(vault.MountPath, ".aws")
-	target := filepath.Join(home, ".aws")
-
-	os.MkdirAll(source, 0700)
-	execCommand("sudo", "mount", "--bind", source, target).Run()
-
-	fmt.Println("☁️  AWS Enclave Bridge active.")
 }
 
 func lock() {
@@ -96,6 +86,7 @@ func loadConfigs() {
 		logger.Error("Invalid config", "path", ConfigPath, "error", err)
 		os.Exit(1)
 	}
+	if cfg.Mode == "" { cfg.Mode = "docker" }
 	if cfg.Vault.Retention <= 0 {
 		cfg.Vault.Retention = 50
 	}

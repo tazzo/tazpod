@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - master
+  schedule:
+    # Weekly rebuild of AI layer — ogni lunedì alle 04:00 UTC
+    - cron: '0 4 * * 1'
   workflow_dispatch:
     inputs:
       rebuild-ai:
@@ -38,7 +41,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 2
-
       - name: Set Short SHA
         id: vars
         run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
@@ -181,6 +183,23 @@ jobs:
           cache-from: type=gha,scope=tazpod-aws
           cache-to: type=gha,mode=max,scope=tazpod-aws
 
+      - name: Build and Push K8s
+        if: steps.changed.outputs.k8s == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: .tazpod/Dockerfile.k8s
+          push: true
+          build-args: |
+            BASE_VERSION=latest
+            CACHE_BUST=${{ github.run_id }}
+          tags: |
+            tazzo/tazpod-k8s:latest
+            tazzo/tazpod-k8s:${{ env.VERSION }}
+            tazzo/tazpod-k8s:tazpod-k8s-${{ github.run_number }}-${{ steps.vars.outputs.sha_short }}
+          cache-from: type=gha,scope=tazpod-k8s
+          cache-to: type=gha,mode=max,scope=tazpod-k8s
+
       - name: Build and Push AI
         if: steps.changed.outputs.ai == 'true'
         uses: docker/build-push-action@v6
@@ -190,7 +209,7 @@ jobs:
           push: true
           build-args: |
             BASE_VERSION=latest
-            CACHE_BUST=${{ github.event_name == 'workflow_dispatch' && inputs.rebuild-ai == 'true' && github.run_number || '' }}
+            CACHE_BUST=${{ github.run_id }}
           tags: |
             tazzo/tazpod-ai:latest
             tazzo/tazpod-ai:${{ env.VERSION }}

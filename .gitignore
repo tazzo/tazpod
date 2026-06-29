@@ -6,3 +6,4 @@ secrets/
 .tazpod/.gemini/
 .tazpod/.opencode/
 bin/
+tazpod-lxc

@@ -27,18 +27,35 @@ func main() {
 		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	}
 
-	if len(os.Args) < 2 {
+	// Estrai --mode flag prima del dispatch
+	var initMode string
+	args := []string{}
+	skipNext := false
+	for i, a := range os.Args[1:] {
+		if skipNext {
+			skipNext = false
+			continue
+		}
+		if a == "--mode" && i+2 < len(os.Args) {
+			initMode = os.Args[i+2]
+			skipNext = true
+			continue
+		}
+		args = append(args, a)
+	}
+
+	if len(args) < 1 {
 		smartEntry()
 		return
 	}
 
-	command := os.Args[1]
+	command := args[0]
 
 	switch command {
 	case "help", "--help", "-h":
 		help()
 	case "init":
-		initProject()
+		initProject(initMode)
 	case "up":
 		up()
 	case "down":
@@ -62,6 +79,10 @@ func main() {
 	case "list":
 		list()
 	case "vpn":
+		if cfg.Mode == "lxc" {
+			fmt.Println("⚠️  'vpn' is not available in LXC mode — Tailscale already provides the VPN tunnel.")
+			return
+		}
 		vpnCommand()
 	case "setup-storage":
 		setupStorage()

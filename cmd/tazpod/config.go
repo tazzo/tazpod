@@ -16,6 +16,7 @@ type VaultConfig struct {
 }
 
 type Config struct {
+	Mode          string                    `yaml:"mode"`          // "docker" (default) o "lxc"
 	Image         string                    `yaml:"image"`
 	ContainerName string                    `yaml:"container_name"`
 	User          string                    `yaml:"user"`

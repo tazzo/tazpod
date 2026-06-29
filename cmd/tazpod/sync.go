@@ -102,6 +102,10 @@ func pull() {
 }
 
 func updateImage() {
+	if cfg.Mode == "lxc" {
+		fmt.Println("⚠️  'pull image' is not available in LXC mode — binaries are deployed via Ansible, not Docker images.")
+		return
+	}
 	if cfg.Image == "" {
 		logger.Error("No image configured", "config", ConfigPath)
 		return
@@ -115,9 +119,9 @@ func updateImage() {
 	}
 	fmt.Println("✅ Image updated.")
 }
-
 func push() {
 	subarg := ""
+
 	if len(os.Args) > 2 {
 		subarg = os.Args[2]
 	}

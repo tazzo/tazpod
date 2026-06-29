@@ -12,7 +12,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func initProject() {
+func initProject(mode string) {
 	cwd, _ := os.Getwd()
 	configDir := filepath.Join(cwd, ".tazpod")
 	if _, err := os.Stat(configDir); err == nil {
@@ -24,12 +24,28 @@ func initProject() {
 	os.MkdirAll(configDir, 0755)
 	os.MkdirAll(filepath.Join(configDir, "vault"), 0755)
 
-	// Create default config
+	// Auto-detect o usa mode esplicita
+	if mode == "" {
+		if utils.CheckInside() {
+			mode = "docker"
+		} else {
+			fmt.Print("Deployment mode [docker/lxc] (docker): ")
+			reader := bufio.NewReader(os.Stdin)
+			input, _ := reader.ReadString('\n')
+			input = strings.TrimSpace(strings.ToLower(input))
+			if input == "lxc" {
+				mode = "lxc"
+			} else {
+				mode = "docker"
+			}
+		}
+	}
+
+	// Create default config — Docker ha Image e ContainerName, LXC no
 	newCfg := Config{
-		Image:         "tazzo/tazpod-ai:latest",
-		ContainerName: filepath.Base(cwd) + "-lab",
-		User:          "tazpod",
-		GhostMode:     true,
+		Mode:      mode,
+		User:      "tazpod",
+		GhostMode: true,
 		Features: Features{
 			Debug: false,
 		},
@@ -40,13 +56,17 @@ func initProject() {
 		},
 		Providers: make(map[string]ProviderConfig),
 	}
+	if mode != "lxc" {
+		newCfg.Image = "tazzo/tazpod-ai:latest"
+		newCfg.ContainerName = filepath.Base(cwd) + "-lab"
+	}
 
 	promptInitConfig(&newCfg)
 
 	data, _ := yaml.Marshal(&newCfg)
 	os.WriteFile(ConfigPath, data, 0644)
 
-	fmt.Println("✅ project initialized. Check .tazpod/config.yaml")
+	fmt.Printf("✅ project initialized (%s mode). Check .tazpod/config.yaml\n", mode)
 }
 
 func promptInitConfig(c *Config) {

@@ -13,6 +13,12 @@ import (
 )
 
 func up() {
+	if cfg.Mode == "lxc" {
+		fmt.Println("⚠️  'up' is not available in LXC mode — the container is always running.")
+		fmt.Println("   SSH into it directly: ssh tazpod@<IP>")
+		return
+	}
+
 	if cfg.Image == "" {
 		logger.Error("No image defined in config. Run 'tazpod init' or check .tazpod/config.yaml")
 		return
@@ -26,6 +32,11 @@ func up() {
 }
 
 func down() {
+	if cfg.Mode == "lxc" {
+		fmt.Println("⚠️  'down' is not available in LXC mode. Use terraform destroy to tear down the CT.")
+		return
+	}
+
 	fmt.Printf("🛑 Stopping container %s...\n", cfg.ContainerName)
 	exec.Command("docker", "stop", cfg.ContainerName).Run()
 	exec.Command("docker", "rm", cfg.ContainerName).Run()
@@ -33,6 +44,10 @@ func down() {
 }
 
 func enter() {
+	if cfg.Mode == "lxc" {
+		fmt.Println("⚠️  'enter' is not available in LXC mode. Use: ssh tazpod@<IP>")
+		return
+	}
 	smartEntry()
 }
 
@@ -45,6 +60,18 @@ func askYN(question string) bool {
 }
 
 func enterShell() {
+	if cfg.Mode == "lxc" {
+		shell := os.Getenv("SHELL")
+		if shell == "" { shell = "/bin/bash" }
+		cmd := exec.Command(shell)
+		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+		if err := cmd.Run(); err != nil {
+			logger.Error("Session ended with error", "error", err)
+		} else {
+			fmt.Println("\n🔒 Session ended. Securing identity...")
+		}
+		return
+	}
 	fmt.Printf("🚀 Entering %s...\n", cfg.ContainerName)
 	cmd := exec.Command("docker", "exec", "-it", "-w", "/workspace", cfg.ContainerName, "/bin/bash")
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
@@ -57,6 +84,9 @@ func enterShell() {
 }
 
 func execInContainer(command string) bool {
+	if cfg.Mode == "lxc" {
+		return execLocal(command)
+	}
 	cmd := exec.Command("docker", "exec", "-it",
 		"-e", "AWS_CONFIG_FILE=/workspace/.tazpod/.aws/config",
 		"-w", "/workspace",
@@ -64,13 +94,17 @@ func execInContainer(command string) bool {
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	return cmd.Run() == nil
 }
-
 func smartEntry() {
+	if cfg.Mode == "lxc" {
+		smartEntryLxc()
+		return
+	}
+
 	if _, err := os.Stat(".tazpod"); os.IsNotExist(err) {
 		if !askYN("📂 No TazPod project found here. Initialize it now?") {
 			return
 		}
-		initProject()
+		initProject("docker")
 		loadConfigs()
 	}
 
@@ -126,6 +160,8 @@ func smartEntry() {
 
 func ensureContainerUp() {
 	// Check if container exists
+	if cfg.Mode == "lxc" { return }
+
 	out, _ := exec.Command("docker", "ps", "-a", "--filter", "name="+cfg.ContainerName, "--format", "{{.Names}}").Output()
 	if strings.TrimSpace(string(out)) == cfg.ContainerName {
 		// Check if running
@@ -174,4 +210,62 @@ func setupStorage() {
 		return
 	}
 	fmt.Println("✅ S3 storage ready.")
+}
+
+func smartEntryLxc() {
+	if _, err := os.Stat(".tazpod"); os.IsNotExist(err) {
+		if !askYN("📂 No TazPod project found here. Initialize it now?") {
+			return
+		}
+		initProject("lxc")
+		loadConfigs()
+	}
+
+	cwd, _ := os.Getwd()
+	localVault := filepath.Join(cwd, ".tazpod", "vault", "vault.tar.aes")
+
+	if utils.IsMounted(vault.MountPath) {
+		enterShell()
+		return
+	}
+
+	if utils.FileExist(localVault) {
+		if askYN("🔐 Local vault found. Unlock now?") {
+			execCommand("tazpod", "unlock").Run()
+		}
+		enterShell()
+		return
+	}
+
+	if askYN("🔑 No local vault found. Bootstrap now? (login + pull + unlock)") {
+		awsConfigPath := filepath.Join(cwd, ".tazpod", ".aws", "config")
+		profilePattern := "[" + "profile " + cfg.AwsSso.Profile + "]"
+		if configData, err := os.ReadFile(awsConfigPath); err != nil || !strings.Contains(string(configData), profilePattern) {
+			fmt.Printf("🔧 AWS profile '%s' not found.\n", cfg.AwsSso.Profile)
+			if askYN("Run 'aws configure sso' to set it up now?") {
+				execCommand("aws", "configure", "sso", "--profile", cfg.AwsSso.Profile).Run()
+			}
+		}
+		if !execLocal("tazpod login") {
+			enterShell()
+			return
+		}
+		if !execLocal("tazpod pull vault") {
+			enterShell()
+			return
+		}
+		execCommand("tazpod", "unlock").Run()
+	}
+
+	enterShell()
+}
+
+func execLocal(command string) bool {
+	cmd := exec.Command("bash", "-c", command)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	cmd.Env = os.Environ()
+	if utils.IsMounted(vault.MountPath) {
+		cmd.Env = append(cmd.Env, "AWS_CONFIG_FILE="+filepath.Join(vault.MountPath, ".aws", "config"))
+	}
+	return cmd.Run() == nil
 }
