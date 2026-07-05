@@ -12,7 +12,7 @@ ENV LANG=en_US.UTF-8
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates sudo curl wget git build-essential unzip \
     cryptsetup-bin e2fsprogs dmsetup procps psmisc strace \
-    gnupg pass pinentry-tty paperkey locales ncurses-term x11-xserver-utils \
+    gnupg pinentry-tty paperkey locales ncurses-term x11-xserver-utils \
     bat ripgrep fzf mc fd-find yq \
     python3 python3-pip python3-venv \
     xclip xsel jq \
@@ -22,6 +22,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gnome-keyring dbus-x11 libsecret-1-0 && \
     pip3 install --break-system-packages google-genai psycopg2-binary google-cloud-alloydb-connector python-lsp-server && \
     locale-gen en_US.UTF-8 && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Pass (password-store, minimal — no X11/Perl stack)
+RUN apt-get update && apt-get install -y --no-install-recommends pass && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Install official gopasspw (not the broken Ubuntu apt version)
