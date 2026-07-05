@@ -12,7 +12,7 @@ ENV LANG=en_US.UTF-8
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates sudo curl wget git build-essential unzip \
     cryptsetup-bin e2fsprogs dmsetup procps psmisc strace \
-    gnupg locales ncurses-term x11-xserver-utils \
+    gnupg pinentry-tty paperkey locales ncurses-term x11-xserver-utils \
     bat ripgrep fzf mc fd-find yq \
     python3 python3-pip python3-venv \
     xclip xsel jq \
