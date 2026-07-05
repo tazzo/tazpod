@@ -24,6 +24,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     locale-gen en_US.UTF-8 && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# Install official gopasspw (not the broken Ubuntu apt version)
+RUN apt-get remove -y gopass 2>/dev/null; \
+    curl -fsSL https://packages.gopass.pw/repos/gopass/gopass-archive-keyring.gpg -o /usr/share/keyrings/gopass-archive-keyring.gpg && \
+    echo "deb [signed-by=/usr/share/keyrings/gopass-archive-keyring.gpg] https://packages.gopass.pw/repos/gopass stable main" > /etc/apt/sources.list.d/gopass.list && \
+    apt-get update && apt-get install -y gopass && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
 # 2. Inject Kaniko Executor from Stage 1
 COPY --from=kaniko-stage /kaniko/executor /usr/local/bin/kaniko
 RUN chmod +x /usr/local/bin/kaniko

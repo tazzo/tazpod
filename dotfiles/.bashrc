@@ -292,3 +292,6 @@ fi
 [ -x "$(command -v starship)" ] && eval "$(starship init bash)"
 [ -x "$(command -v zoxide)" ] && eval "$(zoxide init bash)"
 [ -f ~/.fzf.bash ] && source ~/.fzf.bash
+
+# GPG TTY for pinentry (gopass)
+if [ -t 0 ]; then export GPG_TTY=$(tty); fi
