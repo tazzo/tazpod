@@ -1,0 +1,8 @@
+---
+# TazPod FULL STACK — Layer includes
+- import_tasks: layer0-system.yml
+- import_tasks: layer1-shell.yml
+- import_tasks: layer2-aws.yml
+- import_tasks: layer3-k8s.yml
+- import_tasks: layer4-ai.yml
+- import_tasks: tazpod-deploy.yml

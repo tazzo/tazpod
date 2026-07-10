@@ -1,0 +1,15 @@
+[Unit]
+Description=TazPod Sync Daemon (S3 vault)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tazpod
+WorkingDirectory=/home/tazpod
+ExecStart=/usr/local/bin/tazpod __internal_sync_daemon
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

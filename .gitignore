@@ -7,3 +7,6 @@ secrets/
 .tazpod/.opencode/
 bin/
 tazpod-lxc
+*.tfstate
+*.tfstate.backup
+.terraform/

@@ -1,0 +1,150 @@
+---
+# TazPod deploy: binary, KUBECONFIG, dotfiles, systemd, nvim, tree-sitter, Tailscale
+
+- name: Config directories
+  file: { path: "/home/tazpod/.config/{{ item }}", owner: tazpod, group: tazpod, state: directory }
+  loop: [starship, zellij, nvim]
+
+- name: TazPod binary
+  copy: { src: /workspace/tazpod/tazpod-lxc, dest: /home/tazpod/.local/bin/tazpod, owner: tazpod, group: tazpod, mode: '0755' }
+
+- name: KUBECONFIG directory
+  file: { path: /home/tazpod/.kube, owner: tazpod, group: tazpod, state: directory }
+
+- name: KUBECONFIG
+  copy:
+    src: /workspace/ephemeral-castle/clusters/tazlab-k8s/proxmox/configs/kubeconfig
+    dest: /home/tazpod/.kube/config
+    owner: tazpod
+    group: tazpod
+    mode: '0600'
+
+- name: Dotfiles (bashrc + tmux)
+  copy: { src: "{{ item }}", dest: "/home/tazpod/{{ item | basename }}", owner: tazpod, group: tazpod, mode: '0644' }
+  loop: [/workspace/tazpod/dotfiles/.bashrc, /workspace/tazpod/dotfiles/.tmux.conf]
+
+- name: Neovim init.lua + lazyvim.json
+  copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    owner: tazpod
+    group: tazpod
+    mode: '0644'
+  loop:
+    - { src: /workspace/tazpod/dotfiles/.config/nvim/init.lua, dest: /home/tazpod/.config/nvim/init.lua }
+    - { src: /workspace/tazpod/dotfiles/.config/nvim/lazyvim.json, dest: /home/tazpod/.config/nvim/lazyvim.json }
+
+- name: Neovim lua directory
+  file: { path: /home/tazpod/.config/nvim/lua, owner: tazpod, group: tazpod, state: directory }
+
+- name: Neovim lua plugins config
+  copy:
+    src: /workspace/tazpod/dotfiles/.config/nvim/lua/
+    dest: /home/tazpod/.config/nvim/lua/
+    owner: tazpod
+    group: tazpod
+
+- name: Starship config
+  copy: { src: /workspace/tazpod/dotfiles/.config/starship.toml, dest: /home/tazpod/.config/starship.toml, owner: tazpod, group: tazpod, mode: '0644' }
+
+- name: Zellij config
+  copy: { src: /workspace/tazpod/dotfiles/.config/zellij/config.kdl, dest: /home/tazpod/.config/zellij/config.kdl, owner: tazpod, group: tazpod, mode: '0644' }
+
+- name: Start/update scripts
+  copy: { src: "{{ item }}", dest: "/home/tazpod/{{ item | basename }}", owner: tazpod, group: tazpod, mode: '0755' }
+  loop: [/workspace/AGENTS.ctx/tools/tailscale/start-lxc.sh, /workspace/AGENTS.ctx/tools/tailscale/update-hosts.sh]
+
+- name: Systemd units
+  template: { src: "{{ item }}.j2", dest: "/etc/systemd/system/{{ item }}" }
+  loop: [tazpod-gro-gso-fix.service, tazpod-sync.service, tazpod-update-hosts.service, tazpod-update-hosts.timer]
+
+- name: Enable systemd
+  systemd: { name: "{{ item }}", enabled: yes, state: started, daemon_reload: yes }
+  loop: [tazpod-gro-gso-fix.service, tazpod-sync.service, tazpod-update-hosts.timer]
+
+- name: batcat symlink
+  file: { src: /usr/bin/batcat, dest: /usr/local/bin/bat, state: link }
+
+- name: node/npm symlinks in /usr/local/bin
+  become_user: tazpod
+  shell: |
+    export NVM_DIR="$HOME/.nvm"
+    [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+    sudo ln -sf "$(which node)" /usr/local/bin/node
+    sudo ln -sf "$(which npm)" /usr/local/bin/npm
+  args: { creates: /usr/local/bin/node }
+
+- name: Systemd DNS
+  shell: |
+    if command -v resolvectl &>/dev/null; then
+      resolvectl dns eth0 1.1.1.1 8.8.8.8 || true
+    fi
+
+
+- name: Starship Tokyo Night config (LXC theme)
+  template:
+    src: starship-tokyo-night.toml.j2
+    dest: /home/tazpod/.config/starship-tokyo.toml
+    owner: tazpod
+    group: tazpod
+    mode: '0644'
+- name: nvim LazyVim plugins sync
+  become_user: tazpod
+  shell: |
+    export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
+    nvim --headless "+Lazy! sync" +qa 2>&1
+  args: { creates: /home/tazpod/.local/share/nvim/lazy/LazyVim }
+
+- name: Tailscale secrets directory
+  file: { path: /home/tazpod/secrets, owner: tazpod, group: tazpod, state: directory, mode: '0700' }
+
+
+- name: tree-sitter CLI (nvim-treesitter)
+  become_user: tazpod
+  shell: |
+    export NVM_DIR="$HOME/.nvm"
+    [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+    npm install -g tree-sitter-cli@0.24.7 2>&1 | tail -3
+  args: { creates: /usr/local/bin/tree-sitter }
+
+- name: Tailscale OAuth credentials
+  copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    owner: tazpod
+    group: tazpod
+    mode: '0600'
+  loop:
+    - { src: /home/tazpod/secrets/tailscale-oauth-client-id, dest: /home/tazpod/secrets/tailscale-oauth-client-id }
+    - { src: /home/tazpod/secrets/tailscale-oauth-client-secret, dest: /home/tazpod/secrets/tailscale-oauth-client-secret }
+    - { src: /home/tazpod/secrets/tailscale-tailnet, dest: /home/tazpod/secrets/tailscale-tailnet }
+
+- name: Verifica Tailscale connesso
+  become_user: tazpod
+  shell: |
+    if ! tailscale status 2>&1 | grep -q 'tazpod'; then
+      cd /home/tazpod && bash start-lxc.sh 2>&1
+    else
+      echo 'Tailscale already connected'
+    fi
+
+- name: Workspace tools dirs (pet volume, prima creazione)
+  file: { path: "/workspace/.tazpod/{{ item }}", owner: tazpod, group: tazpod, state: directory, mode: '0755' }
+  loop: [.omp, .pi, .gemini, .antigravity, .antigravitycli, .claude, .herdr, .opencode, .aws, .ssh, vault, keyrings]
+
+- name: Home symlinks to workspace tools
+  file: { src: "/workspace/.tazpod/{{ item.src }}", dest: "/home/tazpod/{{ item.dest }}", owner: tazpod, group: tazpod, state: link }
+  loop:
+    - { src: .omp, dest: .omp }
+    - { src: .pi, dest: .pi }
+    - { src: .gemini, dest: .gemini }
+    - { src: .antigravity, dest: .antigravity }
+    - { src: .antigravitycli, dest: .antigravitycli }
+    - { src: .claude, dest: .claude }
+    - { src: .herdr, dest: .herdr }
+    - { src: .opencode, dest: .opencode }
+    - { src: .aws, dest: .aws }
+    - { src: .ssh, dest: .ssh }
+
+- name: .ssh secure permissions
+  file: { path: "/workspace/.tazpod/.ssh", owner: tazpod, group: tazpod, mode: '0700' }

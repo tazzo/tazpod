@@ -1,0 +1,32 @@
+---
+# Layer 4: AI tools (Dockerfile.ai)
+
+- name: AI CLIs (pi, gemini, opencode)
+  become_user: tazpod
+  shell: |
+    export NVM_DIR="$HOME/.nvm"
+    [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+    npm install -g @mariozechner/pi-coding-agent@latest @google/gemini-cli@latest opencode-ai@latest
+    ln -sf $(npm config get prefix)/bin/pi /home/tazpod/.local/bin/pi 2>/dev/null || true
+    ln -sf $(npm config get prefix)/bin/opencode /home/tazpod/.local/bin/opencode 2>/dev/null || true
+  args: { creates: /home/tazpod/.local/bin/pi }
+
+- name: oh-my-pi (omp)
+  shell: |
+    curl -fsSL https://raw.githubusercontent.com/can1357/oh-my-pi/main/scripts/install.sh | sh
+    mv /root/.local/bin/omp /usr/local/bin/omp 2>/dev/null || true
+    chmod +x /usr/local/bin/omp 2>/dev/null || true
+  args: { creates: /usr/local/bin/omp }
+
+- name: Pi extensions
+  become_user: tazpod
+  shell: |
+    export PATH="/home/tazpod/.local/bin:$PATH"
+    pi install npm:pi-extmgr 2>/dev/null || true
+    pi install npm:pi-mcp-adapter 2>/dev/null || true
+  args: { creates: /home/tazpod/.local/share/pi }
+
+- name: Antigravity
+  become_user: tazpod
+  shell: curl -fsSL https://antigravity.google/cli/install.sh | bash 2>/dev/null || true
+  args: { creates: /home/tazpod/.local/bin/agy }

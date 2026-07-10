@@ -1,0 +1,12 @@
+[Unit]
+Description=UDP GRO/GSO optimization for Tailscale
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/sbin/ethtool -K eth0 rx-gro-list off rx-udp-gro-forwarding on
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

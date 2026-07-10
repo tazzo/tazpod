@@ -1,0 +1,397 @@
+─── 0. Pet Volume Ensure ───
+Verifying pet CT 999 and volume vm-999-disk-2...
+Pet CT 999 già pronto, volume vm-999-disk-2 presente.
+─── 1. Terraform Create ───
+[0m[1mInitializing provider plugins found in the configuration...[0m
+- Reusing previous version of bpg/proxmox from the dependency lock file
+- Reusing previous version of hashicorp/local from the dependency lock file
+- Using previously-installed bpg/proxmox v0.111.0
+- Using previously-installed hashicorp/local v2.9.0
+
+[0m[1mInitializing the backend...[0m
+
+[0m[1mInitializing provider plugins found in the state...[0m
+
+
+[0m[1m[32mTerraform has been successfully initialized![0m[32m[0m
+
+Terraform used the selected providers to generate the following execution
+plan. Resource actions are indicated with the following symbols:
+  [32m+[0m create[0m
+
+Terraform will perform the following actions:
+
+[1m  # local_file.ansible_inventory[0m will be created
+[0m  [32m+[0m[0m resource "local_file" "ansible_inventory" {
+      [32m+[0m[0m content              = <<-EOT
+            [tazpod]
+            192.168.1.206 ansible_user=root ansible_ssh_private_key_file=~/.ssh/id_ed25519
+        EOT
+      [32m+[0m[0m content_base64sha256 = (known after apply)
+      [32m+[0m[0m content_base64sha512 = (known after apply)
+      [32m+[0m[0m content_md5          = (known after apply)
+      [32m+[0m[0m content_sha1         = (known after apply)
+      [32m+[0m[0m content_sha256       = (known after apply)
+      [32m+[0m[0m content_sha512       = (known after apply)
+      [32m+[0m[0m directory_permission = "0777"
+      [32m+[0m[0m file_permission      = "0777"
+      [32m+[0m[0m filename             = "./../ansible/inventory.ini"
+      [32m+[0m[0m id                   = (known after apply)
+    }
+
+[1m  # local_file.runtime_env[0m will be created
+[0m  [32m+[0m[0m resource "local_file" "runtime_env" {
+      [32m+[0m[0m content              = <<-EOT
+            CT_ID=106
+            IP_ADDRESS=192.168.1.206
+            HOSTNAME=tazpod-proxmox
+        EOT
+      [32m+[0m[0m content_base64sha256 = (known after apply)
+      [32m+[0m[0m content_base64sha512 = (known after apply)
+      [32m+[0m[0m content_md5          = (known after apply)
+      [32m+[0m[0m content_sha1         = (known after apply)
+      [32m+[0m[0m content_sha256       = (known after apply)
+      [32m+[0m[0m content_sha512       = (known after apply)
+      [32m+[0m[0m directory_permission = "0777"
+      [32m+[0m[0m file_permission      = "0777"
+      [32m+[0m[0m filename             = "./../configs/runtime.env"
+      [32m+[0m[0m id                   = (known after apply)
+    }
+
+[1m  # proxmox_virtual_environment_container.tazpod[0m will be created
+[0m  [32m+[0m[0m resource "proxmox_virtual_environment_container" "tazpod" {
+      [32m+[0m[0m id             = (known after apply)
+      [32m+[0m[0m ipv4           = (known after apply)
+      [32m+[0m[0m ipv6           = (known after apply)
+      [32m+[0m[0m node_name      = "tazlab"
+      [32m+[0m[0m protection     = false
+      [32m+[0m[0m start_on_boot  = true
+      [32m+[0m[0m started        = true
+      [32m+[0m[0m template       = false
+      [32m+[0m[0m timeout_clone  = 1800
+      [32m+[0m[0m timeout_create = 1800
+      [32m+[0m[0m timeout_delete = 60
+      [32m+[0m[0m timeout_start  = 300
+      [32m+[0m[0m timeout_update = 1800
+      [32m+[0m[0m unprivileged   = true
+      [32m+[0m[0m vm_id          = 106
+
+      [32m+[0m[0m cpu {
+          [32m+[0m[0m architecture = "amd64"
+          [32m+[0m[0m cores        = 2
+          [32m+[0m[0m limit        = 0
+          [32m+[0m[0m units        = (known after apply)
+        }
+
+      [32m+[0m[0m disk {
+          [32m+[0m[0m acl               = false
+          [32m+[0m[0m datastore_id      = "local-lvm"
+          [32m+[0m[0m path_in_datastore = (known after apply)
+          [32m+[0m[0m quota             = false
+          [32m+[0m[0m replicate         = false
+          [32m+[0m[0m size              = 20
+        }
+
+      [32m+[0m[0m features {
+          [32m+[0m[0m fuse    = false
+          [32m+[0m[0m keyctl  = false
+          [32m+[0m[0m mknod   = false
+          [32m+[0m[0m nesting = true
+        }
+
+      [32m+[0m[0m initialization {
+          [32m+[0m[0m hostname = "tazpod-proxmox"
+
+          [32m+[0m[0m ip_config {
+              [32m+[0m[0m ipv4 {
+                  [32m+[0m[0m address = "192.168.1.206/24"
+                  [32m+[0m[0m gateway = "192.168.1.1"
+                }
+            }
+
+          [32m+[0m[0m user_account {
+              [32m+[0m[0m keys = [
+                  [32m+[0m[0m "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOLCfvDL4s7Qi8r4fQ7QsjpveYWV7VkCav7hCsjfT+DR",
+                ]
+            }
+        }
+
+      [32m+[0m[0m memory {
+          [32m+[0m[0m dedicated = 2048
+          [32m+[0m[0m swap      = 512
+        }
+
+      [32m+[0m[0m mount_point {
+          [32m+[0m[0m acl               = false
+          [32m+[0m[0m backup            = false
+          [32m+[0m[0m path              = "/workspace"
+          [32m+[0m[0m path_in_datastore = (known after apply)
+          [32m+[0m[0m quota             = false
+          [32m+[0m[0m read_only         = false
+          [32m+[0m[0m replicate         = true
+          [32m+[0m[0m shared            = false
+          [32m+[0m[0m volume            = "local-lvm:vm-999-disk-2"
+        }
+
+      [32m+[0m[0m network_interface {
+          [32m+[0m[0m bridge       = "vmbr0"
+          [32m+[0m[0m enabled      = true
+          [32m+[0m[0m firewall     = false
+          [32m+[0m[0m host_managed = false
+          [32m+[0m[0m mac_address  = (known after apply)
+          [32m+[0m[0m mtu          = 0
+          [32m+[0m[0m name         = "eth0"
+          [32m+[0m[0m rate_limit   = 0
+          [32m+[0m[0m vlan_id      = 0
+        }
+
+      [32m+[0m[0m operating_system {
+          [32m+[0m[0m template_file_id = "local:vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst"
+          [32m+[0m[0m type             = "ubuntu"
+        }
+    }
+
+[1mPlan:[0m [0m3 to add, 0 to change, 0 to destroy.
+
+Changes to Outputs:
+  [32m+[0m[0m ct_id = 106
+  [32m+[0m[0m ct_ip = "192.168.1.206"
+[0m[1mlocal_file.ansible_inventory: Creating...[0m[0m
+[0m[1mlocal_file.runtime_env: Creating...[0m[0m
+[0m[1mlocal_file.ansible_inventory: Creation complete after 0s [id=a5714dd3ed5fc313442007cbb6c37f89d63aa006][0m
+[0m[1mproxmox_virtual_environment_container.tazpod: Creating...[0m[0m
+[0m[1mlocal_file.runtime_env: Creation complete after 0s [id=0a17a609a03dc019f2bdfdc5c911d425991a9f50][0m
+[0m[1mproxmox_virtual_environment_container.tazpod: Creation complete after 9s [id=106][0m
+[0m[1m[32m
+Apply complete! Resources: 3 added, 0 changed, 0 destroyed.[0m
+[0m[1m[32m
+Outputs:
+
+[0mct_id = 106
+ct_ip = "192.168.1.206"
+─── 2. Raw Config Apply ───
+Applying raw LXC config for CT 106 via SSH to Proxmox host 192.168.1.200...
+─── 3. Wait SSH ───
+Removing stale host key for 192.168.1.206...
+Waiting for SSH on 192.168.1.206...
+ok
+SSH ready.
+─── 4. Ansible Baseline ───
+
+PLAY [Deploy TazPod LXC baseline] **********************************************
+
+TASK [Gathering Facts] *********************************************************
+ok: [192.168.1.206]
+
+TASK [tazpod : System packages] ************************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : Locale] *********************************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : fd symlink] *****************************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : Python packages] ************************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : ~/workspace symlink] ********************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : Task (Taskfile)] ************************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : GitHub CLI] *****************************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : Yazi] ***********************************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : Lazygit] ********************************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : Eza] ************************************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : Herdr] **********************************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : Neovim (latest from GitHub, lazy.nvim requires >= 0.8)] *********
+changed: [192.168.1.206]
+
+TASK [tazpod : SSH password auth] **********************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : Password tazpod user] *******************************************
+[DEPRECATION WARNING]: Encryption using the Python crypt module is deprecated. 
+The Python crypt module is deprecated and will be removed from Python 3.13. 
+Install the passlib library for continued encryption functionality. This 
+feature will be removed in version 2.17. Deprecation warnings can be disabled 
+by setting deprecation_warnings=False in ansible.cfg.
+changed: [192.168.1.206]
+
+TASK [tazpod : Create tazpod user] *********************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : Home ownership] *************************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : .profile (locale + NVM + Go PATH)] ******************************
+changed: [192.168.1.206]
+
+TASK [tazpod : SSH keys] *******************************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : Sudoers] ********************************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : MagicDNS fix] ***************************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : IP forwarding] **************************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : Tailscale] ******************************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : Go (latest from go.dev)] ****************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : NVM] ************************************************************
+[WARNING]: Module remote_tmp /home/tazpod/.ansible/tmp did not exist and was
+created with a mode of 0700, this may cause issues when running as another
+user. To avoid this, create the remote_tmp dir with the correct permissions
+manually
+changed: [192.168.1.206]
+
+TASK [tazpod : Node LTS] *******************************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : LSP servers (yaml + bash)] **************************************
+ok: [192.168.1.206]
+
+TASK [tazpod : Starship] *******************************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : Zoxide] *********************************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : TPM (Tmux Plugin Manager)] **************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : Hugo (latest extended from GitHub)] *****************************
+changed: [192.168.1.206]
+
+TASK [tazpod : AWS CLI v2] *****************************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : Kubectl] ********************************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : Helm] ***********************************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : K9s] ************************************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : Talosctl] *******************************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : Kubectx + Kubens] ***********************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : Stern] **********************************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : Terraform + Terragrunt] *****************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : Flux] ***********************************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : HCloud] *********************************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : Vault CLI] ******************************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : AI CLIs (pi, gemini, opencode)] *********************************
+changed: [192.168.1.206]
+
+TASK [tazpod : oh-my-pi (omp)] *************************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : Pi extensions] **************************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : Antigravity] ****************************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : Config directories] *********************************************
+changed: [192.168.1.206] => (item=starship)
+changed: [192.168.1.206] => (item=zellij)
+changed: [192.168.1.206] => (item=nvim)
+
+TASK [tazpod : TazPod binary] **************************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : KUBECONFIG directory] *******************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : KUBECONFIG] *****************************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : Dotfiles (bashrc + tmux)] ***************************************
+changed: [192.168.1.206] => (item=/workspace/tazpod/dotfiles/.bashrc)
+changed: [192.168.1.206] => (item=/workspace/tazpod/dotfiles/.tmux.conf)
+
+TASK [tazpod : Neovim init.lua + lazyvim.json] *********************************
+changed: [192.168.1.206] => (item={'src': '/workspace/tazpod/dotfiles/.config/nvim/init.lua', 'dest': '/home/tazpod/.config/nvim/init.lua'})
+changed: [192.168.1.206] => (item={'src': '/workspace/tazpod/dotfiles/.config/nvim/lazyvim.json', 'dest': '/home/tazpod/.config/nvim/lazyvim.json'})
+
+TASK [tazpod : Neovim lua directory] *******************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : Neovim lua plugins config] **************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : Starship config] ************************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : Zellij config] **************************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : Start/update scripts] *******************************************
+changed: [192.168.1.206] => (item=/workspace/AGENTS.ctx/tools/tailscale/start-lxc.sh)
+changed: [192.168.1.206] => (item=/workspace/AGENTS.ctx/tools/tailscale/update-hosts.sh)
+
+TASK [tazpod : Systemd units] **************************************************
+changed: [192.168.1.206] => (item=tazpod-gro-gso-fix.service)
+changed: [192.168.1.206] => (item=tazpod-sync.service)
+changed: [192.168.1.206] => (item=tazpod-update-hosts.service)
+changed: [192.168.1.206] => (item=tazpod-update-hosts.timer)
+
+TASK [tazpod : Enable systemd] *************************************************
+changed: [192.168.1.206] => (item=tazpod-gro-gso-fix.service)
+changed: [192.168.1.206] => (item=tazpod-sync.service)
+changed: [192.168.1.206] => (item=tazpod-update-hosts.timer)
+
+TASK [tazpod : batcat symlink] *************************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : node/npm symlinks in /usr/local/bin] ****************************
+changed: [192.168.1.206]
+
+TASK [tazpod : Systemd DNS] ****************************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : Starship Tokyo Night config (LXC theme)] ************************
+changed: [192.168.1.206]
+
+TASK [tazpod : nvim LazyVim plugins sync] **************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : Tailscale secrets directory] ************************************
+changed: [192.168.1.206]
+
+TASK [tazpod : tree-sitter CLI (nvim-treesitter)] ******************************

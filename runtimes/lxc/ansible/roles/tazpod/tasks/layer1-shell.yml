@@ -1,0 +1,60 @@
+---
+# Layer 1: Shell tools — Tailscale, Go, NVM, Node, gopls, starship, zoxide, TMUX
+
+- name: Tailscale
+  shell: |
+    curl -fsSL https://pkgs.tailscale.com/stable/debian/bookworm.noarmor.gpg | tee /usr/share/keyrings/tailscale-archive-keyring.gpg >/dev/null
+    curl -fsSL https://pkgs.tailscale.com/stable/debian/bookworm.tailscale-keyring.list | tee /etc/apt/sources.list.d/tailscale.list >/dev/null
+    apt-get update && apt-get install -y tailscale
+  args: { creates: /usr/sbin/tailscale }
+
+- name: Go (latest from go.dev)
+  shell: |
+    curl -fsSL 'https://go.dev/dl/go1.25.0.linux-amd64.tar.gz' -o /tmp/go.tar.gz
+    rm -rf /usr/local/go
+    tar -C /usr/local -xzf /tmp/go.tar.gz
+    rm /tmp/go.tar.gz
+    su - tazpod -c 'export PATH=/usr/local/go/bin:$PATH && go install golang.org/x/tools/gopls@latest' 2>/dev/null || true
+  args: { creates: /usr/local/go/bin/go }
+
+- name: NVM
+  become_user: tazpod
+  shell: curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+  args: { creates: /home/tazpod/.nvm/nvm.sh }
+
+- name: Node LTS
+  become_user: tazpod
+  shell: |
+    export NVM_DIR="$HOME/.nvm"
+    [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+    nvm install --lts
+  args: { creates: /home/tazpod/.nvm/versions/node }
+
+- name: LSP servers (yaml + bash)
+  become_user: tazpod
+  shell: |
+    export NVM_DIR="$HOME/.nvm"
+    [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+    npm install -g yaml-language-server bash-language-server
+  args: { creates: /home/tazpod/.nvm/versions/node }
+
+- name: Starship
+  shell: curl -sS https://starship.rs/install.sh | sh -s -- -y
+  args: { creates: /usr/local/bin/starship }
+
+- name: Zoxide
+  become_user: tazpod
+  shell: curl -sS https://webinstall.dev/zoxide | bash
+  args: { creates: /home/tazpod/.local/bin/zoxide }
+
+- name: TPM (Tmux Plugin Manager)
+  become_user: tazpod
+  shell: git clone https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm 2>/dev/null || true
+  args: { creates: /home/tazpod/.tmux/plugins/tpm/tpm }
+
+- name: Hugo (latest extended from GitHub)
+  shell: |
+    V=$(curl -s https://api.github.com/repos/gohugoio/hugo/releases/latest | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
+    curl -Lo /tmp/hugo.tar.gz "https://github.com/gohugoio/hugo/releases/download/v${V}/hugo_extended_${V}_linux-amd64.tar.gz"
+    tar xzf /tmp/hugo.tar.gz -C /tmp hugo && install /tmp/hugo /usr/local/bin/hugo && rm /tmp/hugo.tar.gz /tmp/hugo
+  args: { creates: /usr/local/bin/hugo }

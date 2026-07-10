@@ -1,0 +1,9 @@
+[Unit]
+Description=Update /etc/hosts from Tailscale MagicDNS
+After=network-online.target tailscale.service
+Wants=tailscale.service
+
+[Service]
+Type=oneshot
+ExecStart=/home/tazpod/update-hosts.sh
+User=root

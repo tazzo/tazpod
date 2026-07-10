@@ -1,0 +1,183 @@
+---
+# Layer 0: System packages + Modern CLI + User setup + Neovim
+
+- name: System packages
+  apt:
+    update_cache: yes
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - sudo
+      - curl
+      - wget
+      - git
+      - build-essential
+      - unzip
+      - gnupg
+      - locales
+      - bat
+      - ripgrep
+      - fzf
+      - mc
+      - fd-find
+      - yq
+      - python3
+      - python3-pip
+      - python3-venv
+      - jq
+      - tree
+      - btop
+      - duf
+      - zip
+      - tmux
+      - wireguard-tools
+      - ethtool
+      - xclip
+      - xsel
+      - dnsutils
+      - ncdu
+      - tldr
+      - man-db
+      - ffmpeg
+      - 7zip
+      - poppler-utils
+      - ffmpegthumbnailer
+      - chafa
+      - cryptsetup-bin
+      - e2fsprogs
+      - dmsetup
+      - procps
+      - psmisc
+      - strace
+      - ncurses-term
+      - iputils-ping
+      - resolvconf
+      - clangd
+    state: present
+
+- name: Locale
+  shell: locale-gen en_US.UTF-8
+  args: { creates: /usr/lib/locale/en_US.utf8 }
+
+- name: fd symlink
+  file: { src: /usr/bin/fdfind, dest: /usr/local/bin/fd, state: link }
+
+- name: Python packages
+  shell: pip3 install --break-system-packages python-lsp-server google-genai psycopg2-binary google-cloud-alloydb-connector 2>/dev/null || true
+  args: { creates: /usr/lib/python3/dist-packages/pylsp }
+
+- name: ~/workspace symlink
+  shell: mkdir -p /home/tazpod && ln -sf /workspace /home/tazpod/workspace
+  args: { creates: /home/tazpod/workspace }
+
+- name: Task (Taskfile)
+  shell: sh -c "$(curl -L https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin
+  args: { creates: /usr/local/bin/task }
+
+- name: GitHub CLI
+  shell: |
+    curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+    echo 'deb [signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main' > /etc/apt/sources.list.d/github-cli.list
+    apt-get update && apt-get install -y gh
+  args: { creates: /usr/bin/gh }
+
+- name: Yazi
+  shell: |
+    V=$(curl -s https://api.github.com/repos/sxyazi/yazi/releases/latest | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
+    curl -Lo /tmp/yazi.zip "https://github.com/sxyazi/yazi/releases/download/v${V}/yazi-x86_64-unknown-linux-musl.zip"
+    unzip -o /tmp/yazi.zip -d /tmp/yazi && install /tmp/yazi/yazi-x86_64-unknown-linux-musl/yazi /usr/local/bin && rm -rf /tmp/yazi.zip /tmp/yazi
+  args: { creates: /usr/local/bin/yazi }
+
+- name: Lazygit
+  shell: |
+    V=$(curl -s https://api.github.com/repos/jesseduffield/lazygit/releases/latest | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
+    curl -Lo /tmp/lg.tar.gz "https://github.com/jesseduffield/lazygit/releases/download/v${V}/lazygit_${V}_Linux_x86_64.tar.gz"
+    tar xf /tmp/lg.tar.gz -C /tmp lazygit && install /tmp/lazygit /usr/local/bin && rm /tmp/lg.tar.gz /tmp/lazygit
+  args: { creates: /usr/local/bin/lazygit }
+
+- name: Eza
+  shell: |
+    curl -fsSL https://github.com/eza-community/eza/releases/latest/download/eza_x86_64-unknown-linux-gnu.tar.gz -o /tmp/eza.tar.gz
+    cd /tmp && tar xzf eza.tar.gz && mv eza /usr/local/bin/eza && chmod +x /usr/local/bin/eza && rm eza.tar.gz
+  args: { creates: /usr/local/bin/eza }
+
+- name: Herdr
+  shell: curl -fsSL https://herdr.dev/install.sh | HERDR_INSTALL_DIR=/usr/local/bin sh
+  args: { creates: /usr/local/bin/hdr }
+
+- name: Neovim (latest from GitHub, lazy.nvim requires >= 0.8)
+  shell: |
+    apt-get remove -y neovim 2>/dev/null || true
+    V=$(curl -s https://api.github.com/repos/neovim/neovim/releases/latest | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
+    curl -Lo /tmp/nvim.tar.gz "https://github.com/neovim/neovim/releases/download/v${V}/nvim-linux-x86_64.tar.gz"
+    tar xzf /tmp/nvim.tar.gz -C /tmp
+    cp /tmp/nvim-linux-x86_64/bin/nvim /usr/local/bin/nvim
+    cp -r /tmp/nvim-linux-x86_64/lib/* /usr/local/lib/ 2>/dev/null || true
+    cp -r /tmp/nvim-linux-x86_64/share/* /usr/local/share/ 2>/dev/null || true
+    rm -rf /tmp/nvim.tar.gz /tmp/nvim-linux-x86_64
+  args: { creates: /usr/local/bin/nvim }
+
+- name: SSH password auth
+  shell: |
+    sed -i 's/^PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
+    grep -q '^PasswordAuthentication yes' /etc/ssh/sshd_config || echo 'PasswordAuthentication yes' >> /etc/ssh/sshd_config
+    systemctl restart sshd
+    chmod u+s /bin/ping
+
+- name: Password tazpod user
+  user:
+    name: tazpod
+    password: "{{ 'TAZPOD2026!' | password_hash('sha512') }}"
+    update_password: always
+
+
+- name: Create tazpod user
+  user: { name: tazpod, uid: 1000, shell: /bin/bash, create_home: yes, state: present }
+
+- name: Home ownership
+  file: { path: /home/tazpod, owner: tazpod, group: tazpod }
+
+- name: .profile (locale + NVM + Go PATH)
+  copy:
+    content: |
+      export TERM=xterm-256color
+      export STARSHIP_CONFIG=$HOME/.config/starship-tokyo.toml
+      export LANG=en_US.UTF-8
+      export LC_ALL=en_US.UTF-8
+      if [ -n "$BASH_VERSION" ]; then
+          if [ -f "$HOME/.bashrc" ]; then
+              . "$HOME/.bashrc"
+          fi
+      fi
+      export NVM_DIR="$HOME/.nvm"
+      [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+      export PATH="/usr/local/go/bin:$HOME/go/bin:$PATH"
+    dest: /home/tazpod/.profile
+    owner: tazpod
+    group: tazpod
+    mode: '0644'
+
+- name: SSH keys
+  shell: |
+    mkdir -p /home/tazpod/.ssh && chmod 700 /home/tazpod/.ssh
+    cp /root/.ssh/authorized_keys /home/tazpod/.ssh/authorized_keys 2>/dev/null || true
+    chmod 600 /home/tazpod/.ssh/authorized_keys
+    chown -R tazpod:tazpod /home/tazpod/.ssh
+  args: { creates: /home/tazpod/.ssh/authorized_keys }
+
+- name: Sudoers
+  copy:
+    content: "tazpod ALL=(ALL) NOPASSWD:ALL\n"
+    dest: /etc/sudoers.d/tazpod
+    mode: '0440'
+    validate: visudo -cf %s
+
+
+- name: MagicDNS fix
+  copy: { content: "", dest: /etc/.pve-ignore.resolv.conf, force: no }
+
+- name: IP forwarding
+  shell: |
+    sysctl -w net.ipv4.ip_forward=1
+    echo 'net.ipv4.ip_forward = 1' > /etc/sysctl.d/99-tailscale.conf
+  args: { creates: /etc/sysctl.d/99-tailscale.conf }

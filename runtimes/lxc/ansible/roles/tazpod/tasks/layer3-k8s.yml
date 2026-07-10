@@ -1,0 +1,69 @@
+---
+# Layer 3: K8s Commander (Dockerfile.k8s)
+
+- name: Kubectl
+  shell: |
+    curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.31/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+    echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.31/deb/ /' > /etc/apt/sources.list.d/kubernetes.list
+    apt-get update && apt-get install -y kubectl
+  args: { creates: /usr/bin/kubectl }
+
+- name: Helm
+  shell: curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+  args: { creates: /usr/local/bin/helm }
+
+- name: K9s
+  shell: |
+    V=$(curl -s https://api.github.com/repos/derailed/k9s/releases/latest | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
+    curl -Lo /tmp/k9s.tar.gz "https://github.com/derailed/k9s/releases/download/v${V}/k9s_Linux_amd64.tar.gz"
+    tar xf /tmp/k9s.tar.gz -C /tmp k9s && install /tmp/k9s /usr/local/bin && rm /tmp/k9s.tar.gz /tmp/k9s
+  args: { creates: /usr/local/bin/k9s }
+
+- name: Talosctl
+  shell: |
+    V=$(curl -s https://api.github.com/repos/siderolabs/talos/releases/latest | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
+    curl -Lo /usr/local/bin/talosctl "https://github.com/siderolabs/talos/releases/download/v${V}/talosctl-linux-amd64"
+    chmod +x /usr/local/bin/talosctl
+  args: { creates: /usr/local/bin/talosctl }
+
+- name: Kubectx + Kubens
+  shell: |
+    git clone https://github.com/ahmetb/kubectx /opt/kubectx 2>/dev/null || (cd /opt/kubectx && git pull)
+    ln -sf /opt/kubectx/kubectx /usr/local/bin/kubectx
+    ln -sf /opt/kubectx/kubens /usr/local/bin/kubens
+  args: { creates: /usr/local/bin/kubectx }
+
+- name: Stern
+  shell: |
+    V=$(curl -s https://api.github.com/repos/stern/stern/releases/latest | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
+    curl -Lo /tmp/stern.tar.gz "https://github.com/stern/stern/releases/download/v${V}/stern_${V}_linux_amd64.tar.gz"
+    tar xf /tmp/stern.tar.gz -C /tmp stern && install /tmp/stern /usr/local/bin && rm /tmp/stern.tar.gz /tmp/stern
+  args: { creates: /usr/local/bin/stern }
+
+- name: Terraform + Terragrunt
+  shell: |
+    TV=$(curl -s https://checkpoint-api.hashicorp.com/v1/check/terraform | jq -r .current_version)
+    curl -Lo /tmp/tf.zip "https://releases.hashicorp.com/terraform/${TV}/terraform_${TV}_linux_amd64.zip"
+    unzip -o /tmp/tf.zip -d /tmp/ && install /tmp/terraform /usr/local/bin && rm /tmp/tf.zip /tmp/terraform
+    GV=$(curl -s https://api.github.com/repos/gruntwork-io/terragrunt/releases/latest | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
+    curl -Lo /usr/local/bin/terragrunt "https://github.com/gruntwork-io/terragrunt/releases/download/v${GV}/terragrunt_linux_amd64"
+    chmod +x /usr/local/bin/terragrunt
+  args: { creates: /usr/local/bin/terraform }
+
+- name: Flux
+  shell: curl -s https://fluxcd.io/install.sh | bash
+  args: { creates: /usr/local/bin/flux }
+
+- name: HCloud
+  shell: |
+    V=$(curl -s https://api.github.com/repos/hetznercloud/cli/releases/latest | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
+    curl -Lo /tmp/hc.tar.gz "https://github.com/hetznercloud/cli/releases/download/v${V}/hcloud-linux-amd64.tar.gz"
+    tar xf /tmp/hc.tar.gz -C /tmp hcloud && install /tmp/hcloud /usr/local/bin && rm /tmp/hc.tar.gz /tmp/hcloud
+  args: { creates: /usr/local/bin/hcloud }
+
+- name: Vault CLI
+  shell: |
+    V=$(curl -s https://checkpoint-api.hashicorp.com/v1/check/vault | jq -r .current_version)
+    curl -Lo /tmp/vault.zip "https://releases.hashicorp.com/vault/${V}/vault_${V}_linux_amd64.zip"
+    unzip -o /tmp/vault.zip -d /tmp/ && install /tmp/vault /usr/local/bin/vault && rm -f /tmp/vault.zip /tmp/vault
+  args: { creates: /usr/local/bin/vault }

@@ -1,0 +1,6 @@
+---
+- name: Deploy TazPod LXC baseline
+  hosts: tazpod
+  become: yes
+  roles:
+    - tazpod
