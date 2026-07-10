@@ -23,6 +23,14 @@
   copy: { src: "{{ item }}", dest: "/home/tazpod/{{ item | basename }}", owner: tazpod, group: tazpod, mode: '0644' }
   loop: [/workspace/tazpod/dotfiles/.bashrc, /workspace/tazpod/dotfiles/.tmux.conf]
 
+- name: TPM (Tmux Plugin Manager)
+  git:
+    repo: https://github.com/tmux-plugins/tpm
+    dest: /home/tazpod/.tmux/plugins/tpm
+    version: master
+    depth: 1
+  become_user: tazpod
+
 - name: Neovim init.lua + lazyvim.json
   copy:
     src: "{{ item.src }}"
