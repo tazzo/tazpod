@@ -7,20 +7,25 @@ SOCKET_DIR="/var/run/tailscale"
 SOCKET_PATH="${SOCKET_DIR}/tailscaled.sock"
 STATE_PATH="${STATE_DIR}/tailscaled.state"
 LOG_PATH="/tmp/tailscaled-hostnet.log"
-SECRETS_DIR="${HOME}/secrets"
+# Pre-flight GPG / Gopass check
+command -v gopass >/dev/null 2>&1 || { echo "❌ gopass not installed"; exit 1; }
+gopass config core.autopush false >/dev/null 2>&1 || true
+if ! timeout 3 gopass show bootstrap/tailscale/api-key >/dev/null 2>&1; then
+  echo "[gopass] ❌ Gopass locked"
+  exit 1
+fi
 
 resolve_secret() {
   local path="$1"
-  [[ -f "$path" ]] || return 1
-  tr -d "'\"\t \n" < "$path"
+  gopass show "$path" 2>/dev/null | tr -d "'\"\t \r\n"
 }
 
 mint_authkey() {
   local api_key tailnet authkey
 
   # API key path is simpler and always available via vault
-  api_key="$(resolve_secret "${SECRETS_DIR}/tailscale-api-key" 2>/dev/null || true)"
-  tailnet="$(resolve_secret "${SECRETS_DIR}/tailscale-tailnet" 2>/dev/null || true)"
+  api_key="$(resolve_secret "bootstrap/tailscale/api-key")"
+  tailnet="$(resolve_secret "cluster/tailscale/tailnet")"
   if [[ -n "$api_key" && -n "$tailnet" ]]; then
     authkey="$(curl --silent --show-error --fail \
       --user "${api_key}:" \
@@ -35,8 +40,8 @@ mint_authkey() {
 
   echo "Warning: Tailscale API key auth failed, trying OAuth fallback..." >&2
   local oauth_id oauth_secret token
-  oauth_id="$(resolve_secret "${SECRETS_DIR}/tailscale-oauth-client-id" 2>/dev/null || true)"
-  oauth_secret="$(resolve_secret "${SECRETS_DIR}/tailscale-oauth-client-secret" 2>/dev/null || true)"
+  oauth_id="$(resolve_secret "bootstrap/tailscale/oauth-client-id")"
+  oauth_secret="$(resolve_secret "bootstrap/tailscale/oauth-client-secret")"
   [[ -n "$oauth_id" && -n "$oauth_secret" ]] || { echo "No Tailscale auth material available." >&2; return 1; }
 
   token="$(curl --silent --show-error --fail \
