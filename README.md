@@ -1,23 +1,22 @@
 # TazPod: The Zero-Trust Containerized Developer Environment 🛡️📦
 
-TazPod is an ephemeral, secure, and portable development environment built on **Docker**, **Go**, and **RAM-based Isolation**. It provides a fully configured IDE (Neovim, Tmux, Zellij) while ensuring that sensitive secrets are never exposed to the host filesystem or unauthorized processes through its **RAM Enclave (tmpfs)** architecture.
+TazPod is an ephemeral, secure, and portable development environment built on **Docker**, **Go**, and **Gopass + GPG**. It provides a fully configured IDE (Neovim, Tmux) while keeping sensitive credentials encrypted on disk and decrypted only in GPG agent memory with strict TTLs, eliminating plaintext credentials from the host filesystem.
 
 ---
 
 ## 🚀 Key Features
 
-*   **Zero Trust Architecture**: Secrets are stored in an AES-256-GCM encrypted vault (`vault.tar.aes`) and decrypted only into a volatile **RAM disk (tmpfs)**.
-*   **AWS SSO Authentication**: Native integration with **AWS IAM Identity Center** for secure, token-based authentication (No static keys on disk).
-*   **S3 Vault Sync**: Automated synchronization of your encrypted vault and nomadic identity to/from S3 (`tazlab-storage`, `eu-central-1`).
-*   **AWS Enclave Bridge**: Securely bridges secrets from the RAM enclave to standard paths (e.g., `~/.aws`) via **Bind Mounts**.
-*   **Modular Verticals**: Specialized images for AWS, Kubernetes, and AI-Enhanced development.
-*   **Portable**: Single Go binary that works on any Linux machine with Docker.
+*   **Gopass Secrets Store**: Centralized secret management inside the container, backed by a secure git repository (default: `/workspace/tazlab-secrets`).
+*   **GPG Passphrase Caching**: Decryption of GPG keys in memory via GPG Agent. Cache is set to expire after 1 hour of inactivity (resets on active use), with a 7-day hard maximum.
+*   **Safe TTY Binding**: Native TTY alignment using `gpg-connect-agent updatestartuptty /bye` to support non-interactive pinentry in TMUX panes and parallel shells.
+*   **Reduced Privileges**: Container runs without elevated host privileges (removed `--cap-add SYS_ADMIN`), keeping only `NET_ADMIN` for Tailscale networking.
+*   **Transparent Orchestration**: Works identically on local Docker containers and Proxmox LXC CT nodes (LXC mode).
 
 ---
 
 ## 📥 Installation
 
-Install TazPod globally on your system using the official installer:
+Install TazPod globally on your system:
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/tazzo/tazpod/master/scripts/install.sh | bash
@@ -35,8 +34,8 @@ tazpod init
 ```
 
 This will create:
-*   `.tazpod/vault/`: Storage for the local encrypted vault.
-*   `.tazpod/config.yaml`: The main configuration file (AWS SSO profile, S3 bucket, image).
+*   `.tazpod/config.yaml`: The main configuration file (deployment mode, image name, container name, gopass store path).
+*   `.tazpod/` agent folders: `.pi`, `.omp`, `.gemini`, `.claude`, `.aws`, `.opencode`, `.herdr` for persistent configuration tracking.
 
 ---
 
@@ -45,16 +44,16 @@ This will create:
 The `.tazpod/config.yaml` file defines your environment's blueprint:
 
 ```yaml
-version: 1.0
-image: "tazzo/tazpod-k8s"
-container_name: "tazpod-lab"
-user: "tazpod"
-aws_sso:
-  start_url: "https://sso.example.com/start"
-  account_id: "123456789012"
-  role_name: "DeveloperAccess"
-  region: "eu-central-1"
-  profile: "tazlab-bootstrap"
+mode: docker
+image: tazzo/tazpod-ai:latest
+container_name: tazpod-lab
+user: tazpod
+ghost_mode: true
+features:
+    debug: false
+gopass:
+    store: /workspace/tazlab-secrets
+providers: {}
 ```
 
 ---
@@ -63,8 +62,8 @@ aws_sso:
 
 | Image Name | Features |
 | :--- | :--- |
-| `tazzo/tazpod-base` | Ubuntu 24.04, Neovim, Tmux, Shell tools (Bash/Starship) |
-| `tazzo/tazpod-aws` | Base + AWS CLI v2, SSO support |
+| `tazzo/tazpod-base` | Ubuntu 24.04, Neovim, Tmux, Shell tools (Bash/Starship), GPG, Gopass |
+| `tazzo/tazpod-aws` | Base + AWS CLI v2 |
 | `tazzo/tazpod-k8s` | AWS + Kubectl, Helm, K9s, Talosctl, Stern, Terraform |
 | `tazzo/tazpod-ai` | K8s + Gemini AI CLI, Pi Agent, Mnemosyne |
 
@@ -75,28 +74,18 @@ aws_sso:
 ### 1. Smart Entry (No Arguments or `enter`)
 
 Run either `tazpod` or `tazpod enter` for the guided smart bootstrap flow:
-1.  **Init**: Setup project if missing.
-2.  **Up**: Ensure the container is running or create it if needed.
-3.  **Vault check**:
-    - if vault is already unlocked, proceed directly
-    - if local vault exists, offer `unlock`
-    - if local vault is missing, offer `login` (SSO) → `pull vault` (S3) → `unlock`
-4.  **Enter**: open the shell after readiness is satisfied.
+1.  **Init**: Setup project directories if missing.
+2.  **Up**: Ensure the container is running (creates/starts if needed).
+3.  **Enter**: Open the shell in the container.
 
-### 2. Vault & Sync Commands
+### 2. CLI Commands
 
 | Command | Action |
 | :--- | :--- |
-| `tazpod login` | Authenticate with AWS SSO |
-| `tazpod unlock` | Decrypt `vault.tar.aes` → tmpfs RAM disk |
-| `tazpod lock` | Unmount RAM and wipe secrets |
-| `tazpod pull vault` | Download latest vault from S3 |
-| `tazpod push vault` | Upload local vault to S3 |
-| `tazpod vpn up/down` | Start/Stop WireGuard tunnel (Tailscale planned) |
-
-### 3. Background Sync
-
-A daemon runs every 5 minutes while the vault is unlocked, performing an automatic `save` + `push vault` to ensure your state is always persisted to S3.
-
----
-*For more technical details, see the [Documentation Hub](./docs/01-OVERVIEW.md).*
+| `tazpod init` | Initialize a new TazPod workspace |
+| `tazpod up` | Create and start the development container |
+| `tazpod down` | Stop and remove the development container |
+| `tazpod enter` | Open the shell in the container |
+| `tazpod update` | Pull the latest version of the configured image |
+| `tazpod gopass` | Interactive setup to import keys and mount the gopass store |
+| `tazpod lock` | Revoke cached GPG keys and close the store cache |
