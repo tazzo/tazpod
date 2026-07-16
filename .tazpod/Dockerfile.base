@@ -1,7 +1,4 @@
-# --- STAGE 1: Extract Kaniko (Enterprise V5) ---
-FROM gcr.io/kaniko-project/executor:latest AS kaniko-stage
-
-# --- STAGE 2: TazPod Base ---
+# --- TazPod Base ---
 FROM ubuntu:24.04
 
 # --- TAZPOD v4.3 (UBUNTU NOBLE - ATOMIC) ---
@@ -35,9 +32,7 @@ RUN apt-get remove -y gopass 2>/dev/null; \
     apt-get update && apt-get install -y gopass && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# 2. Inject Kaniko Executor from Stage 1
-COPY --from=kaniko-stage /kaniko/executor /usr/local/bin/kaniko
-RUN chmod +x /usr/local/bin/kaniko
+
 
 # 2.5 Firefox & Browsh (Native install, bypassing Snap wrapper)
 # Trigger rebuild to publish the vertical images with native Firefox and Browsh.
@@ -126,6 +121,14 @@ RUN . $NVM_DIR/nvm.sh && \
 # 12. Zoxide & Starship Init (User-specific)
 RUN curl -sS https://webinstall.dev/zoxide | bash && \
     git clone https://github.com/tmux-plugins/tpm /home/tazpod/.tmux/plugins/tpm
+
+# 12.5 GPG & Gopass Configurations
+RUN mkdir -p /home/tazpod/.gnupg && \
+    echo "default-cache-ttl 3600" > /home/tazpod/.gnupg/gpg-agent.conf && \
+    echo "max-cache-ttl 604800" >> /home/tazpod/.gnupg/gpg-agent.conf && \
+    echo "trust-model always" > /home/tazpod/.gnupg/gpg.conf && \
+    chmod 700 /home/tazpod/.gnupg && \
+    chmod 600 /home/tazpod/.gnupg/*
 
 # 13. Dotfiles & Neovim Plugins
 COPY --chown=tazpod:tazpod dotfiles/ /home/tazpod/

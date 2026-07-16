@@ -64,11 +64,11 @@
 
 - name: Systemd units
   template: { src: "{{ item }}.j2", dest: "/etc/systemd/system/{{ item }}" }
-  loop: [tazpod-gro-gso-fix.service, tazpod-sync.service, tazpod-update-hosts.service, tazpod-update-hosts.timer]
+  loop: [tazpod-gro-gso-fix.service, tazpod-update-hosts.service, tazpod-update-hosts.timer]
 
 - name: Enable systemd
   systemd: { name: "{{ item }}", enabled: yes, state: started, daemon_reload: yes }
-  loop: [tazpod-gro-gso-fix.service, tazpod-sync.service, tazpod-update-hosts.timer]
+  loop: [tazpod-gro-gso-fix.service, tazpod-update-hosts.timer]
 
 - name: batcat symlink
   file: { src: /usr/bin/batcat, dest: /usr/local/bin/bat, state: link }
@@ -115,17 +115,6 @@
     npm install -g tree-sitter-cli@0.24.7 2>&1 | tail -3
   args: { creates: /usr/local/bin/tree-sitter }
 
-- name: Tailscale OAuth credentials
-  copy:
-    src: "{{ item.src }}"
-    dest: "{{ item.dest }}"
-    owner: tazpod
-    group: tazpod
-    mode: '0600'
-  loop:
-    - { src: /home/tazpod/secrets/tailscale-oauth-client-id, dest: /home/tazpod/secrets/tailscale-oauth-client-id }
-    - { src: /home/tazpod/secrets/tailscale-oauth-client-secret, dest: /home/tazpod/secrets/tailscale-oauth-client-secret }
-    - { src: /home/tazpod/secrets/tailscale-tailnet, dest: /home/tazpod/secrets/tailscale-tailnet }
 
 - name: Verifica Tailscale connesso
   become_user: tazpod

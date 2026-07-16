@@ -62,63 +62,7 @@ alias lt="eza --tree --icons"
 alias l="eza -l --icons --git --no-user --no-time"
 alias cat="bat"
 
-# --- TAZPOD CORE (Smart Function v7.2) ---
-tazpod() {
-    if [ "$1" == "env" ]; then
-        eval "$(command tazpod __internal_env 2>/dev/null)"
-        echo "🔄 Enclave environment variables refreshed."
-        return 0
-    fi
 
-    command tazpod "$@";
-    local res=$?;
-    
-    # Auto-reload env on key commands
-    if [ "$1" == "unlock" ] || [ "$1" == "pull" ] || [ "$1" == "sync" ] || [ "$1" == "login" ] || [ "$1" == "lock" ]; then
-        if [ "$1" == "lock" ]; then sleep 0.1; fi
-        eval "$(command tazpod __internal_env 2>/dev/null)"
-        if [ "$1" == "lock" ]; then
-             echo "🔒 Enclave environment cleaned."
-        else
-             echo "🔄 Environment updated."
-        fi
-    fi
-    return $res;
-}
-
-# Auto-load secrets if already mounted
-if mountpoint -q /home/tazpod/secrets; then
-    eval "$(command tazpod __internal_env 2>/dev/null)"
-    setup_oci_config
-fi
-
-# --- VAULT AUTO-LOCK ON LAST SHELL EXIT (Marker Files) ---
-_TAZPOD_SHELL_MARKER_DIR=/tmp/.tazpod-shells
-_TAZPOD_SHELL_MARKER="$_TAZPOD_SHELL_MARKER_DIR/$$"
-mkdir -p "$_TAZPOD_SHELL_MARKER_DIR" 2>/dev/null
-
-_clean_stale_tazpod_markers() {
-    local f pid
-    for f in "$_TAZPOD_SHELL_MARKER_DIR"/*; do
-        [ -e "$f" ] || continue
-        pid="${f##*/}"
-        [ -n "$pid" ] || { rm -f "$f"; continue; }
-        [ -d "/proc/$pid" ] || { rm -f "$f"; continue; }
-        [ "$(cat "/proc/$pid/comm" 2>/dev/null)" = "bash" ] || { rm -f "$f"; continue; }
-    done
-}
-
-_clean_stale_tazpod_markers
-printf 'tty=%s sid=%s\n' "$(tty 2>/dev/null || printf 'none')" "$(ps -o sid= -p $$ 2>/dev/null | tr -d ' ')" > "$_TAZPOD_SHELL_MARKER"
-
-_vault_maybe_lock() {
-    rm -f "$_TAZPOD_SHELL_MARKER"
-    _clean_stale_tazpod_markers
-    if ! find "$_TAZPOD_SHELL_MARKER_DIR" -mindepth 1 -maxdepth 1 -type f | read -r _; then
-        command tazpod lock
-    fi
-}
-trap '_vault_maybe_lock' EXIT
 
 # --- AI TOOL CONFIG SYMLINKS (persistent, no unlock required) ---
 if [ -d /workspace/.tazpod ]; then
@@ -133,14 +77,7 @@ if [ -d /workspace/.tazpod ]; then
     done
     unset _tool _target _link
 
-    # AWS config: symlink ~/.aws -> /workspace/.tazpod/.aws
-    # Skip if already bind-mounted from the vault enclave (vault unlocked)
-    if ! mountpoint -q "$HOME/.aws" 2>/dev/null; then
-        mkdir -p /workspace/.tazpod/.aws
-        if [ ! -L "$HOME/.aws" ] || [ "$(readlink "$HOME/.aws")" != "/workspace/.tazpod/.aws" ]; then
-            rm -rf "$HOME/.aws" && ln -sf /workspace/.tazpod/.aws "$HOME/.aws"
-        fi
-    fi
+
 
     # OpenCode: persist config, auth, sessions, and state in workspace
     _opencode_root="/workspace/.tazpod/.opencode"
@@ -283,15 +220,12 @@ else
 fi
 unset _TAILSCALE_SOCK
 
-# Auto-start sync daemon (solo se non già in esecuzione)
-if ! pgrep -x tazpod > /dev/null 2>&1; then
-    { tazpod __internal_sync_daemon &> /tmp/tazpod-sync.log & }
-fi
-
 # Enable Modern Prompts/Tools
 [ -x "$(command -v starship)" ] && eval "$(starship init bash)"
 [ -x "$(command -v zoxide)" ] && eval "$(zoxide init bash)"
 [ -f ~/.fzf.bash ] && source ~/.fzf.bash
 
-# GPG TTY for pinentry (gopass)
+# GPG Agent and TTY for pinentry (gopass)
 if [ -t 0 ]; then export GPG_TTY=$(tty); fi
+gpgconf --launch gpg-agent >/dev/null 2>&1
+gpg-connect-agent updatestartuptty /bye >/dev/null 2>&1

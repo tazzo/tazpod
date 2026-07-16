@@ -62,34 +62,28 @@ func main() {
 		down()
 	case "ssh", "enter":
 		enter()
-	case "unlock":
-		unlock()
 	case "lock":
 		lock()
-	case "save":
-		save()
-	case "sync", "pull":
-		pull()
+	case "gopass":
+		gopassCmd()
 	case "update":
 		updateImage()
-	case "push":
-		push()
+	case "unlock":
+		fmt.Println("⚠️  'unlock' is deprecated — secrets are now managed via gopass inside the container.")
+		fmt.Println("   Run 'tazpod gopass' to configure the store.")
+	case "save":
+		fmt.Println("⚠️  'save' is deprecated — secrets are now managed via gopass inside the container.")
+		fmt.Println("   Any changes are persisted instantly to the git repository.")
+	case "sync", "pull", "push", "list":
+		fmt.Printf("⚠️  '%s' is deprecated — secrets are managed locally in gopass and versioned via git.\n", command)
 	case "login":
-		login()
-	case "list":
-		list()
+		fmt.Println("⚠️  'login' is deprecated — S3 sync and AWS SSO are no longer required.")
 	case "vpn":
-		if cfg.Mode == "lxc" {
-			fmt.Println("⚠️  'vpn' is not available in LXC mode — Tailscale already provides the VPN tunnel.")
-			return
-		}
-		vpnCommand()
+		fmt.Println("⚠️  'vpn' (WireGuard) is deprecated. Tailscale is automatically started inside the container to provide the VPN tunnel.")
 	case "setup-storage":
-		setupStorage()
-	case "__internal_env":
-		printExportEnv()
+		fmt.Println("⚠️  'setup-storage' is deprecated — S3 backup is decommissioned.")
 	case "__internal_sync_daemon":
-		syncDaemon()
+		fmt.Println("⚠️  'sync daemon' is deprecated.")
 	case "--version", "-v":
 		fmt.Println(Version)
 	default:
@@ -98,6 +92,16 @@ func main() {
 	}
 }
 
-func printExportEnv() {
-	// Not implemented or placeholder
+func initLogger() {
+	level := slog.LevelInfo
+	switch os.Getenv("TAZPOD_LOG_LEVEL") {
+	case "DEBUG":
+		level = slog.LevelDebug
+	case "WARN":
+		level = slog.LevelWarn
+	case "ERROR":
+		level = slog.LevelError
+	}
+	opts := &slog.HandlerOptions{Level: level}
+	logger = slog.New(slog.NewTextHandler(os.Stderr, opts))
 }

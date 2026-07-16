@@ -121,20 +121,21 @@ phase_ansible_baseline() {
 
 phase_transfer_oauth() {
   local ip="${1:-192.168.1.206}"
-  echo "Transferring OAuth credentials to LXC..."
+  echo "Transferring OAuth credentials from gopass to LXC..."
 
-  if [ -f ~/secrets/tailscale-oauth-client-id ]; then
-    scp -o StrictHostKeyChecking=no ~/secrets/tailscale-oauth-client-id "root@${ip}:/tmp/"
-  fi
-  if [ -f ~/secrets/tailscale-oauth-client-secret ]; then
-    scp -o StrictHostKeyChecking=no ~/secrets/tailscale-oauth-client-secret "root@${ip}:/tmp/"
-  fi
-  if [ -f ~/secrets/tailscale-api-key ]; then
-    scp -o StrictHostKeyChecking=no ~/secrets/tailscale-api-key "root@${ip}:/tmp/"
-  fi
-  if [ -f ~/secrets/tailscale-tailnet ]; then
-    scp -o StrictHostKeyChecking=no ~/secrets/tailscale-tailnet "root@${ip}:/tmp/"
-  fi
+  $SSH "root@${ip}" "mkdir -p /home/tazpod/secrets && chown tazpod:tazpod /home/tazpod/secrets && chmod 700 /home/tazpod/secrets"
+
+  gopass show bootstrap/tailscale/oauth-client-id >/dev/null 2>&1 && \
+    gopass show bootstrap/tailscale/oauth-client-id | $SSH "root@${ip}" "cat > /home/tazpod/secrets/tailscale-oauth-client-id && chmod 600 /home/tazpod/secrets/tailscale-oauth-client-id && chown tazpod:tazpod /home/tazpod/secrets/tailscale-oauth-client-id"
+
+  gopass show bootstrap/tailscale/oauth-client-secret >/dev/null 2>&1 && \
+    gopass show bootstrap/tailscale/oauth-client-secret | $SSH "root@${ip}" "cat > /home/tazpod/secrets/tailscale-oauth-client-secret && chmod 600 /home/tazpod/secrets/tailscale-oauth-client-secret && chown tazpod:tazpod /home/tazpod/secrets/tailscale-oauth-client-secret"
+
+  gopass show bootstrap/tailscale/api-key >/dev/null 2>&1 && \
+    gopass show bootstrap/tailscale/api-key | $SSH "root@${ip}" "cat > /home/tazpod/secrets/tailscale-api-key && chmod 600 /home/tazpod/secrets/tailscale-api-key && chown tazpod:tazpod /home/tazpod/secrets/tailscale-api-key"
+
+  gopass show bootstrap/tailscale/tailnet >/dev/null 2>&1 && \
+    gopass show bootstrap/tailscale/tailnet | $SSH "root@${ip}" "cat > /home/tazpod/secrets/tailscale-tailnet && chmod 600 /home/tazpod/secrets/tailscale-tailnet && chown tazpod:tazpod /home/tazpod/secrets/tailscale-tailnet"
 }
 
 phase_tailscale_start() {
@@ -150,7 +151,6 @@ phase_verify() {
   echo "Verifying deployment..."
   $SSH "root@${ip}" "/usr/local/bin/tazpod --version"
   $SSH "root@${ip}" "tailscale status"
-  $SSH "root@${ip}" "systemctl status tazpod-sync --no-pager"
   echo "Verification complete."
 }
 

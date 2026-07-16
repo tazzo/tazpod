@@ -57,11 +57,4 @@ USER tazpod
 
 ---
 
-## 4. Local Build Engine
-
-TazPod includes a `kaniko` executor bridge, allowing you to build and push container images **directly from within the Pod** without needing Docker-in-Docker or host-level access.
-
-*   See `Taskfile.yml` for local build automation.
-
----
-*Next: Learn about the Kubernetes integration roadmap in [07-KUBERNETES-POD.md](./07-KUBERNETES-POD.md)*
+*Next: Learn about the Kubernetes integration roadmap in [07-KUBERNETES-POD.md](./07-KUBERNETES-POD.md)

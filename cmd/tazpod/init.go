@@ -22,7 +22,12 @@ func initProject(mode string) {
 
 	fmt.Printf("Initializing TazPod in %s...\n", cwd)
 	os.MkdirAll(configDir, 0755)
-	os.MkdirAll(filepath.Join(configDir, "vault"), 0755)
+
+	// Create agent folders inside .tazpod
+	agentsDirs := []string{".pi", ".omp", ".gemini", ".claude", ".aws", ".opencode", ".herdr", "vault", "keyrings"}
+	for _, d := range agentsDirs {
+		os.MkdirAll(filepath.Join(configDir, d), 0755)
+	}
 
 	// Auto-detect o usa mode esplicita
 	if mode == "" {
@@ -49,10 +54,8 @@ func initProject(mode string) {
 		Features: Features{
 			Debug: false,
 		},
-		AwsSso: AwsSsoConfig{
-			Profile: "tazlab",
-			Bucket:  utils.DefaultBucket,
-			Region:  utils.DefaultRegion,
+		Gopass: GopassConfig{
+			Store: "/workspace/tazlab-secrets",
 		},
 		Providers: make(map[string]ProviderConfig),
 	}
@@ -85,24 +88,10 @@ func promptInitConfig(c *Config) {
 		c.Providers["aws"] = ProviderConfig{DBHost: dbHost}
 	}
 
-	fmt.Printf("☁️  S3 Bucket [%s]: ", c.AwsSso.Bucket)
+	fmt.Printf("🔑 Gopass Secrets Store Path [%s]: ", c.Gopass.Store)
 	input, _ := reader.ReadString('\n')
 	input = strings.TrimSpace(input)
 	if input != "" {
-		c.AwsSso.Bucket = input
-	}
-
-	fmt.Printf("🌍  S3 Region [%s]: ", c.AwsSso.Region)
-	input, _ = reader.ReadString('\n')
-	input = strings.TrimSpace(input)
-	if input != "" {
-		c.AwsSso.Region = input
-	}
-
-	fmt.Printf("🔑 AWS SSO Profile [%s]: ", c.AwsSso.Profile)
-	input, _ = reader.ReadString('\n')
-	input = strings.TrimSpace(input)
-	if input != "" {
-		c.AwsSso.Profile = input
+		c.Gopass.Store = input
 	}
 }
