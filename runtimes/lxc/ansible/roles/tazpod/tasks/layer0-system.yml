@@ -4,6 +4,7 @@
 - name: System packages
   apt:
     update_cache: yes
+    cache_valid_time: 3600
     name:
       - apt-transport-https
       - ca-certificates
@@ -55,16 +56,28 @@
       - clangd
     state: present
 
+- name: Check locale
+  shell: locale -a 2>/dev/null | grep -qi '^en_US.utf8$'
+  register: locale_check
+  changed_when: false
+  failed_when: false
+
 - name: Locale
   shell: locale-gen en_US.UTF-8
-  args: { creates: /usr/lib/locale/en_US.utf8 }
+  when: locale_check.rc != 0
 
 - name: fd symlink
   file: { src: /usr/bin/fdfind, dest: /usr/local/bin/fd, state: link }
 
+- name: Check python LSP module
+  shell: python3 -c 'import pylsp' 2>/dev/null
+  register: py_lsp
+  changed_when: false
+  failed_when: false
+
 - name: Python packages
-  shell: pip3 install --break-system-packages python-lsp-server google-genai psycopg2-binary google-cloud-alloydb-connector 2>/dev/null || true
-  args: { creates: /usr/lib/python3/dist-packages/pylsp }
+  shell: pip3 install --break-system-packages python-lsp-server google-genai psycopg2-binary google-cloud-alloydb-connector
+  when: py_lsp.rc != 0
 
 - name: ~/workspace symlink
   shell: mkdir -p /home/tazpod && ln -sf /workspace /home/tazpod/workspace
@@ -103,7 +116,7 @@
 
 - name: Herdr
   shell: curl -fsSL https://herdr.dev/install.sh | HERDR_INSTALL_DIR=/usr/local/bin sh
-  args: { creates: /usr/local/bin/hdr }
+  args: { creates: /usr/local/bin/herdr }
 
 - name: Neovim (latest from GitHub, lazy.nvim requires >= 0.8)
   shell: |
@@ -117,18 +130,22 @@
     rm -rf /tmp/nvim.tar.gz /tmp/nvim-linux-x86_64
   args: { creates: /usr/local/bin/nvim }
 
-- name: SSH password auth
-  shell: |
-    sed -i 's/^PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
-    grep -q '^PasswordAuthentication yes' /etc/ssh/sshd_config || echo 'PasswordAuthentication yes' >> /etc/ssh/sshd_config
-    systemctl restart sshd
-    chmod u+s /bin/ping
+- name: SSH password authentication
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?\s*PasswordAuthentication'
+    line: 'PasswordAuthentication yes'
+  notify: restart sshd
 
-- name: Password tazpod user
+- name: ICMP ping for unprivileged users (setuid)
+  file: { path: /bin/ping, mode: '4755' }
+
+- name: Password for the tazpod user (optional, supplied at runtime — never stored here)
   user:
     name: tazpod
-    password: "{{ 'TAZPOD2026!' | password_hash('sha512') }}"
-    update_password: always
+    password: "{{ tazpod_user_password | password_hash('sha512') }}"
+    update_password: on_create
+  when: tazpod_user_password | default('') | length > 0
 
 
 - name: Create tazpod user
@@ -164,6 +181,44 @@
     chmod 600 /home/tazpod/.ssh/authorized_keys
     chown -R tazpod:tazpod /home/tazpod/.ssh
   args: { creates: /home/tazpod/.ssh/authorized_keys }
+
+# Admin key (desktop) — the public key lives in clear text in the secrets checkout
+# (tazlab-secrets keeps .pub files unencrypted by design; gopass only manages .gpg
+# entries and cannot read them). Local ~/.ssh/id_ed25519.pub is the fallback.
+- name: Resolve the admin public key (secrets checkout, then local key)
+  delegate_to: localhost
+  become: false
+  shell: |
+    s="{{ tazpod_workspace }}/tazlab-secrets/infra/ssh-client-keys/desktop/id_ed25519.pub"
+    if [ -f "$s" ]; then cat "$s"; exit 0; fi
+    if [ -f "$HOME/.ssh/id_ed25519.pub" ]; then cat "$HOME/.ssh/id_ed25519.pub"; exit 0; fi
+    echo ""
+  register: admin_pubkey
+  changed_when: false
+
+- name: Ensure .ssh directories for the admin key
+  file:
+    path: "{{ item.dir }}"
+    state: directory
+    mode: '0700'
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+  loop:
+    - { dir: /root/.ssh, owner: root, group: root }
+    - { dir: /home/tazpod/.ssh, owner: tazpod, group: tazpod }
+
+- name: Authorize the admin SSH key for root and tazpod
+  lineinfile:
+    path: "{{ item.path }}"
+    line: "{{ admin_pubkey.stdout | trim }}"
+    create: yes
+    mode: '0600'
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+  loop:
+    - { path: /root/.ssh/authorized_keys, owner: root, group: root }
+    - { path: /home/tazpod/.ssh/authorized_keys, owner: tazpod, group: tazpod }
+  when: admin_pubkey.stdout | trim | length > 0
 
 - name: Sudoers
   copy:

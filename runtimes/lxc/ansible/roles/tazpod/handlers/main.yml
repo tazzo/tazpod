@@ -1,3 +1,11 @@
 ---
-- name: resolvconf update
-  shell: resolvconf -u
+- name: restart dsh
+  systemd:
+    name: dsh.service
+    state: restarted
+    daemon_reload: yes
+
+- name: restart sshd
+  systemd:
+    name: ssh
+    state: restarted

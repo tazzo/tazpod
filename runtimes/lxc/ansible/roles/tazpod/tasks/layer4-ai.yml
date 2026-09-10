@@ -1,15 +1,24 @@
 ---
 # Layer 4: AI tools (Dockerfile.ai)
 
-- name: AI CLIs (pi, gemini, opencode)
+- name: Check AI CLI presence
   become_user: tazpod
   shell: |
     export NVM_DIR="$HOME/.nvm"
     [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-    npm install -g @mariozechner/pi-coding-agent@latest @google/gemini-cli@latest opencode-ai@latest
-    ln -sf $(npm config get prefix)/bin/pi /home/tazpod/.local/bin/pi 2>/dev/null || true
-    ln -sf $(npm config get prefix)/bin/opencode /home/tazpod/.local/bin/opencode 2>/dev/null || true
-  args: { creates: /home/tazpod/.local/bin/pi }
+    for b in pi gemini opencode bun; do command -v "$b" >/dev/null 2>&1 || echo "missing:$b"; done
+  register: ai_cli_check
+  changed_when: false
+
+- name: AI CLIs (pi, gemini, opencode, bun, pi-autoresearch)
+  become_user: tazpod
+  shell: |
+    export NVM_DIR="$HOME/.nvm"
+    [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+    npm install -g @mariozechner/pi-coding-agent@latest @google/gemini-cli@latest opencode-ai@latest bun@latest pi-autoresearch@latest
+    ln -sf "$(npm config get prefix)/bin/pi" /home/tazpod/.local/bin/pi 2>/dev/null || true
+    ln -sf "$(npm config get prefix)/bin/opencode" /home/tazpod/.local/bin/opencode 2>/dev/null || true
+  when: ai_cli_check.stdout | trim | length > 0
 
 - name: oh-my-pi (omp)
   shell: |
@@ -24,7 +33,7 @@
     export PATH="/home/tazpod/.local/bin:$PATH"
     pi install npm:pi-extmgr 2>/dev/null || true
     pi install npm:pi-mcp-adapter 2>/dev/null || true
-  args: { creates: /home/tazpod/.local/share/pi }
+  args: { creates: /home/tazpod/.pi }
 
 - name: Antigravity
   become_user: tazpod

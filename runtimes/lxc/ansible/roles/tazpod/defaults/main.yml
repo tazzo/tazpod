@@ -1,0 +1,19 @@
+---
+# Role defaults — override in the playbook or with -e
+
+# Folder that contains all workspace repos (tazpod, SKILLS, ephemeral-castle, ...).
+# Derived from the playbook location, so it works both from a normal checkout and
+# from inside TazPod where the pet volume is mounted at /workspace.
+# Override with: -e tazpod_workspace=/workspace
+tazpod_workspace: "{{ playbook_dir }}/../../../.."
+
+# DeepSeek Harness (dsh) Web UI. Pinned on purpose: 0.1.5-rc.2 removed --no-open,
+# so upgrading requires updating the ExecStart flags in templates/dsh.service.j2.
+dsh_version: "0.1.5-rc.1"
+dsh_web_port: 3081
+
+# Password for the `tazpod` user is intentionally NOT stored in the repository.
+# Provide it at runtime when needed, e.g.:
+#   ansible-playbook ... -e tazpod_user_password="$(gopass show infra/tazpod-proxmox/user-password)"
+# Leaving it empty keeps whatever password the account already has.
+tazpod_user_password: ""

@@ -5,23 +5,80 @@
   file: { path: "/home/tazpod/.config/{{ item }}", owner: tazpod, group: tazpod, state: directory }
   loop: [starship, zellij, nvim]
 
+- name: Locate the locally built tazpod binary (repo root artifact from `task build`)
+  delegate_to: localhost
+  become: false
+  stat: { path: "{{ tazpod_workspace }}/tazpod/tazpod" }
+  register: tazpod_artifact
+  changed_when: false
+
 - name: TazPod binary
-  copy: { src: /workspace/tazpod/tazpod-lxc, dest: /home/tazpod/.local/bin/tazpod, owner: tazpod, group: tazpod, mode: '0755' }
+  copy:
+    src: "{{ tazpod_workspace }}/tazpod/tazpod"
+    dest: /home/tazpod/.local/bin/tazpod
+    owner: tazpod
+    group: tazpod
+    mode: '0755'
+  when: tazpod_artifact.stat.exists
+
+- name: Warn when the tazpod binary artifact is missing
+  debug:
+    msg: "tazpod binary not built — run `task build` in the tazpod repo root (create.sh does it automatically); skipping binary install"
+  when: not tazpod_artifact.stat.exists
 
 - name: KUBECONFIG directory
   file: { path: /home/tazpod/.kube, owner: tazpod, group: tazpod, state: directory }
 
-- name: KUBECONFIG
+- name: Locate kubeconfig in the workspace checkout
+  delegate_to: localhost
+  become: false
+  stat: { path: "{{ tazpod_workspace }}/ephemeral-castle/clusters/tazlab-k8s/proxmox/configs/kubeconfig" }
+  register: kubeconfig_src
+  changed_when: false
+
+- name: Read kubeconfig from gopass (controller, only when the checkout copy is absent)
+  delegate_to: localhost
+  become: false
+  command: gopass show k8s/kubeconfig
+  register: kubeconfig_gopass
+  changed_when: false
+  failed_when: false
+  no_log: true
+  when: not kubeconfig_src.stat.exists
+
+- name: KUBECONFIG (from the workspace checkout)
   copy:
-    src: /workspace/ephemeral-castle/clusters/tazlab-k8s/proxmox/configs/kubeconfig
+    src: "{{ tazpod_workspace }}/ephemeral-castle/clusters/tazlab-k8s/proxmox/configs/kubeconfig"
     dest: /home/tazpod/.kube/config
     owner: tazpod
     group: tazpod
     mode: '0600'
+  when: kubeconfig_src.stat.exists
+
+- name: KUBECONFIG (from gopass)
+  copy:
+    content: "{{ kubeconfig_gopass.stdout | default('') }}"
+    dest: /home/tazpod/.kube/config
+    owner: tazpod
+    group: tazpod
+    mode: '0600'
+  no_log: true
+  when:
+    - not kubeconfig_src.stat.exists
+    - kubeconfig_gopass.stdout | default('') | length > 0
+
+- name: Warn when no kubeconfig source is available
+  debug:
+    msg: "no kubeconfig found (workspace checkout and gopass both empty) — skipping; cluster access will be unavailable in the container"
+  when:
+    - not kubeconfig_src.stat.exists
+    - kubeconfig_gopass.stdout | default('') | length == 0
 
 - name: Dotfiles (bashrc + tmux)
   copy: { src: "{{ item }}", dest: "/home/tazpod/{{ item | basename }}", owner: tazpod, group: tazpod, mode: '0644' }
-  loop: [/workspace/tazpod/dotfiles/.bashrc, /workspace/tazpod/dotfiles/.tmux.conf]
+  loop:
+    - "{{ tazpod_workspace }}/tazpod/dotfiles/.bashrc"
+    - "{{ tazpod_workspace }}/tazpod/dotfiles/.tmux.conf"
 
 - name: TPM (Tmux Plugin Manager)
   git:
@@ -39,28 +96,30 @@
     group: tazpod
     mode: '0644'
   loop:
-    - { src: /workspace/tazpod/dotfiles/.config/nvim/init.lua, dest: /home/tazpod/.config/nvim/init.lua }
-    - { src: /workspace/tazpod/dotfiles/.config/nvim/lazyvim.json, dest: /home/tazpod/.config/nvim/lazyvim.json }
+    - { src: "{{ tazpod_workspace }}/tazpod/dotfiles/.config/nvim/init.lua", dest: /home/tazpod/.config/nvim/init.lua }
+    - { src: "{{ tazpod_workspace }}/tazpod/dotfiles/.config/nvim/lazyvim.json", dest: /home/tazpod/.config/nvim/lazyvim.json }
 
 - name: Neovim lua directory
   file: { path: /home/tazpod/.config/nvim/lua, owner: tazpod, group: tazpod, state: directory }
 
 - name: Neovim lua plugins config
   copy:
-    src: /workspace/tazpod/dotfiles/.config/nvim/lua/
+    src: "{{ tazpod_workspace }}/tazpod/dotfiles/.config/nvim/lua/"
     dest: /home/tazpod/.config/nvim/lua/
     owner: tazpod
     group: tazpod
 
 - name: Starship config
-  copy: { src: /workspace/tazpod/dotfiles/.config/starship.toml, dest: /home/tazpod/.config/starship.toml, owner: tazpod, group: tazpod, mode: '0644' }
+  copy: { src: "{{ tazpod_workspace }}/tazpod/dotfiles/.config/starship.toml", dest: /home/tazpod/.config/starship.toml, owner: tazpod, group: tazpod, mode: '0644' }
 
 - name: Zellij config
-  copy: { src: /workspace/tazpod/dotfiles/.config/zellij/config.kdl, dest: /home/tazpod/.config/zellij/config.kdl, owner: tazpod, group: tazpod, mode: '0644' }
+  copy: { src: "{{ tazpod_workspace }}/tazpod/dotfiles/.config/zellij/config.kdl", dest: /home/tazpod/.config/zellij/config.kdl, owner: tazpod, group: tazpod, mode: '0644' }
 
 - name: Start/update scripts
   copy: { src: "{{ item }}", dest: "/home/tazpod/{{ item | basename }}", owner: tazpod, group: tazpod, mode: '0755' }
-  loop: [/workspace/AGENTS.ctx/tools/tailscale/start-lxc.sh, /workspace/AGENTS.ctx/tools/tailscale/update-hosts.sh]
+  loop:
+    - "{{ tazpod_workspace }}/SKILLS/tools/tailscale/start-lxc.sh"
+    - "{{ tazpod_workspace }}/SKILLS/tools/tailscale/update-hosts.sh"
 
 - name: Systemd units
   template: { src: "{{ item }}.j2", dest: "/etc/systemd/system/{{ item }}" }
@@ -87,6 +146,7 @@
     if command -v resolvectl &>/dev/null; then
       resolvectl dns eth0 1.1.1.1 8.8.8.8 || true
     fi
+  changed_when: false
 
 
 - name: Starship Tokyo Night config (LXC theme)
@@ -107,13 +167,23 @@
   file: { path: /home/tazpod/secrets, owner: tazpod, group: tazpod, state: directory, mode: '0700' }
 
 
+- name: Check tree-sitter CLI
+  become_user: tazpod
+  shell: |
+    export NVM_DIR="$HOME/.nvm"
+    [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+    command -v tree-sitter >/dev/null 2>&1
+  register: tree_sitter_check
+  changed_when: false
+  failed_when: false
+
 - name: tree-sitter CLI (nvim-treesitter)
   become_user: tazpod
   shell: |
     export NVM_DIR="$HOME/.nvm"
     [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
     npm install -g tree-sitter-cli@0.24.7 2>&1 | tail -3
-  args: { creates: /usr/local/bin/tree-sitter }
+  when: tree_sitter_check.rc != 0
 
 
 - name: Verifica Tailscale connesso
@@ -124,11 +194,36 @@
     else
       echo 'Tailscale already connected'
     fi
+  changed_when: false
+
+# ─── Legacy cleanup (2026-09-10) ───────────────────────────────────────────
+# The dsh Web UI is no longer published through nginx: remote access uses an SSH
+# loopback tunnel (see SKILLS/tools/dsh-web-access). The sync daemon was
+# decommissioned in project 30 — the shipped unit pointed at a binary that no
+# longer exists and restart-looped forever.
+
+- name: Ensure nginx reverse proxy is not installed
+  apt:
+    name: nginx
+    state: absent
+    purge: yes
+
+- name: Remove legacy tazpod-sync systemd unit
+  file:
+    path: "/etc/systemd/system/tazpod-sync.service"
+    state: absent
+
+- name: Reload systemd after legacy unit removal
+  systemd:
+    daemon_reload: yes
 
 - name: Workspace tools dirs (pet volume, prima creazione)
-  file: { path: "/workspace/.tazpod/{{ item }}", owner: tazpod, group: tazpod, state: directory, mode: '0755' }
+  file: { path: "/workspace/.tazpod/{{ item }}", owner: tazpod, group: tazpod, state: directory }
   loop: [.omp, .pi, .gemini, .antigravity, .antigravitycli, .claude, .herdr, .opencode, .aws, .ssh, vault, keyrings]
 
+# NOTE: .ssh is deliberately NOT symlinked to the pet volume: layer0 injects the
+# authorized_keys into the real /home/tazpod/.ssh directory, and Ansible refuses
+# (correctly) to replace a directory holding live keys with a symlink.
 - name: Home symlinks to workspace tools
   file: { src: "/workspace/.tazpod/{{ item.src }}", dest: "/home/tazpod/{{ item.dest }}", owner: tazpod, group: tazpod, state: link }
   loop:
@@ -141,7 +236,6 @@
     - { src: .herdr, dest: .herdr }
     - { src: .opencode, dest: .opencode }
     - { src: .aws, dest: .aws }
-    - { src: .ssh, dest: .ssh }
 
 - name: .ssh secure permissions
   file: { path: "/workspace/.tazpod/.ssh", owner: tazpod, group: tazpod, mode: '0700' }

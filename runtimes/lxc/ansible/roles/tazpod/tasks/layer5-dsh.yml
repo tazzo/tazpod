@@ -1,0 +1,99 @@
+---
+# Layer 5: DeepSeek Harness (dsh) Web UI — installed under the tazpod user's nvm
+# Node installation and bound to 127.0.0.1 ONLY. Remote access is performed with
+# an SSH port forward (see SKILLS/tools/dsh-web-access): dsh treats loopback as an
+# authorization boundary, so the port must never be exposed on the LAN.
+
+- name: Check installed dsh version
+  become_user: tazpod
+  check_mode: false
+  shell: |
+    export NVM_DIR="$HOME/.nvm"
+    [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+    if command -v dsh >/dev/null 2>&1; then dsh --version 2>/dev/null | head -1; fi
+  register: dsh_version_check
+  changed_when: false
+
+- name: Install/update dsh (pinned version)
+  become_user: tazpod
+  shell: |
+    export NVM_DIR="$HOME/.nvm"
+    [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+    npm install -g "@deepseek-ai/dsh@{{ dsh_version }}"
+  when: dsh_version not in (dsh_version_check.stdout | default(''))
+
+- name: Resolve dsh binary path
+  become_user: tazpod
+  check_mode: false
+  shell: |
+    export NVM_DIR="$HOME/.nvm"
+    [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+    command -v dsh
+  register: dsh_bin
+  changed_when: false
+  failed_when: dsh_bin.stdout | trim | length == 0
+
+- name: dsh profile directory
+  file:
+    path: /home/tazpod/.dsh/profiles/web
+    owner: tazpod
+    group: tazpod
+    state: directory
+    mode: '0775'
+
+- name: Profile patch file (created once as an empty top-level YAML array)
+  copy:
+    content: "[]\n"
+    dest: /home/tazpod/.dsh/profiles/web/cordis.patch.yml
+    owner: tazpod
+    group: tazpod
+    mode: '0644'
+    force: no
+
+- name: Assert the patch file parses as a YAML list (dsh refuses to boot otherwise)
+  become_user: tazpod
+  shell: |
+    python3 -c "import yaml,sys; sys.exit(0 if isinstance(yaml.safe_load(open('/home/tazpod/.dsh/profiles/web/cordis.patch.yml')), list) else 1)"
+  changed_when: false
+
+- name: Legacy randomuuid polyfill removal (plugin directory)
+  file:
+    path: /home/tazpod/.dsh/profiles/web/plugins/dsh-randomuuid-polyfill
+    state: absent
+
+- name: Legacy randomuuid polyfill removal (node_modules entry)
+  file:
+    path: /home/tazpod/.dsh/profiles/web/node_modules/dsh-randomuuid-polyfill
+    state: absent
+
+- name: dsh web log file (created if missing, never rewritten)
+  copy:
+    content: ""
+    dest: /var/log/dsh-web.log
+    mode: '0644'
+    force: no
+
+- name: dsh systemd unit
+  template:
+    src: dsh.service.j2
+    dest: /etc/systemd/system/dsh.service
+    mode: '0644'
+  when: dsh_bin.stdout | trim | length > 0
+  notify: restart dsh
+
+- name: Enable dsh service
+  systemd:
+    name: dsh.service
+    enabled: yes
+    daemon_reload: yes
+    state: started
+
+- name: Wait for dsh web to bind its loopback port
+  wait_for:
+    host: 127.0.0.1
+    port: "{{ dsh_web_port }}"
+    timeout: 60
+
+- name: Assert dsh is not exposed on the LAN
+  shell: "! ss -tln | grep -q '0.0.0.0:{{ dsh_web_port }}'"
+  changed_when: false
