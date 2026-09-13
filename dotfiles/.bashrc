@@ -210,13 +210,13 @@ fi
 
 
 # --- TAILSCALE AUTO-START (singleton check, detached) ---
-_TAILSCALE_SOCK="/workspace/AGENTS.ctx/tools/tailscale/state/tailscaled.sock"
+_TAILSCALE_SOCK="/workspace/SKILLS/tools/tailscale/state/tailscaled.sock"
 if ! tailscale --socket="${_TAILSCALE_SOCK}" status >/dev/null 2>&1; then
-    setsid /workspace/AGENTS.ctx/tools/tailscale/start.sh > /tmp/tailscale-startup.log 2>&1 &
+    setsid /workspace/SKILLS/tools/tailscale/start.sh > /tmp/tailscale-startup.log 2>&1 &
     echo "  🚀 Tailscale auto-start launched (log: /tmp/tailscale-startup.log)"
 else
     # Tailscale already running — refresh /etc/hosts silently
-    /workspace/AGENTS.ctx/tools/tailscale/update-hosts.sh >/dev/null 2>&1 &
+    /workspace/SKILLS/tools/tailscale/update-hosts.sh >/dev/null 2>&1 &
 fi
 unset _TAILSCALE_SOCK
 
