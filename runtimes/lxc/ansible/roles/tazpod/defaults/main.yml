@@ -7,6 +7,13 @@
 # Override with: -e tazpod_workspace=/workspace
 tazpod_workspace: "{{ playbook_dir }}/../../../.."
 
+# Client machines whose SSH public keys are authorized on the container for root
+# and tazpod (public half read from infra/ssh-client-keys/<name>/id_ed25519.pub in
+# the secrets checkout). Keep in sync with admin_key_names in create.sh phase 2b.
+tazpod_admin_key_names:
+  - desktop
+  - macbook-fedora
+
 # DeepSeek Harness (dsh) Web UI. Pinned to the `latest` dist-tag: 0.1.5-rc.2 is
 # published on `next` only (pre-release; deps bumped across ~63 packages).
 # Verified 2026-09-14: --no-open is still registered by dsh-web-app's startup

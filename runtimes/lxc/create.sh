@@ -71,8 +71,16 @@ phase_pet_ensure() {
 
 phase_terraform() {
   cd "$TERRAFORM_DIR"
+  # The container's bootstrap key must be THIS machine's key: the freshly created
+  # CT is reached over SSH by phase 3 with ${KEY}. Never let a stale key live in
+  # terraform.tfvars (that is how the orphan key of TD-063 stayed authorized).
+  local pub="${KEY}.pub"
+  if [ ! -s "$pub" ]; then
+    echo "ERROR: ${pub} missing or empty — terraform injects this machine's key into the new CT" >&2
+    return 1
+  fi
   terraform init -input=false
-  terraform apply -auto-approve -input=false
+  terraform apply -auto-approve -input=false -var "ssh_public_key=$(cat "$pub")"
 }
 
 
@@ -118,32 +126,43 @@ SSHRAW
 phase_authorize_admin_keys() {
   local ct_id="${1:-106}"
   local proxmox_ip="${2:-192.168.1.200}"
-  local pub=""
   local secrets_dir="${TAZLAB_SECRETS:-${HOME}/workspace/tazlab-secrets}"
-  local pub_file="${secrets_dir}/infra/ssh-client-keys/desktop/id_ed25519.pub"
-  if [ -f "$pub_file" ]; then
-    pub="$(cat "$pub_file")"
-  elif [ -f "${KEY}.pub" ]; then
-    pub="$(cat "${KEY}.pub")"
+  local keydir="${secrets_dir}/infra/ssh-client-keys"
+  # Client machines whose keys are authorized on every rebuilt container.
+  # Keep in sync with tazpod_admin_key_names in
+  # ansible/roles/tazpod/defaults/main.yml when a machine joins the workspace.
+  local admin_key_names=(desktop macbook-fedora)
+  local pubs=() f name
+  for name in "${admin_key_names[@]}"; do
+    f="${keydir}/${name}/id_ed25519.pub"
+    [ -f "$f" ] && pubs+=("$(cat "$f")")
+  done
+  if [ "${#pubs[@]}" -eq 0 ] && [ -f "${KEY}.pub" ]; then
+    pubs+=("$(cat "${KEY}.pub")")
   fi
-  if [ -z "$pub" ]; then
-    echo "WARN: admin public key not found (${pub_file} and ${KEY}.pub both missing) — skipping" >&2
+  if [ "${#pubs[@]}" -eq 0 ]; then
+    echo "WARN: no admin public key found (${keydir}/{${admin_key_names[*]}}/id_ed25519.pub and ${KEY}.pub both missing) — skipping" >&2
     return 0
   fi
-  echo "Authorizing admin key on CT ${ct_id} (root + tazpod) via ${proxmox_ip}..."
+  local keys_block=""
+  for f in "${pubs[@]}"; do keys_block+="$f"$'\n'; done
+  echo "Authorizing ${#pubs[@]} admin key(s) on CT ${ct_id} (root + tazpod) via ${proxmox_ip}..."
   ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o BatchMode=yes "root@${proxmox_ip}" "pct exec ${ct_id} -- bash -s" <<SSHAUTH
     set -e
-    PUBKEY='${pub}'
+    KEYS='${keys_block}'
     for u in root tazpod; do
       h="\$(getent passwd "\$u" | cut -d: -f6)"
       [ -n "\$h" ] || continue
       mkdir -p "\$h/.ssh"; chmod 700 "\$h/.ssh"
       touch "\$h/.ssh/authorized_keys"
-      grep -qF "\$PUBKEY" "\$h/.ssh/authorized_keys" || echo "\$PUBKEY" >> "\$h/.ssh/authorized_keys"
+      while IFS= read -r k; do
+        [ -n "\$k" ] || continue
+        grep -qF "\$k" "\$h/.ssh/authorized_keys" || echo "\$k" >> "\$h/.ssh/authorized_keys"
+      done <<< "\$KEYS"
       chmod 600 "\$h/.ssh/authorized_keys"
       chown -R "\$u:\$u" "\$h/.ssh"
     done
-    echo "admin key authorized for: root, tazpod"
+    echo "admin keys authorized for: root, tazpod"
 SSHAUTH
 }
 

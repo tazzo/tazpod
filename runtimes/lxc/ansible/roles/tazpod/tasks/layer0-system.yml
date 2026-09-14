@@ -182,18 +182,22 @@
     chown -R tazpod:tazpod /home/tazpod/.ssh
   args: { creates: /home/tazpod/.ssh/authorized_keys }
 
-# Admin key (desktop) — the public key lives in clear text in the secrets checkout
-# (tazlab-secrets keeps .pub files unencrypted by design; gopass only manages .gpg
-# entries and cannot read them). Local ~/.ssh/id_ed25519.pub is the fallback.
-- name: Resolve the admin public key (secrets checkout, then local key)
+# Admin keys (tazpod_admin_key_names, one directory per machine under
+# infra/ssh-client-keys/) — the public keys live in clear text in the secrets
+# checkout (tazlab-secrets keeps .pub files unencrypted by design; gopass only
+# manages .gpg entries and cannot read them). Local ~/.ssh/id_ed25519.pub is the
+# fallback. grep also normalizes a missing trailing newline in the source file.
+- name: Resolve the admin public keys (secrets checkout, then local key)
   delegate_to: localhost
   become: false
   shell: |
-    s="{{ tazpod_workspace }}/tazlab-secrets/infra/ssh-client-keys/desktop/id_ed25519.pub"
-    if [ -f "$s" ]; then cat "$s"; exit 0; fi
-    if [ -f "$HOME/.ssh/id_ed25519.pub" ]; then cat "$HOME/.ssh/id_ed25519.pub"; exit 0; fi
-    echo ""
-  register: admin_pubkey
+    s="{{ tazpod_workspace }}/tazlab-secrets/infra/ssh-client-keys"
+    for n in {{ tazpod_admin_key_names | join(' ') }}; do
+      [ -f "$s/$n/id_ed25519.pub" ] && grep -E '^ssh-(ed25519|rsa) ' "$s/$n/id_ed25519.pub" || true
+    done
+    grep -E '^ssh-(ed25519|rsa) ' "$HOME/.ssh/id_ed25519.pub" 2>/dev/null || true
+    exit 0
+  register: admin_pubkeys
   changed_when: false
 
 - name: Ensure .ssh directories for the admin key
@@ -207,18 +211,31 @@
     - { dir: /root/.ssh, owner: root, group: root }
     - { dir: /home/tazpod/.ssh, owner: tazpod, group: tazpod }
 
-- name: Authorize the admin SSH key for root and tazpod
+- name: Authorize the admin SSH keys for root
+  vars:
+    admin_keys: "{{ admin_pubkeys.stdout_lines | select('match', '^ssh-') | unique | list }}"
   lineinfile:
-    path: "{{ item.path }}"
-    line: "{{ admin_pubkey.stdout | trim }}"
+    path: /root/.ssh/authorized_keys
+    line: "{{ item }}"
     create: yes
     mode: '0600'
-    owner: "{{ item.owner }}"
-    group: "{{ item.group }}"
-  loop:
-    - { path: /root/.ssh/authorized_keys, owner: root, group: root }
-    - { path: /home/tazpod/.ssh/authorized_keys, owner: tazpod, group: tazpod }
-  when: admin_pubkey.stdout | trim | length > 0
+    owner: root
+    group: root
+  loop: "{{ admin_keys }}"
+  when: admin_keys | length > 0
+
+- name: Authorize the admin SSH keys for tazpod
+  vars:
+    admin_keys: "{{ admin_pubkeys.stdout_lines | select('match', '^ssh-') | unique | list }}"
+  lineinfile:
+    path: /home/tazpod/.ssh/authorized_keys
+    line: "{{ item }}"
+    create: yes
+    mode: '0600'
+    owner: tazpod
+    group: tazpod
+  loop: "{{ admin_keys }}"
+  when: admin_keys | length > 0
 
 - name: Sudoers
   copy:
