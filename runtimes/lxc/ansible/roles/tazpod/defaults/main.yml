@@ -7,8 +7,14 @@
 # Override with: -e tazpod_workspace=/workspace
 tazpod_workspace: "{{ playbook_dir }}/../../../.."
 
-# DeepSeek Harness (dsh) Web UI. Pinned on purpose: 0.1.5-rc.2 removed --no-open,
-# so upgrading requires updating the ExecStart flags in templates/dsh.service.j2.
+# DeepSeek Harness (dsh) Web UI. Pinned to the `latest` dist-tag: 0.1.5-rc.2 is
+# published on `next` only (pre-release; deps bumped across ~63 packages).
+# Verified 2026-09-14: --no-open is still registered by dsh-web-app's startup
+# parser in rc.2 (startup.js is byte-identical to rc.1), so the ExecStart flags
+# in templates/dsh.service.j2 work on both versions and are not the reason for
+# the pin. rc.2 also does not yet fix the client-side settings gate
+# (connection.isLoopback still keys off the page hostname) nor add an
+# x-opencode-session header, so there is no functional reason to move.
 dsh_version: "0.1.5-rc.1"
 dsh_web_port: 3081
 
