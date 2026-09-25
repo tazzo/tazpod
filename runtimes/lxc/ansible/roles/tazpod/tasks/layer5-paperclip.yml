@@ -121,12 +121,11 @@
     - "{{ paperclip_gopass_tool_action_secret }}"
     - "{{ paperclip_gopass_agent_jwt_secret }}"
     - "{{ paperclip_gopass_opencode_key }}"
-    - "{{ paperclip_gopass_github_token }}"
   register: paperclip_secrets
   changed_when: false
   no_log: true
 
-- name: Git configuration for the service (identity + credential helper from GITHUB_TOKEN)
+- name: Git configuration for the service (identity + credential helper via gopass)
   ansible.builtin.template:
     src: paperclip.gitconfig.j2
     dest: /etc/paperclip/gitconfig
@@ -147,7 +146,6 @@
     paperclip_tool_action_secret: "{{ paperclip_secrets.results[2].stdout | trim }}"
     paperclip_agent_jwt_secret: "{{ paperclip_secrets.results[3].stdout | trim }}"
     paperclip_opencode_key: "{{ paperclip_secrets.results[4].stdout | trim }}"
-    paperclip_github_token: "{{ paperclip_secrets.results[5].stdout | trim }}"
   notify: restart paperclip
   no_log: true
 
