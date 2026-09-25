@@ -28,19 +28,22 @@ SyslogIdentifier=paperclip
 
 # Resources: bounded well inside the container (2 cores / 8 GB shared with the
 # agent workload). The V8 ceiling stays below MemoryMax on purpose.
-Environment=NODE_OPTIONS=--max-old-space-size=1024
+Environment=NODE_OPTIONS=--max-old-space-size=2048
 Environment=PATH=/usr/bin:/usr/local/bin:/bin
-MemoryHigh=1024M
-MemoryMax=1536M
+MemoryHigh=2G
+MemoryMax=4G
 CPUQuota=150%
 TasksMax=512
 
-# Hardening. `ProtectHome=read-only` keeps the managed payload readable while the
-# only writable path is the state directory on the pet volume.
+# Hardening. The service runs as the operator user and its agents edit the
+# repositories, so the writable surface is exactly the pet volume and that user's
+# home; everything else stays read-only (ProtectSystem=strict). `NoNewPrivileges`
+# and `PrivateDevices` stay on (no sudo from inside an agent), `ProtectHome` cannot
+# be read-only here because pi writes sessions under ~/.pi.
 NoNewPrivileges=yes
 ProtectSystem=strict
-ProtectHome=read-only
-ReadWritePaths={{ paperclip_home }}
+ProtectHome=no
+ReadWritePaths=/workspace /home/{{ paperclip_user }}
 PrivateTmp=yes
 PrivateDevices=yes
 ProtectKernelTunables=yes
@@ -57,7 +60,9 @@ RestrictRealtime=yes
 LockPersonality=yes
 CapabilityBoundingSet=
 AmbientCapabilities=
-UMask=0027
+# Match the operator shell's umask so files an agent writes in a repository are
+# not unexpectedly unreadable to the rest of the tooling.
+UMask=0022
 # Deliberately NOT set: MemoryDenyWriteExecute (V8/JIT needs writable+executable
 # pages) and SystemCallFilter (the Node/V8 syscall surface is not worth the risk).
 

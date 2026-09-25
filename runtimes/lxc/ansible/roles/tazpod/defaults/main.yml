@@ -28,8 +28,12 @@ tazpod_user_password: ""
 # container rebuild does not rotate secrets/master.key. Secrets are read from
 # gopass by the layer itself (never passed with -e).
 paperclip_version: "2026.916.1"
-paperclip_user: paperclip
-paperclip_uid: 1001
+# B1 (operator decision 2026-09-25): the service runs as the *operator* user, so the
+# agents it spawns inherit exactly the environment the tmux agents had — write
+# access to the repositories, the git identity, gopass and the SSH keys. That is a
+# deliberate trade: the web app is now as privileged as the operator shell.
+paperclip_user: tazpod
+paperclip_uid: 1000
 paperclip_instance_id: default
 paperclip_home: /workspace/.paperclip
 paperclip_port: 3100
@@ -53,6 +57,9 @@ paperclip_gopass_agent_jwt_secret: infra/paperclip/agent-jwt-secret
 # DeepSeek Flash model; the API key is read from gopass and exported into the
 # service environment, so the agent inherits it without any secret on disk.
 paperclip_gopass_opencode_key: infra/paperclip/opencode-key
+# Push credential for the agents: exported as GITHUB_TOKEN and used by the service's
+# own git config (see paperclip.gitconfig.j2), never written to disk.
+paperclip_gopass_github_token: cluster/github/token
 pi_version: "0.86.1"
 # `onboard --yes` always starts the server in the foreground and has no "save only"
 # switch, so the first-run onboarding is bounded by this timeout (seconds); the

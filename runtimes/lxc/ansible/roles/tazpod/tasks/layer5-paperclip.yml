@@ -19,22 +19,6 @@
 #    to "accept defaults but do not start", so the first-run onboarding is bounded
 #    by `timeout` and the unit (not onboarding) owns the server lifetime.
 
-- name: Paperclip service group
-  ansible.builtin.group:
-    name: "{{ paperclip_user }}"
-    gid: "{{ paperclip_uid }}"
-    state: present
-
-- name: Paperclip service user
-  ansible.builtin.user:
-    name: "{{ paperclip_user }}"
-    uid: "{{ paperclip_uid }}"
-    group: "{{ paperclip_user }}"
-    home: "/home/{{ paperclip_user }}"
-    shell: /bin/bash
-    create_home: true
-    state: present
-
 - name: NodeSource signing key
   ansible.builtin.get_url:
     url: https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key
@@ -115,6 +99,14 @@
     state: directory
     owner: "{{ paperclip_user }}"
     group: "{{ paperclip_user }}"
+    recurse: true
+
+- name: State directory permissions
+  ansible.builtin.file:
+    path: "{{ paperclip_home }}"
+    state: directory
+    owner: "{{ paperclip_user }}"
+    group: "{{ paperclip_user }}"
     mode: "0700"
 
 # ─── Secrets: read here, never passed on a command line ─────────────────────
@@ -129,9 +121,18 @@
     - "{{ paperclip_gopass_tool_action_secret }}"
     - "{{ paperclip_gopass_agent_jwt_secret }}"
     - "{{ paperclip_gopass_opencode_key }}"
+    - "{{ paperclip_gopass_github_token }}"
   register: paperclip_secrets
   changed_when: false
   no_log: true
+
+- name: Git configuration for the service (identity + credential helper from GITHUB_TOKEN)
+  ansible.builtin.template:
+    src: paperclip.gitconfig.j2
+    dest: /etc/paperclip/gitconfig
+    owner: root
+    group: "{{ paperclip_user }}"
+    mode: "0644"
 
 - name: Environment file (readable only by the service user; systemd reads it as root)
   ansible.builtin.template:
@@ -146,6 +147,7 @@
     paperclip_tool_action_secret: "{{ paperclip_secrets.results[2].stdout | trim }}"
     paperclip_agent_jwt_secret: "{{ paperclip_secrets.results[3].stdout | trim }}"
     paperclip_opencode_key: "{{ paperclip_secrets.results[4].stdout | trim }}"
+    paperclip_github_token: "{{ paperclip_secrets.results[5].stdout | trim }}"
   notify: restart paperclip
   no_log: true
 

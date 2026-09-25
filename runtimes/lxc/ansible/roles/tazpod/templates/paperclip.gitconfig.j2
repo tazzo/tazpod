@@ -1,0 +1,12 @@
+# Git configuration used *only* by the Paperclip service (GIT_CONFIG_GLOBAL).
+# It gives the agents a stable identity and a push credential taken from the
+# environment, so no token is ever written to a file or to a repository URL.
+[user]
+	name = TazLab Agent
+	email = agent@tazlab.net
+[credential]
+	helper = "!f() { test -n \"$GITHUB_TOKEN\" && echo username=x-access-token && echo password=$GITHUB_TOKEN; }; f"
+[init]
+	defaultBranch = master
+[push]
+	autoSetupRemote = true
