@@ -1,0 +1,221 @@
+---
+# Layer 5: Paperclip — operator UI + agent control plane.
+#
+# Install shape (project paperclip-lxc-deployment, D2): a *managed* CLI install
+# pinned to `paperclip_version`. The CLI payload lives in the service user's home
+# (ephemeral: this layer re-installs it on every rebuild), while all state lives
+# in `paperclip_home` on the pet volume — so a `destroy.sh`/`create.sh` cycle does
+# NOT rotate `instances/default/secrets/master.key` and lose the stored keys.
+#
+# Secrets are read from gopass by this role (`delegate_to: localhost` +
+# `no_log: true`, the same pattern `tazpod-deploy.yml` uses for the kubeconfig) and
+# rendered into a root-only env file: they never travel in `-e`, in argv, in a
+# `--check --diff` render or in a phase log.
+#
+# Two CLI behaviours shape the tasks below (read from the shipped bundle):
+#  * `onboard --yes` without `--bind` forces `local_trusted` + loopback and ignores
+#    the reachability env vars — so the preset is always `--bind lan`;
+#  * `onboard --yes` also starts the server in the foreground and there is no flag
+#    to "accept defaults but do not start", so the first-run onboarding is bounded
+#    by `timeout` and the unit (not onboarding) owns the server lifetime.
+
+- name: Paperclip service group
+  ansible.builtin.group:
+    name: "{{ paperclip_user }}"
+    gid: "{{ paperclip_uid }}"
+    state: present
+
+- name: Paperclip service user
+  ansible.builtin.user:
+    name: "{{ paperclip_user }}"
+    uid: "{{ paperclip_uid }}"
+    group: "{{ paperclip_user }}"
+    home: "/home/{{ paperclip_user }}"
+    shell: /bin/bash
+    create_home: true
+    state: present
+
+- name: NodeSource signing key
+  ansible.builtin.get_url:
+    url: https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key
+    dest: /usr/share/keyrings/nodesource.asc
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: NodeSource repository (Node 24)
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/nodesource.sources
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      Types: deb
+      URIs: https://deb.nodesource.com/node_24.x
+      Suites: nodistro
+      Components: main
+      Architectures: amd64
+      Signed-By: /usr/share/keyrings/nodesource.asc
+  register: paperclip_nodesource_repo
+
+- name: Refresh the apt cache for the new repository
+  ansible.builtin.apt:
+    update_cache: true
+  when: paperclip_nodesource_repo is changed
+
+- name: System Node.js (Paperclip refuses nvm; the agents keep using nvm's Node)
+  ansible.builtin.apt:
+    name: nodejs
+    state: present
+
+- name: Detect the system Node version
+  ansible.builtin.command: /usr/bin/node --version
+  register: paperclip_node_version
+  changed_when: false
+
+- name: System Node.js satisfies the Paperclip floor (>= 24.11.0)
+  ansible.builtin.assert:
+    that:
+      - paperclip_node_version.stdout is version('v24.11.0', '>=')
+    fail_msg: "system node is {{ paperclip_node_version.stdout }}, below the Paperclip floor v24.11.0"
+    success_msg: "system node {{ paperclip_node_version.stdout }} satisfies >= 24.11.0"
+
+- name: Configuration directory
+  ansible.builtin.file:
+    path: /etc/paperclip
+    state: directory
+    owner: root
+    group: "{{ paperclip_user }}"
+    mode: "0750"
+
+- name: Persistent state on the pet volume (survives a container rebuild)
+  ansible.builtin.file:
+    path: "{{ paperclip_home }}"
+    state: directory
+    owner: "{{ paperclip_user }}"
+    group: "{{ paperclip_user }}"
+    mode: "0700"
+
+# ─── Secrets: read here, never passed on a command line ─────────────────────
+- name: Read the Paperclip secrets from gopass
+  delegate_to: localhost
+  become: false
+  ansible.builtin.command:
+    cmd: "gopass show -o {{ item }}"
+  loop:
+    - "{{ paperclip_gopass_db_password }}"
+    - "{{ paperclip_gopass_better_auth_secret }}"
+    - "{{ paperclip_gopass_tool_action_secret }}"
+    - "{{ paperclip_gopass_agent_jwt_secret }}"
+  register: paperclip_secrets
+  changed_when: false
+  no_log: true
+
+- name: Environment file (readable only by the service user; systemd reads it as root)
+  ansible.builtin.template:
+    src: paperclip.env.j2
+    dest: /etc/paperclip/paperclip.env
+    owner: "{{ paperclip_user }}"
+    group: "{{ paperclip_user }}"
+    mode: "0600"
+  vars:
+    paperclip_db_password: "{{ paperclip_secrets.results[0].stdout | trim }}"
+    paperclip_better_auth_secret: "{{ paperclip_secrets.results[1].stdout | trim }}"
+    paperclip_tool_action_secret: "{{ paperclip_secrets.results[2].stdout | trim }}"
+    paperclip_agent_jwt_secret: "{{ paperclip_secrets.results[3].stdout | trim }}"
+  notify: restart paperclip
+  no_log: true
+
+# ─── Managed install + first-run onboarding (both guarded, both non-interactive) ──
+- name: Installed version marker
+  ansible.builtin.slurp:
+    src: /etc/paperclip/.installed-version
+  register: paperclip_version_marker
+  failed_when: false
+  changed_when: false
+
+- name: Install Paperclip at the pinned version (managed install)
+  become_user: "{{ paperclip_user }}"
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      set -a; . /etc/paperclip/paperclip.env; set +a
+      exec npx --yes paperclipai@{{ paperclip_version }} install --version {{ paperclip_version }} --yes
+    chdir: "/home/{{ paperclip_user }}"
+    executable: /bin/bash
+  when: (paperclip_version_marker.content | default('') | b64decode | trim) != paperclip_version
+  register: paperclip_install
+  no_log: true
+
+- name: Record the installed version
+  ansible.builtin.copy:
+    content: "{{ paperclip_version }}\n"
+    dest: /etc/paperclip/.installed-version
+    owner: root
+    group: root
+    mode: "0644"
+  when: paperclip_install is changed
+
+- name: Instance config
+  ansible.builtin.stat:
+    path: "{{ paperclip_home }}/instances/{{ paperclip_instance_id }}/config.json"
+  register: paperclip_config
+
+- name: First-run onboarding (LAN preset, non-interactive, bounded)
+  become_user: "{{ paperclip_user }}"
+  ansible.builtin.shell:
+    cmd: |
+      set -a; . /etc/paperclip/paperclip.env; set +a
+      timeout --preserve-status {{ paperclip_onboard_timeout }} \
+        npx --yes paperclipai@{{ paperclip_version }} onboard --yes --bind {{ paperclip_bind }} --no-install-service
+    chdir: "/home/{{ paperclip_user }}"
+    executable: /bin/bash
+  register: paperclip_onboard
+  when: not paperclip_config.stat.exists
+  failed_when: paperclip_onboard.rc | default(0) not in [0, 124, 143]
+  changed_when: true
+  no_log: true
+
+- name: Re-check the instance config after onboarding
+  ansible.builtin.stat:
+    path: "{{ paperclip_home }}/instances/{{ paperclip_instance_id }}/config.json"
+  register: paperclip_config_after
+
+- name: Instance config exists after onboarding
+  ansible.builtin.assert:
+    that:
+      - paperclip_config_after.stat.exists
+    fail_msg: "onboarding did not produce a config.json — the instance cannot start"
+    success_msg: "instance config present"
+
+# ─── Unit ───────────────────────────────────────────────────────────────────
+- name: systemd unit
+  ansible.builtin.template:
+    src: paperclip.service.j2
+    dest: /etc/systemd/system/paperclip.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart paperclip
+
+- name: Enable and start Paperclip
+  ansible.builtin.systemd_service:
+    name: paperclip.service
+    enabled: true
+    state: started
+    daemon_reload: true
+
+# ─── Health gate (the layer is not done until the app answers) ──────────────
+- name: Wait for the Paperclip health endpoint
+  ansible.builtin.uri:
+    url: "http://{{ paperclip_bind_host }}:{{ paperclip_port }}/api/health"
+    status_code: 200
+  register: paperclip_health
+  until: paperclip_health.status == 200
+  retries: 60
+  delay: 5
+  changed_when: false
+
+- name: Paperclip is healthy
+  ansible.builtin.debug:
+    msg: "paperclip {{ paperclip_version }} healthy on {{ paperclip_bind_host }}:{{ paperclip_port }} (home {{ paperclip_home }})"

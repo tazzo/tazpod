@@ -1,4 +1,10 @@
 ---
+- name: restart paperclip
+  systemd:
+    name: paperclip.service
+    state: restarted
+    daemon_reload: yes
+
 - name: restart sshd
   systemd:
     name: ssh

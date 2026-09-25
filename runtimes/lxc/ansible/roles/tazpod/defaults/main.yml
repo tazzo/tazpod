@@ -22,3 +22,34 @@ tazpod_admin_key_names:
 # (`delegate_to: localhost` + `no_log: true`, as in tazpod-deploy.yml) over `-e`,
 # which puts the value in argv and in any logged command line.
 tazpod_user_password: ""
+
+# ─── Paperclip (project paperclip-lxc-deployment) ───────────────────────────
+# Managed (npm) install pinned to a version; state lives on the pet volume so a
+# container rebuild does not rotate secrets/master.key. Secrets are read from
+# gopass by the layer itself (never passed with -e).
+paperclip_version: "2026.916.1"
+paperclip_user: paperclip
+paperclip_uid: 1001
+paperclip_instance_id: default
+paperclip_home: /workspace/.paperclip
+paperclip_port: 3100
+paperclip_bind_host: "192.168.1.206"
+paperclip_host: "0.0.0.0"
+paperclip_public_url: "http://192.168.1.206:3100"
+paperclip_allowed_hostnames: "192.168.1.206"
+paperclip_deployment_mode: authenticated
+paperclip_deployment_exposure: private
+paperclip_bind: lan
+paperclip_db_host: "192.168.1.211"
+paperclip_db_port: 32227
+paperclip_db_name: paperclip
+paperclip_db_user: paperclip
+paperclip_db_pool_max: 10
+paperclip_gopass_db_password: infra/paperclip/db-password
+paperclip_gopass_better_auth_secret: infra/paperclip/better-auth-secret
+paperclip_gopass_tool_action_secret: infra/paperclip/tool-action-signing-secret
+paperclip_gopass_agent_jwt_secret: infra/paperclip/agent-jwt-secret
+# `onboard --yes` always starts the server in the foreground and has no "save only"
+# switch, so the first-run onboarding is bounded by this timeout (seconds); the
+# systemd unit owns the server lifetime afterwards.
+paperclip_onboard_timeout: 240

@@ -182,7 +182,10 @@ phase_build_binary() {
 
 phase_ansible_baseline() {
   cd "$SCRIPT_DIR"
-  ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook -i "$INVENTORY" "$ANSIBLE_DIR/tazpod-baseline.yml"
+  # Explicit config: the container's overlayfs has no ACL support, so the
+  # unprivileged-become temp-file strategy must fall back (see ansible/ansible.cfg).
+  ANSIBLE_HOST_KEY_CHECKING=False ANSIBLE_CONFIG="$ANSIBLE_DIR/ansible.cfg" \
+    ansible-playbook -i "$INVENTORY" "$ANSIBLE_DIR/tazpod-baseline.yml"
 }
 
 phase_transfer_oauth() {
@@ -219,6 +222,13 @@ phase_verify() {
     set -u
     echo "── services ──"
     printf 'tailscale: %s\n' "$(systemctl is-active tailscaled 2>/dev/null)"
+    echo "── paperclip (operator UI, project paperclip-lxc-deployment) ──"
+    printf 'paperclip: %s\n' "$(systemctl is-active paperclip.service 2>/dev/null)"
+    if curl -fsS -m 5 http://192.168.1.206:3100/api/health >/dev/null 2>&1; then
+      echo "paperclip health: ok"
+    else
+      echo "WARN: paperclip health endpoint not answering"
+    fi
     echo "── legacy surface (should all be absent) ──"
     command -v nginx >/dev/null 2>&1 && echo "WARN: nginx still installed" || echo "nginx absent"
     [ -e /etc/systemd/system/dsh.service ] && echo "WARN: dsh unit still present" || echo "dsh absent"

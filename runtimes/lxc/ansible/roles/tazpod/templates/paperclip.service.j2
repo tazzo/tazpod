@@ -1,0 +1,63 @@
+[Unit]
+Description=Paperclip (self-hosted agent control plane)
+Documentation=https://github.com/paperclipai/paperclip
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User={{ paperclip_user }}
+Group={{ paperclip_user }}
+WorkingDirectory=/home/{{ paperclip_user }}
+# Root-only file holding DATABASE_URL and the application secrets; systemd reads it
+# before dropping privileges, so the service user never needs access to it.
+EnvironmentFile=/etc/paperclip/paperclip.env
+# The managed shim, not `npx`: an npx-started unit would report itself as an
+# ephemeral install (losing `update`/`--rollback`) and re-resolve the payload from
+# the registry at every start, defeating the version pin.
+ExecStart=/home/{{ paperclip_user }}/.local/bin/paperclipai run
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+KillSignal=SIGTERM
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=paperclip
+
+# Resources: bounded well inside the container (2 cores / 8 GB shared with the
+# agent workload). The V8 ceiling stays below MemoryMax on purpose.
+Environment=NODE_OPTIONS=--max-old-space-size=1024
+MemoryHigh=1024M
+MemoryMax=1536M
+CPUQuota=150%
+TasksMax=512
+
+# Hardening. `ProtectHome=read-only` keeps the managed payload readable while the
+# only writable path is the state directory on the pet volume.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths={{ paperclip_home }}
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+# AF_NETLINK is required: libuv enumerates the network interfaces with a netlink
+# socket, and without it the process dies at startup with
+# "uv_interface_addresses returned Unknown system error 97" (EAFNOSUPPORT).
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0027
+# Deliberately NOT set: MemoryDenyWriteExecute (V8/JIT needs writable+executable
+# pages) and SystemCallFilter (the Node/V8 syscall surface is not worth the risk).
+
+[Install]
+WantedBy=multi-user.target
