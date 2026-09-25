@@ -83,6 +83,24 @@
     fail_msg: "system node is {{ paperclip_node_version.stdout }}, below the Paperclip floor v24.11.0"
     success_msg: "system node {{ paperclip_node_version.stdout }} satisfies >= 24.11.0"
 
+- name: Installed pi version
+  ansible.builtin.command: /usr/bin/pi --version
+  register: paperclip_pi_version
+  failed_when: false
+  changed_when: false
+  check_mode: false
+
+- name: Install the pi CLI system-wide (the `pi_local` adapter needs it on the service PATH)
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      export PATH=/usr/bin:/usr/local/bin:/bin
+      exec npm install --global --no-fund --no-audit @earendil-works/pi-coding-agent@{{ pi_version }}
+    executable: /bin/bash
+  when: paperclip_pi_version.stdout is not defined or paperclip_pi_version.stdout | trim != pi_version
+  register: paperclip_pi_install
+  changed_when: paperclip_pi_install.rc == 0
+
 - name: Configuration directory
   ansible.builtin.file:
     path: /etc/paperclip
@@ -110,6 +128,7 @@
     - "{{ paperclip_gopass_better_auth_secret }}"
     - "{{ paperclip_gopass_tool_action_secret }}"
     - "{{ paperclip_gopass_agent_jwt_secret }}"
+    - "{{ paperclip_gopass_opencode_key }}"
   register: paperclip_secrets
   changed_when: false
   no_log: true
@@ -126,6 +145,7 @@
     paperclip_better_auth_secret: "{{ paperclip_secrets.results[1].stdout | trim }}"
     paperclip_tool_action_secret: "{{ paperclip_secrets.results[2].stdout | trim }}"
     paperclip_agent_jwt_secret: "{{ paperclip_secrets.results[3].stdout | trim }}"
+    paperclip_opencode_key: "{{ paperclip_secrets.results[4].stdout | trim }}"
   notify: restart paperclip
   no_log: true
 
@@ -231,6 +251,22 @@
   retries: 60
   delay: 5
   changed_when: false
+
+- name: pi can reach OpenCode Go as the service user (warning only)
+  become_user: "{{ paperclip_user }}"
+  ansible.builtin.shell:
+    cmd: |
+      set -a; . /etc/paperclip/paperclip.env; set +a
+      export PATH=/usr/bin:/usr/local/bin:/bin
+      /usr/bin/pi auth check --provider opencode-go
+  register: paperclip_pi_auth
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: pi readiness
+  ansible.builtin.debug:
+    msg: "pi provider opencode-go: {{ (paperclip_pi_auth.stdout | default('') | trim) or 'NOT READY (check infra/paperclip/opencode-key)' }}"
 
 - name: Paperclip is healthy
   ansible.builtin.debug:
