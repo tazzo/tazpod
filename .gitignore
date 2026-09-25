@@ -10,3 +10,6 @@ tazpod-lxc
 *.tfstate
 *.tfstate.backup
 .terraform/
+# LXC runtime build logs: they capture provisioning output (and with it anything a
+# task prints) and must never be committed.
+runtimes/lxc/logs/

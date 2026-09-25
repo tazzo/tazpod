@@ -15,7 +15,10 @@ tazpod_admin_key_names:
   - macbook-fedora
 
 # Password for the `tazpod` user is intentionally NOT stored in the repository.
-# Provide it at runtime when needed, e.g.:
-#   ansible-playbook ... -e tazpod_user_password="$(gopass show infra/tazpod-proxmox/user-password)"
-# Leaving it empty keeps whatever password the account already has.
+# NOTE: there is no gopass entry for it today (the path this comment used to cite,
+# `infra/tazpod-proxmox/user-password`, was never created). Pass one only when you
+# deliberately want to set it; leaving it empty keeps whatever the account has.
+# For a *required* secret, prefer reading gopass inside the role
+# (`delegate_to: localhost` + `no_log: true`, as in tazpod-deploy.yml) over `-e`,
+# which puts the value in argv and in any logged command line.
 tazpod_user_password: ""

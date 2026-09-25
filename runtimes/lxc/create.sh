@@ -106,6 +106,8 @@ phase_raw_config() {
       "lxc.cap.drop=sys_ptrace" \
       "lxc.cap.drop=mac_admin" \
       "lxc.cap.drop=mac_override" \
+      "lxc.cgroup2.io.max=252:6 rbps=104857600 wbps=104857600 riops=5000 wiops=5000" \
+      "lxc.cgroup2.io.max=252:10 rbps=104857600 wbps=104857600 riops=5000 wiops=5000" \
       "lxc.idmap=u 0 100000 1000" \
       "lxc.idmap=g 0 100000 1000" \
       "lxc.idmap=u 1000 1000 1" \
