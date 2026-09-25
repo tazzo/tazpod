@@ -216,20 +216,17 @@ phase_verify() {
   $SSH "root@${ip}" "bash -s" <<'VERIFY'
     set -u
     echo "── services ──"
-    printf 'dsh:       %s\n' "$(systemctl is-active dsh.service 2>/dev/null)"
     printf 'tailscale: %s\n' "$(systemctl is-active tailscaled 2>/dev/null)"
-    echo "── dsh Web UI (must be loopback only) ──"
-    ss -tln | grep -E ':3081' || echo "WARN: dsh not listening on 3081"
-    if ss -tln | grep -q '0.0.0.0:3081'; then echo "ERROR: dsh exposed on the LAN"; fi
     echo "── legacy surface (should all be absent) ──"
     command -v nginx >/dev/null 2>&1 && echo "WARN: nginx still installed" || echo "nginx absent"
+    [ -e /etc/systemd/system/dsh.service ] && echo "WARN: dsh unit still present" || echo "dsh absent"
     systemctl is-enabled tazpod-sync.service >/dev/null 2>&1 && echo "WARN: legacy tazpod-sync unit present" || echo "tazpod-sync absent"
     echo "── tazpod CLI ──"
     sudo -u tazpod /home/tazpod/.local/bin/tazpod --version 2>/dev/null || echo "WARN: tazpod binary missing"
     echo "── tailscale ──"
     tailscale status 2>/dev/null | head -1
 VERIFY
-  echo "Verification complete. Remote UI access: SKILLS/tools/dsh-web-access (ssh -L 127.0.0.1:3081)."
+  echo "Verification complete."
 }
 
  

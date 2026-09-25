@@ -197,10 +197,12 @@
   changed_when: false
 
 # ─── Legacy cleanup (2026-09-10) ───────────────────────────────────────────
-# The dsh Web UI is no longer published through nginx: remote access uses an SSH
-# loopback tunnel (see SKILLS/tools/dsh-web-access). The sync daemon was
-# decommissioned in project 30 — the shipped unit pointed at a binary that no
-# longer exists and restart-looped forever.
+# Remote access to the old dsh Web UI used an SSH loopback tunnel (the sync
+# daemon was decommissioned in project 30 — its unit pointed at a binary that no
+# longer exists and restart-looped forever). The dsh Web UI itself was
+# decommissioned on 2026-09-25 (project `paperclip-lxc-deployment`): the layer,
+# the unit and the tunnel tooling are gone. nginx is still removed here because a
+# reverse proxy for a loopback-only UI must never come back.
 
 - name: Ensure nginx reverse proxy is not installed
   apt:

@@ -1,10 +1,4 @@
 ---
-- name: restart dsh
-  systemd:
-    name: dsh.service
-    state: restarted
-    daemon_reload: yes
-
 - name: restart sshd
   systemd:
     name: ssh

@@ -6,7 +6,9 @@ lxc_template   = "local:vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst"
 # orphan key of TD-063 (fingerprint SHA256:zPn1yMi/eP1aNK8NR8xvDDTeiv9oXiZ9LRnkpLvfO90)
 # ended up authorized on the node and inside CT106.
 
-# Runtime sizing (aligned with the live CT106 on 2026-09-10; dsh + Node needs the
-# headroom, the original 2048/512 defaults were too tight)
+# Runtime sizing (aligned with the live CT106 on 2026-09-10; the agent toolchain
+# plus Node needs the headroom, the original 2048/512 defaults were too tight).
+# dsh was decommissioned on 2026-09-25; paperclip (project paperclip-lxc-deployment)
+# reuses the same profile.
 memory_mb = 4096
 swap_mb   = 1024
