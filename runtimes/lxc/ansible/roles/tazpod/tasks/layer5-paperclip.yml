@@ -72,6 +72,9 @@
   ansible.builtin.command: /usr/bin/node --version
   register: paperclip_node_version
   changed_when: false
+  # read-only probe: it must also run in `--check`, or the assert below has no
+  # value to test and aborts the play
+  check_mode: false
 
 - name: System Node.js satisfies the Paperclip floor (>= 24.11.0)
   ansible.builtin.assert:
@@ -134,16 +137,28 @@
   failed_when: false
   changed_when: false
 
+- name: Managed shim
+  ansible.builtin.slurp:
+    src: "/home/{{ paperclip_user }}/.local/bin/paperclipai"
+  register: paperclip_shim
+  failed_when: false
+  changed_when: false
+
 - name: Install Paperclip at the pinned version (managed install)
   become_user: "{{ paperclip_user }}"
   ansible.builtin.shell:
     cmd: |
       set -euo pipefail
       set -a; . /etc/paperclip/paperclip.env; set +a
+      # the shim records the Node that runs the installer: pin the system one, so the
+      # service never depends on the tazpod user's nvm tree
+      export PATH=/usr/bin:/usr/local/bin:/bin
       exec npx --yes paperclipai@{{ paperclip_version }} install --version {{ paperclip_version }} --yes
     chdir: "/home/{{ paperclip_user }}"
     executable: /bin/bash
-  when: (paperclip_version_marker.content | default('') | b64decode | trim) != paperclip_version
+  when: >-
+    (paperclip_version_marker.content | default('') | b64decode | trim) != paperclip_version
+    or '/usr/bin/node' not in (paperclip_shim.content | default('') | b64decode)
   register: paperclip_install
   no_log: true
 
@@ -166,6 +181,7 @@
   ansible.builtin.shell:
     cmd: |
       set -a; . /etc/paperclip/paperclip.env; set +a
+      export PATH=/usr/bin:/usr/local/bin:/bin
       timeout --preserve-status {{ paperclip_onboard_timeout }} \
         npx --yes paperclipai@{{ paperclip_version }} onboard --yes --bind {{ paperclip_bind }} --no-install-service
     chdir: "/home/{{ paperclip_user }}"

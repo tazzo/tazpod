@@ -9,8 +9,9 @@ Type=exec
 User={{ paperclip_user }}
 Group={{ paperclip_user }}
 WorkingDirectory=/home/{{ paperclip_user }}
-# Root-only file holding DATABASE_URL and the application secrets; systemd reads it
-# before dropping privileges, so the service user never needs access to it.
+# Environment file (0600, owned by the service user) holding DATABASE_URL and the
+# application secrets; it is sourced by the provisioning tasks, so no secret ever
+# travels in argv or in a task environment.
 EnvironmentFile=/etc/paperclip/paperclip.env
 # The managed shim, not `npx`: an npx-started unit would report itself as an
 # ephemeral install (losing `update`/`--rollback`) and re-resolve the payload from
@@ -28,6 +29,7 @@ SyslogIdentifier=paperclip
 # Resources: bounded well inside the container (2 cores / 8 GB shared with the
 # agent workload). The V8 ceiling stays below MemoryMax on purpose.
 Environment=NODE_OPTIONS=--max-old-space-size=1024
+Environment=PATH=/usr/bin:/usr/local/bin:/bin
 MemoryHigh=1024M
 MemoryMax=1536M
 CPUQuota=150%
