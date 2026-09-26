@@ -100,3 +100,42 @@
     owner: "{{ paperclip_user }}"
     group: "{{ paperclip_user }}"
   when: not (paperclip_pi_is_canonical | bool)
+
+# Exa web search for the *agents'* CLI. `pi` 0.86.1 (what the `pi_local` adapter
+# runs) has no native `web_search` tool; it reaches Exa through the MCP server
+# declared here, served by the already-installed `pi-mcp-adapter`. The `!` prefix
+# makes the adapter run the command when the server connects, so the API key is
+# read from gopass at connect time and never stored in this file — which is why
+# this config holds no secret and can live in the repository. `omp` (the operator's
+# own binary) has native Exa and reads `EXA_API_KEY` from the service environment /
+# operator shell instead; the two mechanisms are independent.
+#
+# Written to the pet volume directly (`paperclip_pi_home`), so it is present whether
+# or not `~/.pi` is already the canonical symlink, and a rebuilt container converges
+# here instead of depending on a hand-written file. `copy` with inline `content` is
+# idempotent: a re-run reports no change once this state is reached.
+- name: Agent state directory for the CLI (extensions, skills, MCP config)
+  ansible.builtin.file:
+    path: "{{ paperclip_pi_home }}/agent"
+    state: directory
+    owner: "{{ paperclip_user }}"
+    group: "{{ paperclip_user }}"
+    mode: "0775"
+
+- name: MCP server config for the agent CLI (Exa web search)
+  ansible.builtin.copy:
+    dest: "{{ paperclip_pi_home }}/agent/mcp.json"
+    owner: "{{ paperclip_user }}"
+    group: "{{ paperclip_user }}"
+    mode: "0644"
+    content: |
+      {
+        "mcpServers": {
+          "exa": {
+            "url": "https://mcp.exa.ai/mcp",
+            "headers": {
+              "x-api-key": "!gopass show -o infra/exa/api-key"
+            }
+          }
+        }
+      }

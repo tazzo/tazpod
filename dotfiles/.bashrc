@@ -235,10 +235,12 @@ gpgconf --launch gpg-agent >/dev/null 2>&1
 gpg-connect-agent updatestartuptty /bye >/dev/null 2>&1
 
 # --- AGENT WEB SEARCH (Exa) ---
-# `pi`/`omp` support Exa natively and read the key from EXA_API_KEY (no config
-# change, no MCP server). The key is delivered from gopass at shell start and is
-# never written into a repository file. Runs after gpg-agent is up so gopass does
-# not block on a cold pinentry; skipped if the variable is already set.
+# `omp` supports Exa natively and reads the key from EXA_API_KEY. `pi` 0.86.1 has no
+# native search; it reaches Exa over the MCP server in ~/.pi/agent/mcp.json (key read
+# from gopass by the adapter at connect time). This variable serves `omp` in the
+# operator shell; the key is delivered from gopass at shell start and is never written
+# into a repository file. Runs after gpg-agent is up so gopass does not block on a cold
+# pinentry; skipped if the variable is already set.
 if [ -z "${EXA_API_KEY:-}" ] && command -v gopass >/dev/null 2>&1; then
     _exa_key="$(gopass show -o infra/exa/api-key 2>/dev/null | tr -d '\n')"
     if [ -n "$_exa_key" ]; then
