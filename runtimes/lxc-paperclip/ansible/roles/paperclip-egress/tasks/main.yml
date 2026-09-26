@@ -126,7 +126,8 @@
 # names the missing path and the command that fixes it, instead of by gopass's stderr.
 - name: Read the brokered credentials from gopass
   delegate_to: localhost
-  become: false
+  become: true
+  become_user: "{{ paperclip_operator_user }}"
   ansible.builtin.command:
     cmd: "gopass show -o {{ item.gopass }}"
   loop: "{{ paperclip_egress_credentials }}"

@@ -265,7 +265,8 @@
 
 - name: Read them from the operator's store on the orchestration host
   delegate_to: localhost
-  become: false
+  become: true
+  become_user: "{{ paperclip_operator_user }}"
   ansible.builtin.command:
     cmd: gopass cat "{{ item.name }}"
   loop: "{{ paperclip_entries_missing }}"

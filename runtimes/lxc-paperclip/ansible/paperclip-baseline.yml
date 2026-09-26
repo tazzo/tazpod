@@ -2,6 +2,15 @@
 - name: Deploy the Paperclip agent container baseline
   hosts: paperclip
   become: yes
+  # The operator's account on the orchestration host — the owner of the gopass store these
+  # layers *read* (the credentials they carry into the container). Whose store gets read is
+  # not an implementation detail: invoked as `root`, which is how the trusted orchestration
+  # host runs it (root owns the provisioning key), the reads silently hit root's own empty
+  # store, nothing is carried, and the run stops at "required entries are missing" with the
+  # real cause nowhere in the output. Naming the user makes the store explicit and keeps the
+  # play correct whichever account invokes it.
+  vars:
+    paperclip_operator_user: tazpod
   roles:
     # The container's own provisioning: tooling, identity, service, agent side.
     - paperclip
