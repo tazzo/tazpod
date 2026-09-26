@@ -49,7 +49,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import fnmatch
-import http.client
+from http import client as http_client
 import json
 import os
 import re
@@ -132,18 +132,26 @@ class PaperclipEgress:
                 raise
 
     def running(self) -> None:
-        # The AppRole bootstrap is the startup canary for the brokered Vault path: it runs here,
-        # blocking, because a container that cannot log in to Vault should say so once at start
-        # rather than behave differently from the first agent run onwards.
-        self._vault_bootstrap()
+        # The AppRole bootstrap is I/O — a Vault round-trip — so it must not run *inside* this
+        # hook: `running()` is called on the event loop, and mitmproxy 8.1.1 takes the whole
+        # process down when the bootstrap fails here (rc=1, no traceback, so the unit crash-loops
+        # before it can serve a single request — measured: this addon with the bootstrap in
+        # `running()` exits in ~40ms, with the bootstrap moved out it stays up). It is the first
+        # step of the renewal task instead: the proxy is up immediately, and a container that
+        # cannot log in to Vault still says so once at start rather than behaving differently from
+        # the first agent run onwards.
         loop = getattr(ctx.master, "event_loop", None)
         if loop is not None:
-            self._renewal_task = loop.create_task(self._vault_renewal_loop())
+            self._renewal_task = loop.create_task(self._vault_startup())
         ctx.log.info(
             f"paperclip-egress ready: {len(self.rules)} policy rules, "
-            f"{len(self.credentials)} credential(s) loaded, "
-            f"vault token {'minted' if self.vault_token else 'NOT minted'}"
+            f"{len(self.credentials)} credential(s) loaded"
         )
+
+    async def _vault_startup(self) -> None:
+        # Off the event loop: a hung Vault must not stall every request through the proxy.
+        await asyncio.to_thread(self._vault_bootstrap)
+        await self._vault_renewal_loop()
 
     def done(self) -> None:
         if self._renewal_task is not None:
@@ -306,7 +314,7 @@ class PaperclipEgress:
     ) -> Dict[str, Any]:
         """One HTTPS call to Vault from inside the addon.
 
-        Not through the proxy: `http.client` opens a direct socket, and the chokepoint's own uid is
+        Not through the proxy: `http_client` opens a direct socket, and the chokepoint's own uid is
         allowed out by the packet filter, so the proxy does not have to be able to proxy itself.
         """
         url = urllib.parse.urlsplit(self.vault["address"])
@@ -314,10 +322,11 @@ class PaperclipEgress:
             raise RuntimeError(f"the Vault address must be https, got {self.vault['address']!r}")
         context = ssl.create_default_context()
         if self.vault.get("ca_file"):
-            # Only needed when the Vault endpoint is not signed by a public CA — the lab's Vault
-            # is reached over Tailscale with a public certificate, so this is empty by default.
+            # The lab's Vault certificate is issued by the internal CA, so this is *not* optional
+            # here: without it every call dies on "certificate signed by unknown authority". An
+            # earlier version of this note claimed a public certificate and left the field empty.
             context.load_verify_locations(self.vault["ca_file"])
-        connection = http.client.HTTPSConnection(
+        connection = http_client.HTTPSConnection(
             url.hostname,
             url.port or 443,
             timeout=float(self.vault.get("timeout") or 10),
