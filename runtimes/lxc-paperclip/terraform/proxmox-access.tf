@@ -127,21 +127,21 @@ resource "proxmox_virtual_environment_acl" "pool_token" {
 # acceptance) and that endpoint needs Sys.Audit, which PVEAuditor carries.
 # propagate = false keeps it to exactly that path — no reach into /vms, /storage
 # or /access, where the cluster's own ACLs live.
-resource "proxmox_virtual_environment_acl" "node_user" {
-  count     = var.manage_proxmox_access ? 1 : 0
-  path      = "/nodes/${var.proxmox_node}"
-  role_id   = "PVEAuditor"
-  user_id   = proxmox_virtual_environment_user.agent[0].user_id
-  propagate = false
-}
-
-resource "proxmox_virtual_environment_acl" "node_token" {
-  count     = var.manage_proxmox_access ? 1 : 0
-  path      = "/nodes/${var.proxmox_node}"
-  role_id   = "PVEAuditor"
-  token_id  = proxmox_virtual_environment_user_token.agent[0].id
-  propagate = false
-}
+# The two `/nodes/<node>` ACLs are deliberately NOT managed here.
+#
+# They cannot be: creating an ACL on the node path needs Permissions.Modify *there*, the
+# bootstrap token holds it only where the pool lives, and the API answers
+#     403 Permission check failed (/nodes/tazlab, Permissions.Modify)
+# so an apply that includes them always ends in a partial apply — the pool, role, user and
+# token are created, these two fail, and every later apply repeats the failure. They are an
+# operator step, once, with root on the node:
+#
+#   pveum acl modify /nodes/tazlab --roles PVEAuditor \
+#     --users paperclip-agent@pve --tokens 'paperclip-agent@pve!agent' --propagate 0
+#
+# Inventory-only: `/nodes/<node>/status` needs Sys.Audit, which PVEAuditor carries, and
+# `propagate 0` keeps it to exactly that path — no reach into /vms, /storage or /access.
+# Verified with the agent's own token once the ACL was in place (T4 acceptance).
 
 output "proxmox_agent_user" {
   value = var.manage_proxmox_access ? proxmox_virtual_environment_user.agent[0].user_id : null
