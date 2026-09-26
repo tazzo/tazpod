@@ -125,6 +125,7 @@
     - "{{ paperclip_gopass_tool_action_secret }}"
     - "{{ paperclip_gopass_agent_jwt_secret }}"
     - "{{ paperclip_gopass_opencode_key }}"
+    - "{{ paperclip_gopass_exa_key }}"
   register: paperclip_secrets
   changed_when: false
   no_log: true
@@ -150,6 +151,7 @@
     paperclip_tool_action_secret: "{{ paperclip_secrets.results[2].stdout | trim }}"
     paperclip_agent_jwt_secret: "{{ paperclip_secrets.results[3].stdout | trim }}"
     paperclip_opencode_key: "{{ paperclip_secrets.results[4].stdout | trim }}"
+    paperclip_exa_key: "{{ paperclip_secrets.results[5].stdout | trim }}"
   notify: restart paperclip
   no_log: true
 

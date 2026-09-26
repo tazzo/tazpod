@@ -70,6 +70,11 @@ paperclip_gopass_agent_jwt_secret: infra/paperclip/agent-jwt-secret
 # DeepSeek Flash model; the API key is read from gopass and exported into the
 # service environment, so the agent inherits it without any secret on disk.
 paperclip_gopass_opencode_key: infra/paperclip/opencode-key
+# Web search for the agents: `pi`/`omp` support Exa natively and read the key from
+# `EXA_API_KEY` (no provider config, no MCP server). Read from gopass at provisioning
+# time and exported into the service environment, so every agent run inherits it.
+# The operator shell gets the same variable at start (dotfiles/.bashrc).
+paperclip_gopass_exa_key: infra/exa/api-key
 # Push credential for the agents: the service's own git config reads it from
 # gopass at push time (see paperclip.gitconfig.j2); it is never exported into the
 # service environment and never written to disk.
