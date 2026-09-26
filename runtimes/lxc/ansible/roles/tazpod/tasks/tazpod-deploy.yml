@@ -221,8 +221,13 @@
 
 - name: Workspace tools dirs (pet volume, prima creazione)
   file: { path: "/workspace/.tazpod/{{ item }}", owner: tazpod, group: tazpod, state: directory }
-  loop: [.omp, .pi, .gemini, .antigravity, .antigravitycli, .claude, .herdr, .opencode, .aws, .ssh, vault, keyrings]
+  loop: [.omp, .gemini, .antigravity, .antigravitycli, .claude, .herdr, .opencode, .aws, .ssh, vault, keyrings]
 
+# NOTE: `.pi` is deliberately NOT managed here. It used to be symlinked to the pet
+# volume from this task, which raced layer4 (which installs the pi extensions into a
+# real `~/.pi` before this file runs). It is now owned by the Paperclip layer
+# (`layer5-paperclip.yml` / `paperclip-pi-home.yml`), so there is a single writer.
+#
 # NOTE: .ssh is deliberately NOT symlinked to the pet volume: layer0 injects the
 # authorized_keys into the real /home/tazpod/.ssh directory, and Ansible refuses
 # (correctly) to replace a directory holding live keys with a symlink.
@@ -230,7 +235,6 @@
   file: { src: "/workspace/.tazpod/{{ item.src }}", dest: "/home/tazpod/{{ item.dest }}", owner: tazpod, group: tazpod, state: link }
   loop:
     - { src: .omp, dest: .omp }
-    - { src: .pi, dest: .pi }
     - { src: .gemini, dest: .gemini }
     - { src: .antigravity, dest: .antigravity }
     - { src: .antigravitycli, dest: .antigravitycli }

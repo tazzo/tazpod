@@ -36,6 +36,19 @@ paperclip_user: tazpod
 paperclip_uid: 1000
 paperclip_instance_id: default
 paperclip_home: /workspace/.paperclip
+# The `pi` CLI keeps its state under `~/.pi`: one session transcript per agent run in
+# `paperclips/<timestamp>-<agentId>.jsonl` (the readable record of what an agent did)
+# and the synced agent skills under `agent/`. The service user's home is on the
+# container rootfs, so a rebuild would wipe both. Mirror that home on the pet volume
+# and point `~/.pi` at it — the same guarantee the Paperclip run logs already get from
+# `paperclip_home`. `paperclip_pi_legacy_home` is the older pet location these files
+# used to live in (kept by the interactive `tazpod-deploy.yml` home symlinks); it is
+# seeded into the new directory so the transcripts already collected there survive.
+paperclip_user_home: "/home/{{ paperclip_user }}"
+paperclip_pi_account_path: "{{ paperclip_user_home }}/.pi"
+paperclip_pi_home_dir: "{{ paperclip_home }}/home"
+paperclip_pi_home: "{{ paperclip_pi_home_dir }}/.pi"
+paperclip_pi_legacy_home: /workspace/.tazpod/.pi
 paperclip_port: 3100
 paperclip_bind_host: "192.168.1.206"
 paperclip_host: "0.0.0.0"

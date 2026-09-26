@@ -109,6 +109,10 @@
     group: "{{ paperclip_user }}"
     mode: "0700"
 
+- name: Keep the pi state directory (session transcripts, skills) on the pet volume
+  ansible.builtin.import_tasks: paperclip-pi-home.yml
+  tags: pi-home
+
 # ─── Secrets: read here, never passed on a command line ─────────────────────
 - name: Read the Paperclip secrets from gopass
   delegate_to: localhost
