@@ -216,6 +216,10 @@
 # agent's environment points at.
 - name: Trust the interception CA in the container's system store
   ansible.builtin.copy:
+    # `remote_src`: the certificate lives on the *target* (the CA is generated there, one
+    # file per `assemble` source in ca.d/). Without it Ansible looks for the path on the
+    # controller and fails with "Could not find or access ... on the Ansible Controller".
+    remote_src: true
     src: "{{ paperclip_egress_state_dir }}/ca.d/20-cert.pem"
     dest: "{{ paperclip_egress_ca_trust_file }}"
     owner: root
@@ -241,6 +245,18 @@
     group: "{{ paperclip_egress_user }}"
     mode: "0640"
   notify: "paperclip-egress: restart the chokepoint"
+
+- name: The drop-in directory for the ruleset exists
+  # The ruleset is applied by the role's own unit (`nft -f <file>`), so this directory is
+  # only where the file lives — and nothing creates it: Ubuntu's nftables package ships
+  # /etc/nftables.conf but not /etc/nftables.d, so the template below fails with
+  # "Destination directory /etc/nftables.d does not exist" on a clean guest.
+  ansible.builtin.file:
+    path: "{{ paperclip_egress_nftables_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
 
 - name: Packet filter ruleset
   ansible.builtin.template:
