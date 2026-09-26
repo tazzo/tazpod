@@ -17,7 +17,10 @@ RUNTIME_ENV="${CONFIG_DIR}/runtime.env"
 INVENTORY="${ANSIBLE_DIR}/inventory.ini"
 
 # SSH settings
-KEY="$HOME/.ssh/id_ed25519"
+# TAZ-12: the Ansible/orchestration control key is the operator-owned
+# `tazpod-provision` key (root-only on the trusted orchestration host), NOT the
+# agent user's `~/.ssh/id_ed25519`. See TAZ-10 design memo / TAZ-12.
+KEY="/root/.ssh/tazpod-provision"
 SSH="ssh -o ConnectTimeout=10 -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $KEY"
 
 # Timing
@@ -133,17 +136,16 @@ phase_authorize_admin_keys() {
   # Client machines whose keys are authorized on every rebuilt container.
   # Keep in sync with tazpod_admin_key_names in
   # ansible/roles/tazpod/defaults/main.yml when a machine joins the workspace.
+  # TAZ-12: the control machine's own key (${KEY}.pub) is deliberately NOT a
+  # fallback any more — admin keys come only from the tazlab-secrets checkout.
   local admin_key_names=(desktop macbook-fedora)
   local pubs=() f name
   for name in "${admin_key_names[@]}"; do
     f="${keydir}/${name}/id_ed25519.pub"
     [ -f "$f" ] && pubs+=("$(cat "$f")")
   done
-  if [ "${#pubs[@]}" -eq 0 ] && [ -f "${KEY}.pub" ]; then
-    pubs+=("$(cat "${KEY}.pub")")
-  fi
   if [ "${#pubs[@]}" -eq 0 ]; then
-    echo "WARN: no admin public key found (${keydir}/{${admin_key_names[*]}}/id_ed25519.pub and ${KEY}.pub both missing) — skipping" >&2
+    echo "WARN: no admin public key found in ${keydir}/{${admin_key_names[*]}}/id_ed25519.pub — skipping (control-machine key fallback removed by TAZ-12)" >&2
     return 0
   fi
   local keys_block=""

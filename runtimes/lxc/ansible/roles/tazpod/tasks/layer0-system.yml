@@ -185,9 +185,11 @@
 # Admin keys (tazpod_admin_key_names, one directory per machine under
 # infra/ssh-client-keys/) — the public keys live in clear text in the secrets
 # checkout (tazlab-secrets keeps .pub files unencrypted by design; gopass only
-# manages .gpg entries and cannot read them). Local ~/.ssh/id_ed25519.pub is the
-# fallback. grep also normalizes a missing trailing newline in the source file.
-- name: Resolve the admin public keys (secrets checkout, then local key)
+# manages .gpg entries and cannot read them). TAZ-12: the Ansible control
+# machine's own public key is deliberately NOT a fallback any more — that is how
+# the agent user's key used to become a root key. grep also normalizes a missing
+# trailing newline in the source file.
+- name: Resolve the admin public keys (secrets checkout only)
   delegate_to: localhost
   become: false
   shell: |
@@ -195,7 +197,6 @@
     for n in {{ tazpod_admin_key_names | join(' ') }}; do
       [ -f "$s/$n/id_ed25519.pub" ] && grep -E '^ssh-(ed25519|rsa) ' "$s/$n/id_ed25519.pub" || true
     done
-    grep -E '^ssh-(ed25519|rsa) ' "$HOME/.ssh/id_ed25519.pub" 2>/dev/null || true
     exit 0
   register: admin_pubkeys
   changed_when: false
