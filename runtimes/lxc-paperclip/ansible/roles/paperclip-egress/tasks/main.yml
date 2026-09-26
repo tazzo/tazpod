@@ -1,0 +1,516 @@
+---
+# ───────────────────────────────────────────────────────────────────────────────
+# paperclip-egress — the container's egress chokepoint (design T4b, shipped with the container).
+#
+# The agent holds capability instead of secrets. Concretely, after this layer:
+#   * the agent's HTTP(S) egress goes through a forward proxy on loopback that only forwards to an
+#     allowlist and injects the per-target credential (GitHub push, Proxmox API token, Vault
+#     AppRole client token) — none of those credentials exists inside the container;
+#   * the packet filter gives internet egress to the chokepoint's uid and to root (the operator's
+#     own processes) and to nobody else, so a client that ignores HTTP_PROXY fails instead of
+#     escaping;
+#   * `paperclip.service` is bound to the proxy, so "no chokepoint" means "no agent", not "agent
+#     without a chokepoint";
+#   * the interception CA is in the container's trust store and named in the agent's environment.
+#
+# Which half is enforced where (the design says the chokepoint must not live in the agent's
+# configuration, and that is true of both halves here — neither is agent-writable):
+#   * uid split, allowlist, injection: enforced inside the guest by this role, as root-owned
+#     systemd units and a root-owned policy. The agent runs as a non-root user with no sudo, so
+#     these are not its to change.
+#   * the NIC-level allowlist: the host-side rule set is shipped as a template for the operator to
+#     install on the Proxmox node (templates/proxmox-firewall-108.fw.j2, staged into the guest for
+#     `scp`). It is *not* an equivalent control and the template says why: the host sees the veth,
+#     not the uid, so it cannot separate the chokepoint's traffic from the agent's.
+#
+# Nothing here acts on a live host outside this guest: the two operator-gated steps are printed at
+# the end of the run rather than attempted.
+
+# ─── 1. The chokepoint's software ────────────────────────────────────────────
+- name: The proxy and `nft` (the two halves of the chokepoint)
+  ansible.builtin.apt:
+    name:
+      - mitmproxy
+      - nftables
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+# ─── 2. The chokepoint's own identity ────────────────────────────────────────
+# A separate uid is what makes the packet filter expressible: "may reach the internet" becomes a
+# property of the process, not of a file the agent could rewrite.
+- name: The chokepoint gets its own unprivileged identity
+  ansible.builtin.user:
+    name: "{{ paperclip_egress_user }}"
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+    home: "{{ paperclip_egress_state_dir }}"
+
+# The guest runs with an idmap (create.sh writes lxc.idmap), and the kernel compares `meta skuid`
+# against a uid that may be the *host-side* one. Rather than guess which of the two it is, the role
+# derives both from /proc/self/uid_map and emits a rule for each — an unmatched rule is inert, so
+# emitting both is exact and self-healing. The probes further down then prove that one of them
+# matched, which is the part that cannot be reasoned out.
+- name: The uid values the packet filter must match
+  ansible.builtin.shell:
+    cmd: |
+      set -eu
+      u=$(getent passwd {{ paperclip_egress_user }} | cut -d: -f3)
+      h=$(awk -v u="$u" '
+        NF == 3 && u >= $1 && u < $1 + $3 { printf "%d", $2 + (u - $1); found = 1; exit }
+        END { if (!found) printf "%s", u }
+      ' /proc/self/uid_map)
+      printf '%s,%s,%s\n' "$u" "$h" "{{ paperclip_egress_proxy_uid_override }}"
+  register: paperclip_egress_uid_probe
+  changed_when: false
+  check_mode: false
+
+- name: Uid values for the filter (local, idmap-mapped, optional override)
+  ansible.builtin.set_fact:
+    paperclip_egress_uids: >-
+      {{ paperclip_egress_uid_probe.stdout.split(',')
+         | map('trim') | select('match', '^[0-9]+$') | unique | list }}
+
+# ─── 3. Configuration tree ───────────────────────────────────────────────────
+# Root-owned, group-readable by the chokepoint only: the agent must not be able to read the policy
+# (it lists what it may reach) and must certainly not be able to write it.
+- name: Configuration directory
+  ansible.builtin.file:
+    path: "{{ paperclip_egress_conf_dir }}"
+    state: directory
+    owner: root
+    group: "{{ paperclip_egress_user }}"
+    mode: "0750"
+
+- name: Credential directory (the proxy user reads these at service start)
+  ansible.builtin.file:
+    path: "{{ paperclip_egress_credentials_dir }}"
+    state: directory
+    owner: root
+    group: "{{ paperclip_egress_user }}"
+    mode: "0750"
+
+- name: Upstream CA directory (for a brokered target whose cert the proxy cannot verify alone)
+  ansible.builtin.file:
+    path: "{{ paperclip_egress_conf_dir }}/upstream-ca"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: The mitmproxy state directory (its CA file, leaf certificates, DH parameters)
+  ansible.builtin.file:
+    path: "{{ paperclip_egress_state_dir }}"
+    state: directory
+    owner: "{{ paperclip_egress_user }}"
+    group: "{{ paperclip_egress_user }}"
+    mode: "0700"
+
+# Root-only and separate from the assembled CA file: the private key and the certificate are
+# generated here once, and only the assembled copy is readable by the proxy user.
+- name: The CA source directory (root-only)
+  ansible.builtin.file:
+    path: "{{ paperclip_egress_state_dir }}/ca.d"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+# ─── 4. Brokered credentials: gopass now, files for the runtime ──────────────
+# Read here, at provisioning time, and rendered to 0600 files owned by the proxy user. The runtime
+# path is then "the addon reads a file": no gpg, no gpg-agent, no pinentry and no operator session
+# when the service starts — the TD-091 failure moved one step further out, and the credential now
+# lives in the chokepoint instead of in the container.
+# `failed_when: false` here is deliberate: the failure is reported by the assertion below, which
+# names the missing path and the command that fixes it, instead of by gopass's stderr.
+- name: Read the brokered credentials from gopass
+  delegate_to: localhost
+  become: false
+  ansible.builtin.command:
+    cmd: "gopass show -o {{ item.gopass }}"
+  loop: "{{ paperclip_egress_credentials }}"
+  register: paperclip_egress_secret_reads
+  changed_when: false
+  check_mode: false
+  failed_when: false
+  no_log: true
+
+# Paths only, so the message below can be shown without a secret in it.
+- name: Which brokered credentials did not resolve
+  ansible.builtin.set_fact:
+    paperclip_egress_missing_credentials: >-
+      {{ paperclip_egress_secret_reads.results
+         | rejectattr('rc', 'equalto', 0)
+         | map(attribute='item.gopass') | list
+         | union(paperclip_egress_secret_reads.results
+                 | selectattr('rc', 'equalto', 0)
+                 | selectattr('stdout', 'match', '^\s*$')
+                 | map(attribute='item.gopass') | list) }}
+
+# Fail closed, and fail *here*: a rule whose credential is missing would forward the agent's request
+# unauthenticated, which reads as a target-side permission problem and hides the real fault until an
+# agent run fails hours later.
+- name: Every brokered credential is present
+  ansible.builtin.assert:
+    that:
+      - paperclip_egress_missing_credentials | length == 0
+    fail_msg: >-
+      gopass did not return a value for: {{ paperclip_egress_missing_credentials | join(', ') }}.
+      Insert each one (`gopass insert -f <path>`) before running this layer: the role refuses to
+      start a chokepoint whose rules cannot be completed. The paths and what each one is are in
+      roles/paperclip-egress/defaults/main.yml (`paperclip_egress_credentials`).
+    success_msg: "all {{ paperclip_egress_credentials | length }} brokered credential(s) resolved"
+
+- name: Credential files for the proxy (0600, owned by the proxy user)
+  ansible.builtin.copy:
+    content: "{{ (item.stdout | trim) }}\n"
+    dest: "{{ paperclip_egress_credentials_dir }}/{{ item.item.name }}"
+    owner: "{{ paperclip_egress_user }}"
+    group: "{{ paperclip_egress_user }}"
+    mode: "0600"
+  loop: "{{ paperclip_egress_secret_reads.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  no_log: true
+  notify: "paperclip-egress: restart the chokepoint"
+
+# ─── 5. The interception CA ──────────────────────────────────────────────────
+# Generated here rather than carried from the operator's machine, because its only consumer is this
+# container's trust store. Two parts, assembled into the single file mitmproxy loads from its
+# confdir: `mitmproxy-ca.pem` is the private key followed by the certificate, which is the format
+# mitmproxy's CertStore.from_files expects (it splits the file on the BEGIN CERTIFICATE marker).
+- name: "The interception CA (create-if-absent: a rebuild regenerates it and the trust below follows)"
+  ansible.builtin.command:
+    cmd: >-
+      openssl req -x509 -newkey rsa:2048 -sha256 -days {{ paperclip_egress_ca_days }} -nodes
+      -keyout {{ paperclip_egress_state_dir }}/ca.d/10-key.pem
+      -out {{ paperclip_egress_state_dir }}/ca.d/20-cert.pem
+      -subj "/CN={{ paperclip_egress_ca_cn }}/O={{ paperclip_egress_ca_org }}"
+      -addext "basicConstraints=critical,CA:TRUE,pathlen:0"
+      -addext "keyUsage=critical,keyCertSign,cRLSign"
+    creates: "{{ paperclip_egress_state_dir }}/ca.d/20-cert.pem"
+
+# `openssl req -keyout` honours the umask, so the mode is stated rather than assumed: anyone who can
+# read this key can impersonate any host to the agent.
+- name: The CA private key stays root-only
+  ansible.builtin.file:
+    path: "{{ paperclip_egress_state_dir }}/ca.d/10-key.pem"
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Key + certificate in the one file mitmproxy reads from the confdir
+  ansible.builtin.assemble:
+    src: "{{ paperclip_egress_state_dir }}/ca.d"
+    dest: "{{ paperclip_egress_state_dir }}/mitmproxy-ca.pem"
+    owner: "{{ paperclip_egress_user }}"
+    group: "{{ paperclip_egress_user }}"
+    mode: "0600"
+  notify: "paperclip-egress: restart the chokepoint"
+
+# The CA has to be trusted by every client in the container — git, curl, Python, Node — which is why
+# it goes into the system store and not into per-tool configuration. The handler runs
+# `update-ca-certificates`, which rebuilds /etc/ssl/certs/ca-certificates.crt: the bundle the
+# agent's environment points at.
+- name: Trust the interception CA in the container's system store
+  ansible.builtin.copy:
+    src: "{{ paperclip_egress_state_dir }}/ca.d/20-cert.pem"
+    dest: "{{ paperclip_egress_ca_trust_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: "paperclip-egress: update the CA trust store"
+
+# ─── 6. The chokepoint itself ────────────────────────────────────────────────
+- name: The addon (the allowlist and the injection rules)
+  ansible.builtin.copy:
+    src: paperclip_egress.py
+    dest: "{{ paperclip_egress_addon_path }}"
+    owner: root
+    group: "{{ paperclip_egress_user }}"
+    mode: "0640"
+  notify: "paperclip-egress: restart the chokepoint"
+
+- name: "The policy (rendered from defaults: one file, so allowlist and injection cannot drift apart)"
+  ansible.builtin.template:
+    src: policy.json.j2
+    dest: "{{ paperclip_egress_policy_path }}"
+    owner: root
+    group: "{{ paperclip_egress_user }}"
+    mode: "0640"
+  notify: "paperclip-egress: restart the chokepoint"
+
+- name: Packet filter ruleset
+  ansible.builtin.template:
+    src: nftables.nft.j2
+    dest: "{{ paperclip_egress_nftables_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: "paperclip-egress: restart the packet filter"
+
+- name: Packet filter unit
+  ansible.builtin.template:
+    src: paperclip-egress-firewall.service.j2
+    dest: /etc/systemd/system/paperclip-egress-firewall.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: "paperclip-egress: reload systemd"
+
+- name: Proxy unit
+  ansible.builtin.template:
+    src: paperclip-egress.service.j2
+    dest: /etc/systemd/system/paperclip-egress.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: "paperclip-egress: reload systemd"
+
+# The agent's side of the contract: the proxy/CA environment and the fail-closed dependency, as a
+# drop-in on a unit this role does not own (the sibling Paperclip layer renders the unit itself).
+- name: Fail-closed dependency and proxy environment for the agent's unit
+  ansible.builtin.template:
+    src: paperclip-egress-dropin.conf.j2
+    dest: /etc/systemd/system/paperclip.service.d/50-paperclip-egress.conf
+    owner: root
+    group: root
+    mode: "0644"
+  register: paperclip_egress_dropin
+  notify: "paperclip-egress: reload systemd"
+
+# Idempotent no-op on an unchanged second run, and the reason the enable tasks below can be plain
+# `state: started`: on a first run the units have just been written and systemd has not seen them
+# yet. A restarted unit at this point is fine (the handlers only fire when a rendered file changed).
+- name: systemd learns about the units before they are started
+  ansible.builtin.meta: flush_handlers
+
+- name: The packet filter is in place before anything may use the chokepoint
+  ansible.builtin.systemd:
+    name: paperclip-egress-firewall.service
+    enabled: true
+    state: started
+  when: paperclip_egress_firewall_enabled | bool
+
+- name: The chokepoint runs
+  ansible.builtin.systemd:
+    name: paperclip-egress.service
+    enabled: true
+    state: started
+
+# ─── 7. Proof, at provisioning time ──────────────────────────────────────────
+# Each probe names the defect it catches. All of them are read-only, and `check_mode: false` on
+# purpose: a `--check` run must report the same evidence as a real one instead of skipping it.
+- name: Does the agent's own identity exist yet (the sibling layer creates it)
+  ansible.builtin.command:
+    cmd: "getent passwd {{ paperclip_egress_agent_user }}"
+  register: paperclip_egress_agent_account
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: paperclip_egress_verify | bool
+
+- name: Is the sibling layer's unit installed
+  ansible.builtin.stat:
+    path: /etc/systemd/system/paperclip.service
+  register: paperclip_egress_agent_unit
+
+- name: The chokepoint's uid may reach the internet (the filter lets the proxy out)
+  ansible.builtin.shell:
+    cmd: "timeout 5 bash -c '</dev/tcp/{{ paperclip_egress_verify_probe_address }}/{{ paperclip_egress_verify_probe_port }}'"
+  become: true
+  become_user: "{{ paperclip_egress_user }}"
+  register: paperclip_egress_probe_proxy
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - paperclip_egress_verify | bool
+    - paperclip_egress_firewall_enabled | bool
+
+- name: The agent's uid may NOT reach the internet directly (the fail-closed property)
+  ansible.builtin.shell:
+    cmd: "timeout 5 bash -c '</dev/tcp/{{ paperclip_egress_verify_probe_address }}/{{ paperclip_egress_verify_probe_port }}'"
+  become: true
+  become_user: "{{ paperclip_egress_agent_user }}"
+  register: paperclip_egress_probe_agent
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - paperclip_egress_verify | bool
+    - paperclip_egress_firewall_enabled | bool
+    - paperclip_egress_agent_account.rc | default(1) == 0
+
+- name: The packet filter separates the agent's uid from the chokepoint's
+  ansible.builtin.assert:
+    that:
+      - paperclip_egress_probe_proxy.rc | default(1) == 0
+      - paperclip_egress_probe_agent.rc | default(0) != 0
+    fail_msg: >-
+      The chokepoint's uid must reach
+      {{ paperclip_egress_verify_probe_address }}:{{ paperclip_egress_verify_probe_port }} and the
+      agent's uid must not. proxy_rc={{ paperclip_egress_probe_proxy.rc | default('skipped') }}
+      agent_rc={{ paperclip_egress_probe_agent.rc | default('skipped') }}. If the agent's probe
+      succeeded, the ruleset did not match its uid: check `nft list table inet paperclip_egress`
+      and that the guest kept CAP_NET_ADMIN (lxc.cap.drop must not list net_admin), then set
+      `paperclip_egress_proxy_uid_override` to the uid the filter actually needs. If the proxy's
+      probe failed, the filter is too tight and nothing can leave this container.
+    success_msg: "the packet filter separates the agent's uid from the chokepoint's"
+  when:
+    - paperclip_egress_verify | bool
+    - paperclip_egress_firewall_enabled | bool
+    - paperclip_egress_agent_account.rc | default(1) == 0
+
+- name: The uid split cannot be proven yet
+  ansible.builtin.debug:
+    msg: >-
+      `{{ paperclip_egress_agent_user }}` does not exist on this guest, so the "no direct egress"
+      probe was skipped and no rule can be attributed to the agent's uid. Expected only when this
+      role runs on its own; in the container build the sibling layer creates the account first.
+  when:
+    - paperclip_egress_verify | bool
+    - paperclip_egress_agent_account.rc | default(1) != 0
+
+- name: A host that is not on the allowlist is refused by the chokepoint
+  ansible.builtin.shell:
+    cmd: "curl -sS --max-time 15 http://example.com/"
+  become: true
+  become_user: "{{ paperclip_egress_agent_user }}"
+  environment: "{{ paperclip_egress_client_env }}"
+  register: paperclip_egress_probe_deny
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - paperclip_egress_verify | bool
+    - paperclip_egress_agent_account.rc | default(1) == 0
+
+- name: The refusal is ours (the chokepoint answered, not the network)
+  ansible.builtin.assert:
+    that:
+      - "'paperclip-egress' in paperclip_egress_probe_deny.stdout"
+    fail_msg: >-
+      A request to a host that is not on the allowlist was not refused by the chokepoint.
+      stdout={{ paperclip_egress_probe_deny.stdout | default('') | truncate(200) }}
+      stderr={{ paperclip_egress_probe_deny.stderr | default('') | truncate(200) }}
+      The expected answer is our own 403 body ("paperclip-egress: destination or credential not
+      permitted"). A connection error instead means the client never reached the proxy: check the
+      environment in the drop-in and `systemctl status paperclip-egress.service`.
+    success_msg: "a non-allowlisted destination is refused with our own 403"
+  when:
+    - paperclip_egress_verify | bool
+    - paperclip_egress_agent_account.rc | default(1) == 0
+
+# End-to-end proof of the brokered path, and the check that catches this layer's two silent failure
+# modes: a wrapped SecretID that was already consumed, and an upstream certificate the proxy
+# refuses. `auth/token/lookup-self` is readable by any Vault token (it is in Vault's default
+# policy), so a 200 carrying token metadata means: proxy up, CA trusted, allowlist passed, AppRole
+# login done, `X-Vault-Token` injected — and the agent never held that token.
+- name: The brokered Vault path works end to end
+  ansible.builtin.shell:
+    cmd: >-
+      curl -sS --max-time 20
+      https://{{ paperclip_egress_vault_addr }}:{{ paperclip_egress_vault_port }}/v1/auth/token/lookup-self
+  become: true
+  become_user: "{{ paperclip_egress_agent_user }}"
+  environment: "{{ paperclip_egress_client_env }}"
+  register: paperclip_egress_probe_vault
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - paperclip_egress_verify | bool
+    - paperclip_egress_agent_account.rc | default(1) == 0
+
+- name: The agent reaches Vault without holding a Vault credential
+  ansible.builtin.assert:
+    that:
+      - "'policies' in paperclip_egress_probe_vault.stdout"
+      - "'display_name' in paperclip_egress_probe_vault.stdout"
+    fail_msg: >-
+      The brokered Vault call did not return token metadata.
+      rc={{ paperclip_egress_probe_vault.rc | default('skipped') }}
+      stdout={{ paperclip_egress_probe_vault.stdout | default('') | truncate(200) }}.
+      The usual cause is that the AppRole bootstrap failed at proxy start — `journalctl -u
+      paperclip-egress -n 50` logs why — and both the wrapping token and the SecretID behind it are
+      single-use: mint a fresh one (`vault write -wrap-ttl=120s -force
+      auth/approle-agent/role/{{ paperclip_egress_vault_role_id }}/secret-id`), insert it in gopass
+      and re-run this layer. A 403 with "permission denied" would instead mean Vault refused the
+      injected token (policy, not transport). A curl rc of 6 or 28 (name not resolved / connect
+      timed out) means the guest could not reach the tailnet at all — fix that before minting
+      anything, because a SecretID is consumed on use.
+    success_msg: "the chokepoint minted a Vault token and injected it; the agent never saw it"
+  when:
+    - paperclip_egress_verify | bool
+    - paperclip_egress_agent_account.rc | default(1) == 0
+
+# Advisory, never fatal, and it exists because of a specific reality: the Proxmox API is
+# self-signed in this lab, and mitmproxy verifies upstream certificates. Without the node's
+# certificate installed as `paperclip_egress_upstream_ca_file` the proxy refuses that upstream TLS
+# session (the agent would see a 502) — a brokered rule that looks configured and is dead. Reported
+# here rather than asserted, because the fix needs a certificate from outside the guest.
+- name: Is the Proxmox rule usable (upstream certificate trusted by the proxy)
+  ansible.builtin.shell:
+    cmd: >-
+      curl -sS -o /dev/null -w '%{http_code}' --max-time 15
+      https://192.168.1.200:8006/api2/json/version
+  become: true
+  become_user: "{{ paperclip_egress_agent_user }}"
+  environment: "{{ paperclip_egress_client_env }}"
+  register: paperclip_egress_probe_pve
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - paperclip_egress_verify | bool
+    - paperclip_egress_agent_account.rc | default(1) == 0
+
+- name: The Proxmox brokered path (advisory)
+  ansible.builtin.debug:
+    msg: >-
+      {{ 'Proxmox rule usable: the chokepoint reached the API with the brokered token.'
+         if (paperclip_egress_probe_pve.stdout | default('') | trim) == '200'
+         else 'Proxmox rule NOT usable yet (HTTP '
+              ~ (paperclip_egress_probe_pve.stdout | default('') | trim or 'no response')
+              ~ ', curl rc ' ~ (paperclip_egress_probe_pve.rc | default('n/a')) ~ '). '
+              ~ 'A 502 is the proxy refusing the node certificate: install it under '
+              ~ paperclip_egress_conf_dir ~ '/upstream-ca/ and set '
+              ~ 'paperclip_egress_upstream_ca_file, then re-run this layer. A 401 means the token '
+              ~ 'was not injected or was rejected — check the token in gopass and its ACL in '
+              ~ 'Proxmox.' }}
+  when:
+    - paperclip_egress_verify | bool
+    - paperclip_egress_agent_account.rc | default(1) == 0
+
+# ─── 8. Hand back to the agent, and to the operator ──────────────────────────
+# `BindsTo=` means a chokepoint restart stops the agent (that is the fail-closed direction), so the
+# pair is brought back together here. `restarted` only when the drop-in actually changed, otherwise
+# `started` — which is a no-op when the agent is already running, and the repair when it is not.
+- name: The agent runs behind the chokepoint
+  ansible.builtin.systemd:
+    name: paperclip.service
+    state: "{{ 'restarted' if paperclip_egress_dropin is changed else 'started' }}"
+  when:
+    - paperclip_egress_agent_unit.stat.exists | default(false)
+
+- name: Stage the host-side rule set for the operator
+  ansible.builtin.template:
+    src: proxmox-firewall-108.fw.j2
+    dest: "{{ paperclip_egress_conf_dir }}/proxmox-firewall-{{ paperclip_egress_ctid }}.fw"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: What is left for the operator (printed, not attempted)
+  ansible.builtin.debug:
+    msg:
+      - "1. Host-side NIC posture (optional; read its header first — it cannot separate the proxy's traffic from the agent's):"
+      - "   scp root@{{ paperclip_egress_guest_address }}:{{ paperclip_egress_conf_dir }}/proxmox-firewall-{{ paperclip_egress_ctid }}.fw /etc/pve/firewall/{{ paperclip_egress_ctid }}.fw"
+      - "   On the node: /etc/pve/firewall/cluster.fw needs 'enable: 1' and /etc/pve/lxc/{{ paperclip_egress_ctid }}.conf needs 'firewall=1' (the raw-config phase owns that file)."
+      - "   Then: pve-firewall compile | sed -n '/{{ paperclip_egress_ctid }}/,/^$/p'   and   systemctl reload pve-firewall"
+      - "2. A brokered target presenting a private or self-signed certificate (this lab: the Proxmox API, which create.sh calls with `curl -sk`):"
+      - "   install its certificate under {{ paperclip_egress_conf_dir }}/upstream-ca/ and set paperclip_egress_upstream_ca_file to it, then re-run this layer."
+      - "   Until then the proxy refuses that upstream TLS session and the matching rule is dead. Do not reach for ssl_insecure=true: it would stop verifying every brokered upstream at once."
+      - "3. After any chokepoint restart, check the pair: systemctl is-active paperclip-egress.service paperclip.service"

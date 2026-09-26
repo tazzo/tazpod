@@ -1,0 +1,16 @@
+---
+# `state: restarted` also *starts* a stopped unit, and on the first run this layer renders
+# the environment file and the unit before the operator has carried the company's state.
+# Starting there would only produce a failed unit (the canary refuses to let a service
+# start without its secrets) plus a spurious `OnFailure=` alert, so the restart waits for
+# the carry to be complete.
+- name: restart paperclip
+  ansible.builtin.systemd:
+    name: paperclip.service
+    state: restarted
+    daemon_reload: yes
+  when: paperclip_carried_missing | default(['unset']) | length == 0
+
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: yes

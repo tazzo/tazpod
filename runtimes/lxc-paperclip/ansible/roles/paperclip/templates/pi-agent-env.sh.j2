@@ -1,0 +1,12 @@
+#!/bin/sh
+# Environment for the agent CLIs (`pi`, `omp`) when they are started by hand as the service
+# user — the RUNBOOK's verification steps source it.
+#
+# It contains no secret: it re-reads the service's own mode-0600 environment file, so the
+# provider keys have exactly one at-rest location and one rotation procedure. The file is
+# readable by the service user because it *is* the service user, which is also why sourcing
+# it here adds no exposure: a `pi` started this way runs as the same principal as
+# paperclip.service, with the same keys, with or without this file.
+set -a
+. /etc/paperclip/paperclip.env
+set +a

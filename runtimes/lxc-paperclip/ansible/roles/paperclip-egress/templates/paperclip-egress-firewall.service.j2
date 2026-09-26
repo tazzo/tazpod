@@ -1,0 +1,36 @@
+[Unit]
+Description=paperclip-egress packet filter (the agent uid has no egress except the chokepoint)
+# WHERE THIS HALF IS ENFORCED, AND WHY THERE ARE TWO HALVES
+#   * This unit loads rules into the *container's own* netns. It binds the agent's uid: root
+#     inside the container (the operator's own processes: apt, tailscaled, this very layer) keeps
+#     its egress, and the agent — uid `{{ paperclip_egress_agent_user }}`, no root, no sudo — can
+#     reach nothing but loopback and the internal networks. Because it is a root-owned systemd
+#     unit driven by a root-owned file, the agent cannot reconfigure it: that is the property the
+#     design asks for ("the chokepoint must not live in the agent's configuration").
+#   * The *host-side* half (the Proxmox firewall on the guest's veth, template
+#     proxmox-firewall-108.fw.j2) is deliberately NOT claimed as equivalent: both the proxy's
+#     upstream sockets and the agent's packets leave the same veth with the same source address,
+#     so no host rule can separate them. It is shipped as a documented, operator-applied backstop
+#     plus its prerequisites; see that template's header.
+# Net effect with this unit up: the agent's internet egress is exactly what the proxy allows, and
+# if the proxy is down the agent's calls fail instead of escaping — there is no direct path to
+# fall back to.
+Before=paperclip-egress.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# A single atomic load: the file deletes and redefines the table inside one nft transaction, so a
+# re-run never leaves a moment without a filter.
+ExecStart=/usr/sbin/nft -f {{ paperclip_egress_nftables_file }}
+# nft only needs to talk to netlink; the filter is loaded as root because that is who may write
+# the ruleset in this netns.
+CapabilityBoundingSet=CAP_NET_ADMIN
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+RestrictAddressFamilies=AF_NETLINK AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

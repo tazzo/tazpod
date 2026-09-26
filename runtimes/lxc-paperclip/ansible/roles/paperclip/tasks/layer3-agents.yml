@@ -1,0 +1,177 @@
+---
+# Layer 3 — the agent side: the CLI state that must live on the data volume, the MCP
+# configuration for web search, the skills path, the environment the CLI needs, and the
+# read-only cluster kubeconfig.
+#
+# There is no symlink dance here, unlike the operator container: HOME *is* on the data
+# volume (`/workspace/home`), so `~/.pi`, `~/.omp`, `~/.gnupg`, `~/.local/share/gopass` and
+# `~/.kube` are already persistent, and a rebuild does not need a migration step to bring
+# them back. That is the whole reason the unit sets HOME=<data volume>/home.
+
+# ─── CLI state on the data volume ───────────────────────────────────────────
+- name: Agent CLI state directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ paperclip_user }}"
+    group: "{{ paperclip_group }}"
+    mode: "0755"
+  loop:
+    - "{{ paperclip_pi_home }}/agent"
+    # `omp` keeps its own agent directory (DB, sessions, MCP/agent config). It needs no Exa
+    # entry there: it has a native web-search provider and reads EXA_API_KEY from the
+    # service environment, which is why only `pi` gets an mcp.json.
+    - "{{ paperclip_omp_home }}/agent"
+    - "{{ paperclip_config_dir }}"
+    - "{{ paperclip_service_home }}/.kube"
+
+- name: The skills checkout is present on the data volume
+  ansible.builtin.stat:
+    path: "{{ paperclip_skills_path }}"
+  register: paperclip_skills_checkout
+  changed_when: false
+
+- name: Skills checkout missing
+  ansible.builtin.debug:
+    msg: >-
+      {{ paperclip_skills_path }} does not exist yet: the agents would start with no skills.
+      Clone the skills repository with `clone-workspace.sh` (or `git clone
+      https://github.com/tazzo/skills.git {{ paperclip_skills_path }}`) as the operator
+      user; the CLI reads the checkout directly, so no change to this layer is needed.
+  when: not paperclip_skills_checkout.stat.exists
+
+- name: Agent CLI settings (skills path)
+  ansible.builtin.template:
+    src: pi-settings.json.j2
+    dest: "{{ paperclip_pi_home }}/agent/settings.json"
+    owner: "{{ paperclip_user }}"
+    group: "{{ paperclip_group }}"
+    mode: "0644"
+
+# The header value is `${EXA_API_KEY}` and not `!gopass …` on purpose: see the comment in
+# the template. `pi-mcp-adapter` is what serves this file to the CLI (installed below).
+- name: MCP server configuration (Exa web search)
+  ansible.builtin.template:
+    src: pi-mcp.json.j2
+    dest: "{{ paperclip_pi_home }}/agent/mcp.json"
+    owner: "{{ paperclip_user }}"
+    group: "{{ paperclip_group }}"
+    mode: "0644"
+
+# ─── The CLIs ───────────────────────────────────────────────────────────────
+# `pi` itself is installed by layer2 (system-wide, because the `pi_local` adapter execs it
+# from the service PATH). Here it is configured: the two extensions the agent needs, one of
+# which is the MCP adapter that reads mcp.json above.
+#
+# The guard is a marker file this layer owns, not a directory the CLI owns: `pi install` has
+# no "already installed" mode, and a `creates:` on `~/.pi` would always be satisfied (the
+# directory exists because the layer just made it), silently skipping the install forever.
+# The marker means "these two installs have run"; removing it re-runs them (RUNBOOK).
+- name: Pi extensions (the MCP adapter and the extension manager)
+  become_user: "{{ paperclip_user }}"
+  environment: "{{ paperclip_service_env }}"
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      export PATH="{{ paperclip_service_home }}/.local/bin:/usr/local/bin:/usr/bin:/bin"
+      pi install npm:pi-extmgr
+      pi install npm:pi-mcp-adapter
+    executable: /bin/bash
+    creates: "{{ paperclip_pi_home }}/.layer3-extensions-installed"
+
+- name: Record that the extensions were installed
+  ansible.builtin.file:
+    path: "{{ paperclip_pi_home }}/.layer3-extensions-installed"
+    state: touch
+    owner: "{{ paperclip_user }}"
+    group: "{{ paperclip_group }}"
+    mode: "0644"
+    modification_time: preserve
+    access_time: preserve
+  changed_when: false
+
+# `omp` is the operator-facing CLI of the same family (native web search). It is installed
+# system-wide so the service user can exec it; the install script has no version flag, so
+# `creates:` is the guard, exactly as in the operator container's layer.
+- name: oh-my-pi (omp)
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      curl -fsSL https://raw.githubusercontent.com/can1357/oh-my-pi/main/scripts/install.sh | sh
+      mv "${HOME}/.local/bin/omp" /usr/local/bin/omp 2>/dev/null || true
+      chmod 0755 /usr/local/bin/omp
+    creates: /usr/local/bin/omp
+    executable: /bin/bash
+
+# ─── The environment the CLI needs ──────────────────────────────────────────
+# `pi`/`omp` read the provider key from the environment. In the service that environment is
+# the unit's EnvironmentFile; for a CLI started by hand as the service user this is the
+# same thing, spelled once — the provider keys therefore have a single at-rest location
+# (the 0600 env file) instead of a second copy in a profile file.
+- name: Agent CLI environment helper (sources the service env file)
+  ansible.builtin.template:
+    src: pi-agent-env.sh.j2
+    dest: "{{ paperclip_config_dir }}/agent-env.sh"
+    owner: "{{ paperclip_user }}"
+    group: "{{ paperclip_group }}"
+    mode: "0600"
+
+# ─── Read-only cluster observation ──────────────────────────────────────────
+# Three inputs (see templates/kubeconfig.j2): the API server and CA are read from the
+# operator's kubeconfig *on the orchestration host* (public cluster data, one source of
+# truth for the CA), and the credential is the ServiceAccount token the operator inserted
+# into the agent store. The cluster-side RBAC (`paperclip-observer` in `flux-system`) is
+# owned by the Flux layer; this is only the consumer.
+- name: Read the cluster endpoint and CA from the operator's kubeconfig
+  delegate_to: localhost
+  become: false
+  ansible.builtin.slurp:
+    src: "{{ paperclip_orch_kubeconfig }}"
+  register: paperclip_kubeconfig_src
+  failed_when: false
+  changed_when: false
+
+- name: Extract the cluster's public fields (server, CA)
+  ansible.builtin.set_fact:
+    paperclip_k8s_server: "{{ (paperclip_kubeconfig_src.content | b64decode | from_yaml).clusters[0].cluster.server }}"
+    paperclip_k8s_ca_data: "{{ (paperclip_kubeconfig_src.content | b64decode | from_yaml).clusters[0].cluster['certificate-authority-data'] }}"
+  when: paperclip_kubeconfig_src.content is defined
+
+- name: The read-only ServiceAccount token in the agent store
+  become_user: "{{ paperclip_user }}"
+  environment: "{{ paperclip_service_env }}"
+  ansible.builtin.command:
+    cmd: >-
+      gopass show -o
+      "{{ paperclip_gopass_store }}/{{ paperclip_gopass_entries | selectattr('name', 'equalto', paperclip_gopass_k8s_token) | map(attribute='as') | first }}"
+  register: paperclip_k8s_token_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Kubeconfig for observation only
+  ansible.builtin.template:
+    src: kubeconfig.j2
+    dest: "{{ paperclip_kubeconfig }}"
+    owner: "{{ paperclip_user }}"
+    group: "{{ paperclip_group }}"
+    mode: "0600"
+  vars:
+    paperclip_k8s_token: "{{ paperclip_k8s_token_probe.stdout | trim }}"
+  when:
+    - paperclip_kubeconfig_src.content is defined
+    - paperclip_k8s_token_probe.rc == 0
+  no_log: true
+
+- name: Cluster observation is not wired up yet
+  ansible.builtin.debug:
+    msg: >-
+      The read-only kubeconfig was not rendered. Missing:
+      {{ 'the operator kubeconfig at ' ~ paperclip_orch_kubeconfig if paperclip_kubeconfig_src.content is not defined else '' }}
+      {{ 'the ServiceAccount token — on the orchestration host run `gopass insert ' ~ paperclip_gopass_k8s_token ~ '` with the value of the `token` key of Secret paperclip-observer-token in flux-system' if paperclip_k8s_token_probe.rc | default(1) != 0 else '' }}
+      . The container works without it; observation of the cluster is simply unavailable until
+      the token exists and this playbook is re-run.
+  when: >
+    paperclip_kubeconfig_src.content is not defined
+    or paperclip_k8s_token_probe.rc | default(1) != 0

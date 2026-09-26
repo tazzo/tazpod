@@ -1,0 +1,11 @@
+---
+# Layer includes. The order is the dependency order and is not cosmetic:
+#   0 → the account, the volume and the tools the later layers call
+#   1 → the identity (key + store) that both renders and proves the secrets
+#   2 → the service (env, CLI, unit, canary) — it reads the store layer1 built
+#   3 → the agent side (CLI config, skills, cluster observation)
+# `main.yml` is only the include list; each layer is a file, as in `roles/tazpod`.
+- import_tasks: layer0-system.yml
+- import_tasks: layer1-identity.yml
+- import_tasks: layer2-paperclip.yml
+- import_tasks: layer3-agents.yml

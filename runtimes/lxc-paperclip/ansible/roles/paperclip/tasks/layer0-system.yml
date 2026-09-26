@@ -1,0 +1,329 @@
+---
+# Layer 0 — base system: the tooling baseline the operator chose, the service account,
+# the data volume and its file modes.
+#
+# Nothing here touches a secret. Every state change is either an idempotent module call
+# or a guarded shell/command (`creates:`, or a probe whose result gates the change); the
+# guards that are not self-evident carry a comment saying why.
+
+# ─── The data volume must exist before anything is written to it ────────────
+# This is the layer's most important assertion. The volume is declared by the runtime's
+# Terraform; if it is not attached, /workspace is just a directory on the container
+# rootfs, and the next `destroy`/`create` cycle would take PAPERCLIP_HOME — the run logs,
+# the instance tree and the master key that opens the database's stored secrets — with
+# it. Failing here is the only fail-closed option.
+- name: Check that the data volume is mounted
+  ansible.builtin.command: "mountpoint -q {{ paperclip_data_volume }}"
+  register: paperclip_mount_probe
+  changed_when: false
+  failed_when: false
+  # read-only probe: it must run in --check too, or the assert below aborts the play for
+  # lack of a value instead of for the real condition
+  check_mode: false
+
+- name: The data volume is mounted where the design requires it
+  ansible.builtin.assert:
+    that:
+      - paperclip_mount_probe.rc == 0
+    fail_msg: >-
+      {{ paperclip_data_volume }} is not a mount point. The container's state
+      (PAPERCLIP_HOME, ~/.gnupg, the gopass store) would land on the rootfs and the next
+      rebuild would destroy the master key that decrypts the company's database
+      secrets. Attach the data volume (runtime Terraform, local-lvm) and re-run; do not
+      weaken this assert.
+    success_msg: "{{ paperclip_data_volume }} is a mount point"
+
+# ─── Packages ───────────────────────────────────────────────────────────────
+- name: Base packages
+  ansible.builtin.apt:
+    update_cache: yes
+    cache_valid_time: 3600
+    name:
+      - ca-certificates
+      - curl
+      - wget
+      - git
+      - gnupg
+      - gopass
+      - ansible-core
+      - python3
+      - jq
+      - unzip
+      - zip
+      - rsync
+      - less
+      - locales
+      - man-db
+      - dnsutils
+      - iputils-ping
+      - procps
+      - psmisc
+      - strace
+      - tzdata
+      - sudo
+      - openssh-client
+    state: present
+
+# ─── Tooling baseline (T2: "same baseline as CT106") ────────────────────────
+# The operator's container installs terraform/kubectl/flux/talosctl from upstream in
+# exactly this shape (`roles/tazpod/tasks/layer3-k8s.yml`, `creates:`-guarded shell). The
+# difference here is the terraform pin: this container converges *from* the repository,
+# so its own toolchain version is declared state rather than "whatever is current".
+
+- name: Installed terraform version
+  ansible.builtin.command: /usr/local/bin/terraform version
+  register: paperclip_terraform_probe
+  failed_when: false
+  changed_when: false
+  check_mode: false
+
+- name: Terraform (pinned)
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      V="{{ paperclip_terraform_version }}"
+      curl -fsSLo /tmp/terraform.zip "https://releases.hashicorp.com/terraform/${V}/terraform_${V}_linux_amd64.zip"
+      unzip -o /tmp/terraform.zip -d /tmp/ >/dev/null
+      install -m 0755 /tmp/terraform /usr/local/bin/terraform
+      rm -f /tmp/terraform.zip /tmp/terraform
+    executable: /bin/bash
+  # `startswith` rather than an `in` test: the probe prints several lines once a provider
+  # cache exists, and only the first line carries the version.
+  when: not (paperclip_terraform_probe.stdout | default('')).startswith('Terraform v' ~ paperclip_terraform_version)
+
+- name: Keyring directory
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Kubectl signing key
+  ansible.builtin.get_url:
+    url: "https://pkgs.k8s.io/core:/stable:/{{ paperclip_kubernetes_repo }}/deb/Release.key"
+    dest: /tmp/kubernetes-release.key
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Kubectl signing key (dearmored)
+  ansible.builtin.shell:
+    cmd: "gpg --dearmor --yes -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg /tmp/kubernetes-release.key"
+    creates: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+    executable: /bin/bash
+
+- name: Kubernetes apt repository
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/kubernetes.list
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/{{ paperclip_kubernetes_repo }}/deb/ /
+  register: paperclip_kubernetes_repo_file
+
+- name: Refresh the apt cache for the new repository
+  ansible.builtin.apt:
+    update_cache: true
+  when: paperclip_kubernetes_repo_file is changed
+
+- name: Kubectl
+  ansible.builtin.apt:
+    name: kubectl
+    state: present
+
+# `creates:` is the guard for both upstream installers: they have no "already installed"
+# mode and no version flag worth pinning here, and CT106's layer does the same thing, so
+# the two containers keep one shape. Re-running the layer is a no-op once the binary is
+# there; an upgrade is a deliberate `rm` plus re-run (RUNBOOK).
+- name: Flux CLI
+  ansible.builtin.shell:
+    cmd: curl -fsSL https://fluxcd.io/install.sh | bash
+    creates: /usr/local/bin/flux
+    executable: /bin/bash
+
+- name: Talosctl (latest release, as on CT106)
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      V=$(curl -fsSL https://api.github.com/repos/siderolabs/talos/releases/latest | jq -r .tag_name | sed 's/^v//')
+      curl -fsSLo /usr/local/bin/talosctl "https://github.com/siderolabs/talos/releases/download/v${V}/talosctl-linux-amd64"
+      chmod 0755 /usr/local/bin/talosctl
+    creates: /usr/local/bin/talosctl
+    executable: /bin/bash
+
+# Docker is deliberately absent. The operator's *Ansible* baseline does not install it
+# either (it appears only in the build-time Dockerfile of the tazpod image), and DESIGN
+# §8.2 names a reachable docker.sock as a container escape: a daemon in this container
+# would need `nesting=1`, which also exposes the host procfs/sysfs. The paperclip
+# container runs with nesting off and reaches the platform through kubectl/flux and the
+# egress proxy, not through a local Docker daemon. Reintroducing docker here is a
+# confinement change, not a tooling change — it needs the design to be re-decided.
+
+# ─── Node 24 (NodeSource) ───────────────────────────────────────────────────
+- name: NodeSource signing key
+  ansible.builtin.get_url:
+    url: https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key
+    dest: /usr/share/keyrings/nodesource.asc
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: NodeSource repository (Node 24)
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/nodesource.sources
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      Types: deb
+      URIs: https://deb.nodesource.com/node_24.x
+      Suites: nodistro
+      Components: main
+      Architectures: amd64
+      Signed-By: /usr/share/keyrings/nodesource.asc
+  register: paperclip_nodesource_repo
+
+- name: Refresh the apt cache for the new repository
+  ansible.builtin.apt:
+    update_cache: true
+  when: paperclip_nodesource_repo is changed
+
+- name: System Node.js (Paperclip refuses nvm)
+  ansible.builtin.apt:
+    name: nodejs
+    state: present
+
+- name: Detect the system Node version
+  ansible.builtin.command: /usr/bin/node --version
+  register: paperclip_node_version
+  changed_when: false
+  check_mode: false
+
+- name: System Node.js satisfies the Paperclip floor
+  ansible.builtin.assert:
+    that:
+      - paperclip_node_version.stdout is version(paperclip_node_floor, '>=')
+    fail_msg: "system node is {{ paperclip_node_version.stdout }}, below the Paperclip floor {{ paperclip_node_floor }}"
+    success_msg: "system node {{ paperclip_node_version.stdout }} satisfies >= {{ paperclip_node_floor }}"
+
+# The sibling runtime probes the generated locale instead of relying on `creates:`: the
+# template image ships a locale-archive, so a `creates:` guard on the archive would skip
+# the generation and leave en_US.UTF-8 missing.
+- name: Check locale
+  ansible.builtin.shell:
+    cmd: locale -a 2>/dev/null | grep -qi '^en_US.utf8$'
+    executable: /bin/bash
+  register: paperclip_locale_check
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Generate the UTF-8 locale
+  ansible.builtin.command: locale-gen en_US.UTF-8
+  when: paperclip_locale_check.rc != 0
+  changed_when: true
+
+# ─── The service account ────────────────────────────────────────────────────
+# No login shell, locked password, no sudo, no operator key, no dotfiles: the identity
+# is meant to own a service, not to be an access path (DESIGN §3). `ssh` is installed as
+# a client (baseline parity), but nothing authorizes this user anywhere.
+- name: The service account exists
+  ansible.builtin.user:
+    name: "{{ paperclip_user }}"
+    uid: "{{ paperclip_uid }}"
+    group: "{{ paperclip_group }}"
+    groups: []
+    shell: "{{ paperclip_shell }}"
+    home: "{{ paperclip_account_home }}"
+    create_home: yes
+    password_lock: yes
+    state: present
+
+- name: The account home holds nothing (no keys, no dotfiles — only the passwd entry)
+  ansible.builtin.file:
+    path: "{{ paperclip_account_home }}"
+    state: directory
+    owner: "{{ paperclip_user }}"
+    group: "{{ paperclip_group }}"
+    mode: "0700"
+
+# TAZ-10's finding on CT106 was a passwordless `sudo` grant that made the service user
+# equivalent to root outside the unit's own sandbox. Here the grant is asserted absent
+# rather than assumed: this task is a *removal*, so an operator who adds one by hand
+# silently loses it on the next run — which is the intended behaviour.
+- name: No sudoers entry for the service account
+  ansible.builtin.file:
+    path: "/etc/sudoers.d/{{ paperclip_user }}"
+    state: absent
+
+# The other half of the same containment: the design says none of the operator's keys or
+# dotfiles are copied here, and the realistic way that breaks is a human `rsync`ing a home
+# directory across. Asserting the absence is cheap and makes the promise testable.
+- name: The account home has no SSH material
+  ansible.builtin.stat:
+    path: "{{ paperclip_account_home }}/.ssh"
+  register: paperclip_account_ssh
+  changed_when: false
+
+- name: The service account has no SSH keys of its own
+  ansible.builtin.assert:
+    that:
+      - not paperclip_account_ssh.stat.exists
+    fail_msg: >-
+      {{ paperclip_account_home }}/.ssh exists. The service account must hold no SSH
+      identity: the design puts every credential it needs in the scoped agent store or
+      behind the egress proxy, and a key here is exactly the TAZ-10 finding (an agent
+      identity that reached root elsewhere) waiting to happen. Remove it and re-run.
+    success_msg: "the service account holds no SSH material"
+
+- name: The service account cannot run sudo (negative control, T2 acceptance)
+  become_user: "{{ paperclip_user }}"
+  ansible.builtin.command: sudo -n -l
+  register: paperclip_sudo_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: The service account is not a sudoer
+  ansible.builtin.assert:
+    that:
+      - paperclip_sudo_probe.rc != 0
+    fail_msg: >-
+      `sudo -n -l` succeeds for {{ paperclip_user }}: the account has a sudo grant from
+      somewhere other than /etc/sudoers.d/{{ paperclip_user }} (check /etc/sudoers and
+      the `sudo` group). The design requires that the agent identity is not a path to
+      root, even inside its own container.
+    success_msg: "{{ paperclip_user }} has no sudo rights"
+
+# ─── Volume layout and modes ────────────────────────────────────────────────
+# Ownership and modes are set once here and re-asserted by the owner of each artefact
+# (layer1 for the store and the keyring, layer2 for PAPERCLIP_HOME) so a fresh container
+# converges without depending on the order in which volumes were attached.
+- name: Service home on the data volume (HOME of the unit)
+  ansible.builtin.file:
+    path: "{{ paperclip_service_home }}"
+    state: directory
+    owner: "{{ paperclip_user }}"
+    group: "{{ paperclip_group }}"
+    mode: "0700"
+
+- name: PAPERCLIP_HOME on the data volume
+  ansible.builtin.file:
+    path: "{{ paperclip_home }}"
+    state: directory
+    owner: "{{ paperclip_user }}"
+    group: "{{ paperclip_group }}"
+    mode: "0700"
+
+# The store lives next to PAPERCLIP_HOME on the same volume (not inside it): it is a git
+# repository of its own, and keeping it out of the instance tree means `rsync`ing the
+# carried state cannot drag it along by accident.
+- name: Agent gopass store directory
+  ansible.builtin.file:
+    path: "{{ paperclip_gopass_store_path }}"
+    state: directory
+    owner: "{{ paperclip_user }}"
+    group: "{{ paperclip_group }}"
+    mode: "0700"
