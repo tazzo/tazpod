@@ -25,10 +25,16 @@ table inet paperclip_egress {
     oifname "lo" accept
 
     # Root inside this guest is the *operator's* identity — the agent has no root and no sudo —
-    # so leaving root's egress alone is what keeps apt, the tailscale daemon (which needs its
-    # control plane and DERP relays) and this layer itself working. The agent is explicitly not
-    # covered by this rule.
+    # so leaving root's egress alone is what keeps the tailscale daemon (control plane and DERP
+    # relays) and this layer itself working. The agent is explicitly not covered by this rule.
+    # It is NOT what keeps apt working, which is the trap this file used to state as fact: apt
+    # drops to its sandbox user for the http/https methods, so the downloading socket is `_apt`'s
+    # and root's allowance never matched it — the mirrors timed out and a provisioning run hung on
+    # "Base packages" until the drop counter was read.
     meta skuid 0 accept
+{% for uid in paperclip_egress_apt_uids | default([]) %}
+    meta skuid {{ uid }} accept
+{% endfor %}
 
     # The chokepoint itself. Its destinations are decided by the addon's allowlist, not by this
     # table: duplicating the host list here is how the two would silently drift apart. More than

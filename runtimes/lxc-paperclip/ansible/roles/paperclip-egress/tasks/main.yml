@@ -72,6 +72,33 @@
       {{ paperclip_egress_uid_probe.stdout.split(',')
          | map('trim') | select('match', '^[0-9]+$') | unique | list }}
 
+# `apt` does not download as root: it drops to its sandbox user (`APT::Sandbox::User`, `_apt` on
+# Ubuntu) for the http/https methods, so the socket that leaves this guest belongs to *that* uid.
+# Leaving only root's egress open therefore does not keep apt working — measured: with root alone
+# the mirrors time out, the `counter drop` in the output chain climbs, and a run hangs for twenty
+# minutes on "Base packages". Same derivation as above, same reason for emitting the mapped value
+# too. The agent cannot become this uid (no root, no sudo), so this is not an egress path it can use.
+- name: The apt sandbox uid the filter must also match
+  ansible.builtin.shell:
+    cmd: |
+      set -eu
+      a=$(getent passwd _apt | cut -d: -f3 || true)
+      [ -n "${a:-}" ] || { printf '\n'; exit 0; }
+      h=$(awk -v u="$a" '
+        NF == 3 && u >= $1 && u < $1 + $3 { printf "%d", $2 + (u - $1); found = 1; exit }
+        END { if (!found) printf "%s", u }
+      ' /proc/self/uid_map)
+      printf '%s,%s\n' "$a" "$h"
+  register: paperclip_egress_apt_uid_probe
+  changed_when: false
+  check_mode: false
+
+- name: Uid values for the apt sandbox
+  ansible.builtin.set_fact:
+    paperclip_egress_apt_uids: >-
+      {{ paperclip_egress_apt_uid_probe.stdout.split(',')
+         | map('trim') | select('match', '^[0-9]+$') | unique | list }}
+
 # ─── 3. Configuration tree ───────────────────────────────────────────────────
 # Root-owned, group-readable by the chokepoint only: the agent must not be able to read the policy
 # (it lists what it may reach) and must certainly not be able to write it.
