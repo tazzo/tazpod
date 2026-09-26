@@ -114,6 +114,10 @@
   tags: pi-home
 
 # ─── Secrets: read here, never passed on a command line ─────────────────────
+# `check_mode: false` keeps this read-only lookup running during `--check`, so the
+# env template below can be compared against the real rendered content. Without it
+# the lookup is skipped in check mode, the template can only render with empty
+# values, and it reports `changed` on every check run — a false drift signal.
 - name: Read the Paperclip secrets from gopass
   delegate_to: localhost
   become: false
@@ -128,6 +132,7 @@
     - "{{ paperclip_gopass_exa_key }}"
   register: paperclip_secrets
   changed_when: false
+  check_mode: false
   no_log: true
 
 - name: Git configuration for the service (identity + credential helper via gopass)
