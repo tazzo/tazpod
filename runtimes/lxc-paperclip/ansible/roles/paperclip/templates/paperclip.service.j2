@@ -28,18 +28,23 @@ WorkingDirectory={{ paperclip_service_home }}
 # `paperclip-egress`) can rely on being readable.
 EnvironmentFile=/etc/paperclip/paperclip.env
 
-# The master key is passed as a systemd credential rather than as a plain path in the
-# environment: credentials are exposed as a read-only file whose access is checked per
-# read and restricted to this unit's user, and they are not inherited down the process
-# tree the way environment variables are (systemd.io/CREDENTIALS). The pin is explicit
-# because the derived path is what DESIGN §4 tells us not to rely on.
+# The master key is passed as a path to the carried file, not as a systemd credential.
+#
+# `LoadCredential=` was the first choice (systemd.io/CREDENTIALS: a read-only file whose
+# access is checked per read, not inherited down the process tree), and it does not work
+# in this guest: with systemd 255 in an unprivileged LXC the unit dies before its first
+# instruction with
+#     Failed to set up credentials: Protocol error
+#     Main process exited, code=exit, status=243/CREDENTIALS
+# Measured with a throwaway unit whose only directives were `LoadCredential=probe:/etc/hostname`
+# and `ExecStart=/bin/sh -c 'wc -c < $CREDENTIALS_DIRECTORY/probe'` — an existing source file,
+# a trivial consumer, same failure. So the credential path is not available here and the file
+# is referenced directly. The pin stays explicit (DESIGN §4: the derived path is what must not
+# be relied on) and the file is 0600 owned by the unit's user.
 # Consequence, deliberately accepted: if the file is not there the unit does not start —
 # which is the fail-closed behaviour we want, and it happens before the first run, not
 # during it.
-LoadCredential=master-key:{{ paperclip_master_key_file }}
-# `%d` is the credentials directory; systemd expands specifiers in Environment= (it does
-# not expand them inside EnvironmentFile= contents, which is why the path is set here).
-Environment=PAPERCLIP_SECRETS_MASTER_KEY_FILE=%d/master-key
+Environment=PAPERCLIP_SECRETS_MASTER_KEY_FILE={{ paperclip_master_key_file }}
 
 # The canary proves the whole secret path (store readable, expected entries decrypt, the
 # key is this container's own, an operator-only path is *not* readable) before the server
