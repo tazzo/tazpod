@@ -66,7 +66,11 @@ alias cat="bat"
 
 # --- AI TOOL CONFIG SYMLINKS (persistent, no unlock required) ---
 if [ -d /workspace/.tazpod ]; then
-    for _tool in .pi .omp .gemini .claude .antigravity .antigravitycli; do
+    # `.pi` is deliberately NOT in this loop. The Paperclip layer owns `~/.pi`
+    # (`runtimes/lxc/ansible/roles/tazpod/tasks/paperclip-pi-home.yml` points it at
+    # `/workspace/.paperclip/home/.pi`); managing it here repointed it back at the
+    # legacy pet path on every interactive shell and starved the canonical directory.
+    for _tool in .omp .gemini .claude .antigravity .antigravitycli; do
         _target="/workspace/.tazpod/$_tool"
         _link="$HOME/$_tool"
         mkdir -p "$_target"

@@ -8,13 +8,18 @@
 # the pet volume (`paperclip_home`); the transcripts must survive the same way,
 # because they are the most readable record of what an agent actually did.
 #
-# The block is a no-op once `~/.pi` is a symlink (the steady state after the first
-# run), which is what keeps a `--check` re-run clean. When `~/.pi` is still a real
-# directory (the first run after a rebuild, where layer4 installs the pi
-# extensions before this layer runs) its content is migrated to the pet volume
-# *before* the directory is replaced by a symlink, so the existing transcripts and
-# skills are preserved. `tazpod-deploy.yml` deliberately does not touch `~/.pi`:
-# this file is the single writer for that path.
+# This file is the single writer for `~/.pi`. `tazpod-deploy.yml` stopped managing
+# the path, and the `dotfiles/.bashrc` AI-tool symlink loop no longer includes
+# `.pi`. The reconciled state is the canonical pet-volume symlink
+# `{{ paperclip_pi_home }}`; a stale symlink (the old `.bashrc` loop used to point
+# `~/.pi` at `{{ paperclip_pi_legacy_home }}`) is repaired here rather than left in
+# place, so a container that drifted converges on the next run.
+#
+# The block is a no-op only when `~/.pi` already is that canonical symlink, which is
+# what keeps a `--check` re-run clean. When `~/.pi` is still a real directory (the
+# first run after a rebuild, where layer4 installs the pi extensions before this
+# layer runs) its content is migrated to the pet volume *before* the directory is
+# replaced by the symlink, so the existing transcripts and skills are preserved.
 
 - name: Inspect the pi state directory of the service user
   ansible.builtin.stat:
@@ -22,9 +27,12 @@
   register: paperclip_pi_account
   changed_when: false
 
-# The whole block is guarded on "not already a symlink". On the steady state, and
-# on the live host today (where `~/.pi` is already pet-backed), every task below is
-# skipped and the role reports no change.
+# `stat` does not follow the link, so `stat.islnk` is true for any symlink and
+# `stat.lnk_source` is the fully resolved target (empty/undefined for a real path).
+- name: Whether the pi state directory already is the canonical pet-volume symlink
+  ansible.builtin.set_fact:
+    paperclip_pi_is_canonical: "{{ (paperclip_pi_account.stat.islnk | default(false) | bool) and ((paperclip_pi_account.stat.lnk_source | default('')) == paperclip_pi_home) }}"
+
 - name: Home mirror on the pet volume for the service user
   ansible.builtin.file:
     path: "{{ paperclip_pi_home_dir }}"
@@ -32,7 +40,7 @@
     owner: "{{ paperclip_user }}"
     group: "{{ paperclip_user }}"
     mode: "0700"
-  when: not paperclip_pi_account.stat.islnk
+  when: not (paperclip_pi_is_canonical | bool)
 
 - name: Pi state directory on the pet volume
   ansible.builtin.file:
@@ -41,25 +49,26 @@
     owner: "{{ paperclip_user }}"
     group: "{{ paperclip_user }}"
     mode: "0700"
-  when: not paperclip_pi_account.stat.islnk
+  when: not (paperclip_pi_is_canonical | bool)
 
 - name: Inspect the previous pet-volume pi directory
   ansible.builtin.stat:
     path: "{{ paperclip_pi_legacy_home }}"
   register: paperclip_pi_legacy
   changed_when: false
-  when: not paperclip_pi_account.stat.islnk
+  when: not (paperclip_pi_is_canonical | bool)
 
 # Seed from the previous pet location first, so the transcripts collected there
 # before this change are not orphaned when `~/.pi` is repointed at `paperclip_pi_home`.
 # `-n` (no-clobber) makes this safe on a later rebuild too: the canonical directory
 # keeps whatever it already holds and only genuinely missing files are copied from the
-# old location.
+# old location. This is also the path that recovers the content of a stale `.pi`
+# symlink, because that symlink's target is `paperclip_pi_legacy_home`.
 - name: Seed the pet-volume pi directory from the previous pet location
   ansible.builtin.command:
     cmd: "cp -a -n {{ paperclip_pi_legacy_home }}/. {{ paperclip_pi_home }}/"
   when:
-    - not paperclip_pi_account.stat.islnk
+    - not (paperclip_pi_is_canonical | bool)
     - paperclip_pi_legacy.stat.isdir | default(false)
   changed_when: true
 
@@ -67,19 +76,21 @@
   ansible.builtin.command:
     cmd: "cp -a {{ paperclip_pi_account_path }}/. {{ paperclip_pi_home }}/"
   when:
-    - not paperclip_pi_account.stat.islnk
+    - not (paperclip_pi_is_canonical | bool)
     - paperclip_pi_account.stat.isdir | default(false)
   register: paperclip_pi_migrate
   changed_when: paperclip_pi_migrate.rc == 0
 
-- name: Remove the rootfs pi directory now that its content is on the pet volume
+# A real directory is removed after migration; a symlink to a stale target is
+# removed so the canonical link can replace it. The migration/seed above has
+# already copied the content onto the pet volume, so nothing is lost.
+- name: Remove the current pi path so the canonical symlink can take its place
   ansible.builtin.file:
     path: "{{ paperclip_pi_account_path }}"
     state: absent
   when:
-    - not paperclip_pi_account.stat.islnk
-    - paperclip_pi_account.stat.isdir | default(false)
-    - paperclip_pi_migrate is changed
+    - not (paperclip_pi_is_canonical | bool)
+    - (paperclip_pi_account.stat.isdir | default(false)) or (paperclip_pi_account.stat.islnk | default(false))
 
 - name: Point the pi state directory at the pet volume
   ansible.builtin.file:
@@ -88,4 +99,4 @@
     state: link
     owner: "{{ paperclip_user }}"
     group: "{{ paperclip_user }}"
-  when: not paperclip_pi_account.stat.islnk
+  when: not (paperclip_pi_is_canonical | bool)
