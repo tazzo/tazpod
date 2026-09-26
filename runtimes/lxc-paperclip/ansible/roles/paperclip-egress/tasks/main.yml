@@ -287,6 +287,17 @@
 
 # The agent's side of the contract: the proxy/CA environment and the fail-closed dependency, as a
 # drop-in on a unit this role does not own (the sibling Paperclip layer renders the unit itself).
+- name: The agent unit's drop-in directory exists
+  # Same class as the nftables drop-in: the parent directory of a drop-in is not created by
+  # systemd (nor shipped by anything), so templating into it fails with
+  # "Destination directory /etc/systemd/system/paperclip.service.d does not exist".
+  ansible.builtin.file:
+    path: /etc/systemd/system/paperclip.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
 - name: Fail-closed dependency and proxy environment for the agent's unit
   ansible.builtin.template:
     src: paperclip-egress-dropin.conf.j2
