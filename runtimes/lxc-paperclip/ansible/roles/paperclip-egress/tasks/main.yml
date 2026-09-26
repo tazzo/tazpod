@@ -492,15 +492,29 @@
     - paperclip_egress_agent_account.rc | default(1) == 0
 
 # ─── 8. Hand back to the agent, and to the operator ──────────────────────────
-# `BindsTo=` means a chokepoint restart stops the agent (that is the fail-closed direction), so the
-# pair is brought back together here. `restarted` only when the drop-in actually changed, otherwise
-# `started` — which is a no-op when the agent is already running, and the repair when it is not.
+# A proxy change has to reach an agent that is *already running*, and nothing more than that.
+# This task used to fall back to `started` "as the repair when it is not running" — which is the
+# opposite of a repair here: before the company state is carried, the agent has nothing to run, so
+# starting it produces "No config found and terminal is non-interactive", `Restart=on-failure`
+# takes over, and the unit loops (observed: restart counter climbing, ~190 MB per attempt, with
+# the chokepoint active and nothing wrong with it). The initial start belongs to the Paperclip
+# layer, which gates it on the carried state; this layer only follows a running agent.
+- name: Is the agent running (so a proxy change has to reach it)
+  ansible.builtin.command:
+    cmd: systemctl show -p ActiveState --value paperclip.service
+  register: paperclip_egress_agent_active
+  changed_when: false
+  check_mode: false
+  when:
+    - paperclip_egress_agent_unit.stat.exists | default(false)
+
 - name: The agent runs behind the chokepoint
   ansible.builtin.systemd:
     name: paperclip.service
-    state: "{{ 'restarted' if paperclip_egress_dropin is changed else 'started' }}"
+    state: restarted
   when:
     - paperclip_egress_agent_unit.stat.exists | default(false)
+    - paperclip_egress_agent_active.stdout | default('') | trim == 'active'
 
 - name: Stage the host-side rule set for the operator
   ansible.builtin.template:
