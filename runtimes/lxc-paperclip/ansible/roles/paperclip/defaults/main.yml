@@ -12,6 +12,14 @@ paperclip_group: paperclip
 # Pinned uid: the data volume is written by this account, and a rebuild that gave the
 # service a different uid would hand it a volume full of foreign ownership.
 paperclip_uid: 1000
+# Same number as the uid on purpose: the account owns itself, nothing else (the guest
+# template ships no uid/gid 1000, so both are free).
+paperclip_gid: 1000
+
+# gopass is installed from its upstream release, not from apt: Ubuntu 24.04 ships 1.5.0,
+# which has no `gopass init --store` — the flag the agent store creation depends on (and
+# the operator container runs 1.16.1, so parity of tooling is the point).
+paperclip_gopass_version: "1.16.1"
 # No login shell and a locked password: the account exists to *own* the service and its
 # state, not to be a way in (DESIGN §3). `sudo` is still installed (baseline parity with
 # the operator container) so that the acceptance test `sudo -n -l` is meaningful — no

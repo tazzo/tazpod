@@ -44,7 +44,6 @@
       - wget
       - git
       - gnupg
-      - gopass
       - ansible-core
       - python3
       - jq
@@ -63,6 +62,34 @@
       - sudo
       - openssh-client
     state: present
+
+# ─── gopass, from its upstream release ──────────────────────────────────────
+# The distro package is not usable here: Ubuntu 24.04 ships 1.5.0 ("pass implementation in
+# Go"), whose `init` has no `--store` flag, and the agent store is a *separate store* on
+# purpose (DESIGN §3.2 — per-path recipient lists are second-class in gopass). The
+# operator container runs 1.16.1, so this is also baseline parity.
+- name: Detect the installed gopass version
+  ansible.builtin.command: dpkg-query -W -f='${Version}' gopass
+  register: paperclip_gopass_probe
+  changed_when: false
+  failed_when: false
+
+- name: Install the pinned gopass release when it is absent or stale
+  ansible.builtin.apt:
+    deb: "https://github.com/gopasspw/gopass/releases/download/v{{ paperclip_gopass_version }}/gopass_{{ paperclip_gopass_version }}_linux_amd64.deb"
+  when: paperclip_gopass_probe.stdout | default('') != paperclip_gopass_version
+  register: paperclip_gopass_install
+
+- name: gopass is the version the layer expects
+  ansible.builtin.assert:
+    that:
+      - paperclip_gopass_probe.stdout | default('') == paperclip_gopass_version or
+        paperclip_gopass_install is changed
+    fail_msg: >-
+      gopass {{ paperclip_gopass_probe.stdout | default('(absent)') }} is installed but
+      {{ paperclip_gopass_version }} is required: the store initialisation fails without it.
+    success_msg: "gopass {{ paperclip_gopass_version }}"
+
 
 # ─── Tooling baseline (T2: "same baseline as CT106") ────────────────────────
 # The operator's container installs terraform/kubectl/flux/talosctl from upstream in
@@ -229,6 +256,18 @@
 # No login shell, locked password, no sudo, no operator key, no dotfiles: the identity
 # is meant to own a service, not to be an access path (DESIGN §3). `ssh` is installed as
 # a client (baseline parity), but nothing authorizes this user anywhere.
+#
+# The group is created explicitly: the `user` module's `group:` option *references* a
+# group, it does not create it, and on a minimal LXC template nothing provides
+# `paperclip` (the guest has no uid/gid 1000 at all). Both numbers are pinned in
+# `defaults` so a rebuild lands on the same ids.
+- name: The service group exists
+  ansible.builtin.group:
+    name: "{{ paperclip_group }}"
+    gid: "{{ paperclip_gid }}"
+    system: no
+    state: present
+
 - name: The service account exists
   ansible.builtin.user:
     name: "{{ paperclip_user }}"
