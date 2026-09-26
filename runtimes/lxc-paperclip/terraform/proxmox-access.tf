@@ -143,6 +143,26 @@ resource "proxmox_virtual_environment_acl" "pool_token" {
 # `propagate 0` keeps it to exactly that path — no reach into /vms, /storage or /access.
 # Verified with the agent's own token once the ACL was in place (T4 acceptance).
 
+# The secret half *alone* — and this output exists because the provider's `value` is not it.
+#
+# Measured: `value` comes back as `<token id>=<secret>` (63 bytes for a 26-byte id and a 36-byte
+# secret), so copying it into gopass whole makes every call answer **401** while looking perfectly
+# plausible — the chokepoint injects `PVEAPIToken=<id>=<secret>`, and a doubled id authenticates
+# nothing. The rotation procedure is:
+#
+#   terraform apply -var manage_proxmox_access=true        # after bumping pve_agent_token_name
+#   terraform output -raw proxmox_agent_token_id     | gopass insert -f infra/paperclip/proxmox-token-id
+#   terraform output -raw proxmox_agent_token_secret | gopass insert -f infra/paperclip/proxmox-token-secret
+#
+# Verified end to end on 2026-09-26: the extracted secret answers `200` on `/api2/json/version`,
+# and `/api2/json/nodes/<node>/status` answers `403` until the *token's* ACL is granted (with
+# `privsep = true` the user's ACL does not authorize the token's calls).
+output "proxmox_agent_token_secret" {
+  description = "Secret half of the agent's Proxmox token, with the provider's `<id>=` prefix removed."
+  value       = var.manage_proxmox_access ? split("=", proxmox_virtual_environment_user_token.agent[0].value)[1] : ""
+  sensitive   = true
+}
+
 output "proxmox_agent_user" {
   value = var.manage_proxmox_access ? proxmox_virtual_environment_user.agent[0].user_id : null
 }

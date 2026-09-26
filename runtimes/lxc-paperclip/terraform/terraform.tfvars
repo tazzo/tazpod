@@ -20,3 +20,10 @@ memory_mb           = 6144
 swap_mb             = 1024
 rootfs_size_gb      = 32
 data_volume_size_gb = 32
+
+# The token name is the rotation lever the design documents: bump it, apply, and the new
+# value goes into gopass (infra/paperclip/proxmox-token-{id,secret}). Bumped from `agent` to
+# `agent2` on 2026-09-26: the first token's stored value never authenticated (401 on /version
+# while a probe token on the same user answered 200), and its value was 62 bytes rather than
+# the 36-byte secret PVE actually issues.
+pve_agent_token_name = "agent2"
