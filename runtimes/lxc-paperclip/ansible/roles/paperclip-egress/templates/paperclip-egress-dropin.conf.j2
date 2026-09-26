@@ -19,11 +19,18 @@
 # dependency is not a `Wants=`.
 BindsTo=paperclip-egress.service
 After=paperclip-egress.service
-# `PartOf=` propagates a restart of the chokepoint to the agent, so the pair moves together for
-# an operator-initiated restart. (After a *failed* restart of the proxy, check the pair anyway:
+# No `PartOf=` here, deliberately. It looked harmless ("an operator restart moves the pair
+# together") but it makes a *restart of the chokepoint* start the agent as well — including the
+# restart this role's own handler performs — and an agent that has nothing to run yet (the
+# company state is not carried) then fails at start and, with `Restart=on-failure`, loops.
+# Measured: after the egress layer's handler the pair showed `paperclip-egress: active`,
+# `paperclip: active` with "No config found and terminal is non-interactive" cycling in the
+# journal, before the carry had happened.
+# `BindsTo=` keeps the property that matters and only in the direction that matters: the agent is
+# stopped when the chokepoint stops or fails, and starting the chokepoint does not start the
+# agent. (After a *failed* restart of the proxy, check the pair anyway:
 # `systemctl is-active paperclip-egress.service paperclip.service`; the operator step is in the
 # runbook.)
-PartOf=paperclip-egress.service
 
 [Service]
 # ── the proxy the clients must use, and the CA they must trust ─────────────
