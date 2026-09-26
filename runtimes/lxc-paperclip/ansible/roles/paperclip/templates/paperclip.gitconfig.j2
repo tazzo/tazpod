@@ -1,0 +1,23 @@
+# Git configuration used *only* by the Paperclip service (GIT_CONFIG_GLOBAL).
+# It gives the agents a stable identity and resolves the push credential from the agent
+# store at push time (golden rule #1), so no token is exported into the service
+# environment and none is ever written to a file or into a repository URL.
+#
+# Why this works with no warm cache: the store's key has no passphrase (layer1), so the
+# helper's `gopass show` never reaches a pinentry. The operator container's helper failed
+# exactly here — `gpg: public key decryption failed: Operation cancelled` on the first
+# push, because its key needed an operator session's cached passphrase (TD-091).
+#
+# If the egress chokepoint (T4b, role `paperclip-egress`) injects this credential instead,
+# delete the `[credential]` section and the matching `github/token` entry in
+# `defaults/main.yml` **in the same commit**: the canary asserts that entry is present, so
+# leaving one without the other holds the service down at start.
+[user]
+	name = Paperclip Agent
+	email = agent@tazlab.net
+[credential]
+	helper = "!f() { echo username=x-access-token; echo password=$(gopass show -o {{ paperclip_gopass_store }}/github/token); }; f"
+[init]
+	defaultBranch = master
+[push]
+	autoSetupRemote = true

@@ -1,0 +1,350 @@
+---
+# Layer 1 — the container's own identity: a passphrase-less GPG key generated *inside*
+# the container, its own gopass store whose `.gpg-id` lists only that key, the seeding of
+# that store from the operator's store on the orchestration host, and `enable-linger`.
+#
+# Why this shape (P4, and the failure it removes): the operator container's service
+# resolved its push credential through a `gpg-agent` cache bound to a *login session*, so
+# it worked while somebody was logged in and failed cold with
+# `gpg: public key decryption failed: Operation cancelled` at the first push — hours after
+# the cause. A key with no passphrase needs no agent cache, no pinentry and no session, so
+# there is nothing to be cold. The key's power is bounded by the store's recipient list,
+# not by a passphrase: a filesystem dump of the container yields exactly the entries this
+# key can open and nothing else — the residual risk accepted in writing in SECRETS.md §6.
+#
+# Nothing in this layer prints a secret: the operator's values are read on the
+# orchestration host, travel to the container over the SSH connection's stdin, and are
+# written by `gopass insert` — never argv, never a file, never a log (`no_log: true`).
+
+# ─── Filesystem and keyring ─────────────────────────────────────────────────
+- name: Service account home layout
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ paperclip_user }}"
+    group: "{{ paperclip_group }}"
+    mode: "0700"
+  loop:
+    - "{{ paperclip_service_home }}/.config"
+    - "{{ paperclip_service_home }}/.local/share"
+    - "{{ paperclip_service_home }}/.cache"
+    - "{{ paperclip_gpg_home }}"
+
+# No `gpg-agent.conf` is written on purpose: with a passphrase-less key there is no
+# passphrase to cache, so there is no `default-cache-ttl` to expire and no
+# `pinentry-program` to reach. Adding one would reintroduce the dependency this layer
+# exists to remove.
+
+- name: Recorded fingerprint of the container's key
+  ansible.builtin.stat:
+    path: "{{ paperclip_gpg_home }}/fingerprint"
+  register: paperclip_fingerprint_file
+  changed_when: false
+
+# ─── Key generation (only when the identity does not exist yet) ─────────────
+# The guard is the *fingerprint marker*, not the keyring: a keyring can exist without a
+# usable key, and the dangerous direction is the opposite one — regenerating a key on top
+# of an existing store, which would leave every entry in that store unreadable. So when
+# the marker exists this block does not run, and the else-branch below verifies instead.
+# The rationale is in this comment rather than in the rendered file: the GnuPG parameter
+# file is a keyword/value format and the fewer non-keyword lines it carries the better.
+#  * `%no-protection` is the documented batch way to create a key with no passphrase
+#    (P4 Pattern A — nothing to cache, nothing to expire, nothing to be cold).
+#  * the explicit `Subkey-Type`/`Subkey-Length`/`Subkey-Usage` block is what makes the key
+#    *encryption-capable*: the obvious `gpg --quick-generate-key '<name>' rsa3072 default
+#    never` produces a key with no encryption subkey in GnuPG 2.4.4, and gopass then
+#    refuses to encrypt to it — "Not using invalid key … its encryption capabilities and
+#    trust" (gopass 1.16.1 `insert` exits 12). This is the trap P3 measured.
+#  * `Expire-Date: 0` is deliberate: gopass' `IsUseable()` rejects an expired key, so an
+#    expiring service key would silently stop decrypting its own store; the real
+#    revocation path is rotating the credential at its source (P3 §2.4).
+- name: Key generation parameters (the key's specification — no secret in this file)
+  ansible.builtin.copy:
+    dest: "{{ paperclip_gpg_home }}/key-params"
+    owner: "{{ paperclip_user }}"
+    group: "{{ paperclip_group }}"
+    mode: "0600"
+    content: |
+      %no-protection
+      Key-Type: {{ paperclip_gpg_key_type }}
+      Key-Length: {{ paperclip_gpg_key_length }}
+      Key-Usage: cert,sign
+      Subkey-Type: {{ paperclip_gpg_key_type }}
+      Subkey-Length: {{ paperclip_gpg_key_length }}
+      Subkey-Usage: encrypt
+      Name-Real: {{ paperclip_gpg_name_real }}
+      Name-Comment: {{ paperclip_gpg_name_comment }}
+      Name-Email: {{ paperclip_gpg_name_email }}
+      Expire-Date: 0
+      %commit
+  when: not paperclip_fingerprint_file.stat.exists
+
+- name: Generate the container's key and record its fingerprint
+  become_user: "{{ paperclip_user }}"
+  environment: "{{ paperclip_service_env }}"
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      umask 077
+      gpg --batch --generate-key "{{ paperclip_gpg_home }}/key-params"
+      # `--with-colons` is the machine-readable form the GnuPG manual recommends for
+      # unattended use; the fingerprint is field 10 of the `fpr` record.
+      fpr="$(gpg --batch --with-colons --list-secret-keys "{{ paperclip_gpg_name_email }}" \
+             | awk -F: '$1 == "fpr" { print $10; exit }')"
+      [ -n "$fpr" ] || { echo "gpg produced no fingerprint" >&2; exit 1; }
+      printf '%s\n' "$fpr" > "{{ paperclip_gpg_home }}/fingerprint"
+      printf 'generated key %s\n' "$fpr"
+    executable: /bin/bash
+  when: not paperclip_fingerprint_file.stat.exists
+  changed_when: true
+
+# Re-check rather than reusing the earlier `stat`: on a fresh container the marker did
+# not exist when this layer started, and the verification block below must still run in a
+# real (non-`--check`) first pass — while in `--check` mode it must not run at all, or a
+# dry run on an empty container would report failures for state it was never allowed to
+# create.
+- name: Recorded fingerprint of the container's key (after generation)
+  ansible.builtin.stat:
+    path: "{{ paperclip_gpg_home }}/fingerprint"
+  register: paperclip_fingerprint_file_now
+  changed_when: false
+
+- name: Read the recorded fingerprint
+  ansible.builtin.command: cat "{{ paperclip_gpg_home }}/fingerprint"
+  register: paperclip_fingerprint
+  changed_when: false
+  check_mode: false
+  when: paperclip_fingerprint_file_now.stat.exists
+
+# The branch that protects the company: an existing store with a missing key cannot be
+# repaired by regenerating (a new key cannot decrypt what the old one wrote). Say so
+# loudly instead of proceeding.
+- name: The recorded key is present in the keyring (an existing identity must not be regenerated)
+  become_user: "{{ paperclip_user }}"
+  environment: "{{ paperclip_service_env }}"
+  ansible.builtin.command: gpg --batch --list-secret-keys "{{ paperclip_fingerprint.stdout | trim }}"
+  register: paperclip_key_probe
+  changed_when: false
+  failed_when: false
+  when: paperclip_fingerprint_file_now.stat.exists
+
+- name: Refuse to continue when the identity is half-present
+  ansible.builtin.assert:
+    that:
+      - paperclip_key_probe.rc == 0
+    fail_msg: >-
+      {{ paperclip_gpg_home }}/fingerprint records {{ paperclip_fingerprint.stdout | trim }},
+      but that secret key is not in the keyring. Do NOT delete the marker to force a
+      regeneration: a new key cannot decrypt the entries already in
+      {{ paperclip_gopass_store_path }}, and the store would become unreadable. Restore the
+      keyring (it is on the data volume — check the volume mount and any backup) and re-run.
+    success_msg: "the container's key {{ paperclip_fingerprint.stdout | trim }} is in the keyring"
+  when: paperclip_fingerprint_file_now.stat.exists
+
+# ─── The store ──────────────────────────────────────────────────────────────
+# `--crypto gpgcli --storage gitfs` are named explicitly rather than left to
+# auto-detection: the store's backend is part of the declared state (gopass writes
+# `storage.backend` into the store config, which is what the docs recommend to prevent an
+# accidental backend switch), and `gopass init` is the documented way to create a mount —
+# `mounts add --create` fails with "password store agent is not initialized".
+# gopass always resolves `mounts.path` against a *root* store, and a mounted sub-store
+# alone leaves every command failing with "password-store is not initialized. Try 'gopass
+# init'" — including the canary and the git helper. The root store is therefore
+# initialised as well, for the container's own key, and it stays empty: the agent's
+# entries all live in the `agent` sub-store below, and nothing in this role ever writes to
+# the root. (Observed, not assumed: without this task `gopass insert` into the sub-store
+# fails with rc=6 in a fresh container.)
+- name: The root store exists and is owned by the container's key
+  become_user: "{{ paperclip_user }}"
+  environment: "{{ paperclip_service_env }}"
+  ansible.builtin.command:
+    cmd: gopass init {{ paperclip_fingerprint.stdout | trim }}
+  args:
+    creates: "{{ paperclip_service_home }}/.local/share/gopass/stores/root/.gpg-id"
+  # the *pre*-generation state: on a first run the marker has just been created, and the
+  # root store must still be initialised in that same pass
+  when: not paperclip_fingerprint_file.stat.exists
+  changed_when: true
+
+- name: The agent store's recipient list
+  ansible.builtin.stat:
+    path: "{{ paperclip_gopass_store_path }}/.gpg-id"
+  register: paperclip_store_id_file
+  changed_when: false
+
+- name: Initialise the agent store for the container's key only
+  become_user: "{{ paperclip_user }}"
+  environment: "{{ paperclip_service_env }}"
+  ansible.builtin.command:
+    cmd: >-
+      gopass init
+      --store {{ paperclip_gopass_store }}
+      --path {{ paperclip_gopass_store_path }}
+      --crypto gpgcli
+      --storage gitfs
+      {{ paperclip_fingerprint.stdout | trim }}
+  when: not paperclip_store_id_file.stat.exists
+  changed_when: true
+
+# One task, three facts, all of them T3 acceptance criteria that must hold before any
+# secret is written: the store has exactly one recipient, that recipient is the
+# container's own key, and the keyring holds exactly one secret key (no operator key, and
+# nothing that could open an operator entry).
+- name: The store is scoped to the container's key alone
+  become_user: "{{ paperclip_user }}"
+  environment: "{{ paperclip_service_env }}"
+  ansible.builtin.shell:
+    cmd: |
+      set -uo pipefail
+      id_file="{{ paperclip_gopass_store_path }}/.gpg-id"
+      [ -s "$id_file" ] || { echo "no recipient list at $id_file"; exit 1; }
+      fpr="$(tr -d '[:space:]' < {{ paperclip_gpg_home }}/fingerprint | tr 'A-F' 'a-f' | sed 's/^0x//')"
+      mapfile -t ids < <(grep -v '^[[:space:]]*$' "$id_file")
+      [ "${#ids[@]}" -eq 1 ] || { echo "expected exactly one recipient, found ${#ids[@]}"; exit 1; }
+      one="$(printf '%s' "${ids[0]}" | tr -d '[:space:]' | tr 'A-F' 'a-f' | sed 's/^0x//')"
+      [ "${one: -16}" = "${fpr: -16}" ] || { echo "recipient ...${one: -16} is not the container key ...${fpr: -16}"; exit 1; }
+      # Count primary secret keys (`sec` records), not fingerprint records: a key with an
+      # encryption subkey prints two `fpr` lines, so counting those reports two keys for
+      # one key — a false alarm that would hold the whole layer down.
+      secrets="$(gpg --batch --with-colons --list-secret-keys | awk -F: '$1 == "sec" { n++ } END { print n + 0 }')"
+      [ "$secrets" -eq 1 ] || { echo "keyring holds ${secrets} secret keys, expected exactly 1"; exit 1; }
+      echo "store scoped to ...${fpr: -16}; keyring holds one secret key"
+    executable: /bin/bash
+  register: paperclip_store_scope
+  changed_when: false
+  check_mode: false
+  when: paperclip_fingerprint_file_now.stat.exists
+
+- name: The agent store is scoped to the container's key alone
+  ansible.builtin.assert:
+    that:
+      - paperclip_store_scope.rc | default(1) == 0
+    fail_msg: "{{ paperclip_store_scope.stdout }} {{ paperclip_store_scope.stderr }}"
+    success_msg: "{{ paperclip_store_scope.stdout }}"
+  when: paperclip_fingerprint_file_now.stat.exists
+
+# ─── Seed the store from the operator's store (stdin, all the way) ──────────
+# The values are not written into the *repository*: they are read on the orchestration
+# host and inserted over stdin. `gopass cat` (not `show -o`) is used on the read side
+# because `show -o` truncates a multi-line secret (TD-056) — a carry must not silently
+# shorten a credential.
+#
+# Idempotency, and why the guard is "only when absent": a re-insert rewrites the entry
+# with a fresh ciphertext and a new commit in the store's history, and — worse — it would
+# silently revert a value the agent's store had already rotated. The layer creates what is
+# missing and leaves what exists alone; rotation is the operator's documented procedure.
+- name: Which entries the agent store is missing
+  become_user: "{{ paperclip_user }}"
+  environment: "{{ paperclip_service_env }}"
+  ansible.builtin.command:
+    cmd: gopass show -o "{{ paperclip_gopass_store }}/{{ item.as }}"
+  loop: "{{ paperclip_gopass_entries }}"
+  register: paperclip_entries_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Entries to seed
+  ansible.builtin.set_fact:
+    paperclip_entries_missing: "{{ paperclip_entries_probe.results | selectattr('rc', 'ne', 0) | map(attribute='item') | list }}"
+
+- name: Read them from the operator's store on the orchestration host
+  delegate_to: localhost
+  become: false
+  ansible.builtin.command:
+    cmd: gopass cat "{{ item.name }}"
+  loop: "{{ paperclip_entries_missing }}"
+  register: paperclip_entries_read
+  changed_when: false
+  # An entry the operator has not created yet must not break provisioning when it is
+  # declared optional; a required one is reported below rather than swallowed here.
+  failed_when: false
+  no_log: true
+
+- name: Seed them into the agent store
+  become_user: "{{ paperclip_user }}"
+  environment: "{{ paperclip_service_env }}"
+  ansible.builtin.command:
+    cmd: gopass insert --force "{{ paperclip_gopass_store }}/{{ item.item.as }}"
+    # `trim` then a single newline: values are single-line secrets here, and the
+    # double newline that `cat` output plus a trailing newline would produce is a silent
+    # value corruption in a carry that must stay byte-identical.
+    # `stdin` must live *inside* the module arguments: as a task-level key, ansible-core
+    # 2.21 rejects it as a conflicting action statement.
+    stdin: "{{ item.stdout | trim }}\n"
+  loop: "{{ paperclip_entries_read.results | default([]) }}"
+  when: item.rc == 0
+  changed_when: true
+  no_log: true
+
+- name: Entries the operator still has to create
+  ansible.builtin.set_fact:
+    paperclip_entries_unavailable: "{{ paperclip_entries_read.results | default([]) | selectattr('rc', 'ne', 0) | map(attribute='item.name') | list }}"
+    # `optional: true` in the mapping (defaults/main.yml) means "the operator may
+    # legitimately not have it yet"; everything else is a hard requirement.
+    paperclip_entries_optional: "{{ paperclip_gopass_entries | selectattr('optional', 'defined') | selectattr('optional') | map(attribute='name') | list }}"
+
+- name: Report entries that are declared but missing from the operator's store
+  ansible.builtin.debug:
+    msg: >-
+      {{ paperclip_entries_unavailable | join(', ') }} not found in the operator's gopass
+      on {{ inventory_hostname }}
+  when: paperclip_entries_unavailable | length > 0
+
+- name: Every entry the service needs is in the agent store
+  ansible.builtin.assert:
+    that:
+      - (paperclip_entries_unavailable | difference(paperclip_entries_optional)) | length == 0
+    fail_msg: >-
+      Required entries are missing from the operator's store: see the list above. Create
+      them with `gopass insert <path>` on the orchestration host and re-run; the service
+      cannot start without them (the canary proves exactly this at every start).
+    success_msg: "the agent store holds every entry the service needs"
+
+# ─── Read-only consumer posture (P4 §3.2) ───────────────────────────────────
+# Applied *after* the seeding above, because `core.readonly` blocks writes — including the
+# layer's own. The guard is a probe of the current value: `gopass config` has no dry-run
+# and always writes, so calling it unconditionally would report `changed` on every run.
+- name: The service's store config is read-only, with sync and push off
+  become_user: "{{ paperclip_user }}"
+  environment: "{{ paperclip_service_env }}"
+  ansible.builtin.shell:
+    cmd: |
+      set -uo pipefail
+      state=noop
+      for kv in \
+        "core.readonly {{ paperclip_gopass_readonly | ternary('true', 'false') }}" \
+        "core.autosync {{ paperclip_gopass_autosync | ternary('true', 'false') }}" \
+        "core.autopush {{ paperclip_gopass_autopush | ternary('true', 'false') }}"; do
+        set -- $kv
+        current="$(gopass config --store {{ paperclip_gopass_store }} "$1" 2>/dev/null | tr -d '[:space:]')"
+        if [ "$current" != "$2" ]; then
+          gopass config --store {{ paperclip_gopass_store }} "$1" "$2" >/dev/null
+          state=applied
+        fi
+      done
+      echo "paperclip-gopass-config:$state"
+    executable: /bin/bash
+  register: paperclip_gopass_config
+  changed_when: "'paperclip-gopass-config:applied' in paperclip_gopass_config.stdout"
+
+# ─── Linger ─────────────────────────────────────────────────────────────────
+# Enabling linger makes systemd spawn the user manager at boot and keep it after logouts,
+# which is what keeps `/run/user/<uid>` (and any user-manager socket in it) present
+# without a login. The service's primary secret path does not need it — that is the point
+# of the passphrase-less key — but anything that resolves the agent socket through the
+# user runtime directory does, and P4 §3.1 records the operator container's outage as
+# exactly this class of dependency. Kept explicit so the fact is visible rather than
+# inherited from a container default.
+- name: Linger state of the service account
+  ansible.builtin.command: loginctl show-user {{ paperclip_user }} -p Linger --value
+  register: paperclip_linger
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Enable linger for the service account
+  ansible.builtin.command: loginctl enable-linger {{ paperclip_user }}
+  when: (paperclip_linger.stdout | default('') | trim) != 'yes'
+  changed_when: true

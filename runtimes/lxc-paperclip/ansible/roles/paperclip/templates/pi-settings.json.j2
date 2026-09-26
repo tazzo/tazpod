@@ -1,0 +1,13 @@
+{# Agent CLI settings for `pi`. Two files matter to this container and both live under
+   `~/.pi/agent/`: this one (skills) and `mcp.json` (web search).
+
+   The `skills` key is the lab's existing registration format — `{"skills": ["/workspace/SKILLS"]}`
+   as recorded when the contexts were migrated to skills (see the migration chronicle) — and
+   it points at the skills checkout on the data volume rather than at a copy: the CLI reads
+   the repository directly, so `git pull` in the checkout is what updates the agents'
+   skills, and nothing here needs a sync daemon. #}
+{
+  "skills": [
+    "{{ paperclip_skills_path }}"
+  ]
+}

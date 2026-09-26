@@ -1,0 +1,243 @@
+---
+# Role defaults — override in the playbook or with -e.
+#
+# The role provisions the *agent company's* container (CT108 `paperclip`): its own
+# identity, its own gopass store, its own state, and no trace of the operator's keys or
+# dotfiles (DESIGN §1/§3). Everything the layers touch is declared here so a rebuild is
+# a re-run, not a re-derivation.
+
+# ─── Identity ───────────────────────────────────────────────────────────────
+paperclip_user: paperclip
+paperclip_group: paperclip
+# Pinned uid: the data volume is written by this account, and a rebuild that gave the
+# service a different uid would hand it a volume full of foreign ownership.
+paperclip_uid: 1000
+# No login shell and a locked password: the account exists to *own* the service and its
+# state, not to be a way in (DESIGN §3). `sudo` is still installed (baseline parity with
+# the operator container) so that the acceptance test `sudo -n -l` is meaningful — no
+# sudoers entry for this user is ever written, and the layer asserts none exists.
+paperclip_shell: /usr/sbin/nologin
+paperclip_account_home: "/home/{{ paperclip_user }}"
+
+# ─── Storage ────────────────────────────────────────────────────────────────
+# The container's own data volume, mounted by the runtime's Terraform at /workspace.
+# The mount point is *not* free: PAPERCLIP_HOME must stay at the same absolute path as
+# on CT106 (`/workspace/.paperclip`) because the instance tree and the agents' briefs
+# reference it, so the volume is mounted at /workspace and the container's state lives
+# underneath it. Nothing else may claim /workspace in this container.
+paperclip_data_volume: /workspace
+paperclip_home: "{{ paperclip_data_volume }}/.paperclip"
+paperclip_instance_id: default
+paperclip_instance_dir: "{{ paperclip_home }}/instances/{{ paperclip_instance_id }}"
+# The key that decrypts the *database's* stored secrets (`secrets.provider =
+# local_encrypted`). It is carried byte-identical and pinned explicitly in the unit
+# instead of relying on the derived path (DESIGN §4): a mismatch shows up as
+# `Secret decryption failed (master key fingerprint: …)` on the first run that binds a
+# secret_ref — after the company is already half-started. The pin also lets the unit
+# hand the file to the process as a systemd credential rather than as a path in the
+# environment.
+paperclip_master_key_file: "{{ paperclip_instance_dir }}/secrets/master.key"
+paperclip_carried_state:
+  - "{{ paperclip_master_key_file }}"
+  - "{{ paperclip_instance_dir }}/config.json"
+  - "{{ paperclip_instance_dir }}/data/storage"
+  - "{{ paperclip_instance_dir }}/data/run-logs"
+# HOME of the unit. It is on the data volume, so `~/.pi` (session transcripts),
+# `~/.gnupg` (the service key), `~/.local/share/gopass` (the store mount) and `~/.kube`
+# all survive a container rebuild — the same guarantee PAPERCLIP_HOME gets, extended to
+# the state the CLI writes outside it (DESIGN §8.3: point HOME at the volume rather
+# than replace it with StateDirectory=).
+paperclip_service_home: "{{ paperclip_data_volume }}/home"
+paperclip_gpg_home: "{{ paperclip_service_home }}/.gnupg"
+paperclip_pi_home: "{{ paperclip_service_home }}/.pi"
+paperclip_omp_home: "{{ paperclip_service_home }}/.omp"
+paperclip_kubeconfig: "{{ paperclip_service_home }}/.kube/config"
+# Agent-side configuration this role renders for the CLI (settings, MCP, the env helper).
+paperclip_config_dir: "{{ paperclip_service_home }}/.config/paperclip"
+# Environment for every task that runs as the service account. `HOME` must be set
+# explicitly: Ansible's `become_user` keeps the *invoking* user's HOME, so without this
+# the keyring, the store mount and the CLI state would land in root's home — and the
+# systemd unit, which sets its own HOME, would then not see them.
+# XDG_RUNTIME_DIR is deliberately NOT set: with it unset, `gpg-agent` puts its socket
+# inside GNUPGHOME on the data volume instead of in a per-login directory.
+paperclip_service_env:
+  HOME: "{{ paperclip_service_home }}"
+  GNUPGHOME: "{{ paperclip_gpg_home }}"
+  XDG_CONFIG_HOME: "{{ paperclip_service_home }}/.config"
+  XDG_DATA_HOME: "{{ paperclip_service_home }}/.local/share"
+  XDG_CACHE_HOME: "{{ paperclip_service_home }}/.cache"
+
+# ─── Orchestration side (where the playbook runs: tazlab) ────────────────────
+# Derived from the playbook location, so it works from a normal checkout and from the
+# orchestration host, where the checkouts live under /root (install-orchestration-host.sh).
+# Override with: -e paperclip_orch_workspace=/workspace
+paperclip_orch_workspace: "{{ playbook_dir }}/../../../.."
+# The operator's gopass store is read *on the orchestration host* (`delegate_to:
+# localhost`), never inside the container: the operator's key never enters the
+# container, and the container's key never enters the operator's keyring as a secret key.
+paperclip_orch_secrets_checkout: "{{ paperclip_orch_workspace }}/tazlab-secrets"
+
+# ─── Agent gopass store (DESIGN §3, P3) ─────────────────────────────────────
+# A separate store, not per-path recipients: gopass resolves `.gpg-id` per path by
+# *replacing* the parent list and offers no CLI to add a recipient to a subdirectory, so
+# the only supported segregation is a second store whose `.gpg-id` lists one key (P3 §2.1).
+paperclip_gopass_store: agent
+paperclip_gopass_store_path: "{{ paperclip_data_volume }}/gopass-agent"
+# The store's own config. `core.readonly` is the read-only consumer posture P4 §3.2
+# specifies; the gopass project is explicit that it is "just a convenience option to
+# prevent accidental writes" — enforcement is the operator's (the store's remote and the
+# credential that can push to it). Because it blocks writes, the seeding block in layer1
+# runs *before* it is applied: adding an entry to the mapping below later means flipping
+# `core.readonly` to false first (RUNBOOK, "add a secret to the agent store").
+paperclip_gopass_readonly: true
+paperclip_gopass_autosync: false
+paperclip_gopass_autopush: false
+# The service key. Generated *inside* the container, passphrase-less, RSA-3072 with an
+# explicit encryption-capable subkey. Two facts from P3/P4 are encoded in the batch
+# parameters and must not be "simplified":
+#  * `gpg --quick-generate-key … default` produces a key with no encryption-capable
+#    subkey in GnuPG 2.4.4, and gopass then refuses to encrypt to it
+#    (`Not using invalid key … Check its expiration date, its encryption capabilities
+#    and trust.` → gopass 1.16.1 `insert` exits 12);
+#  * the expiry is deliberately none: gopass' `IsUseable()` rejects an expired key, so an
+#    expiring service key would silently stop decrypting the store, and the real
+#    revocation path is rotating the credential at its source anyway (P3 §2.4).
+paperclip_gpg_name_real: "Paperclip Agent"
+paperclip_gpg_name_comment: "paperclip container service key"
+paperclip_gpg_name_email: "paperclip@tazlab.net"
+paperclip_gpg_key_type: RSA
+paperclip_gpg_key_length: 3072
+
+# Operator store path → *in-store* path of the agent store, seeded through stdin by
+# layer1. The store is a mounted sub-store named `agent`, so an entry declared here as
+# `model/opencode-key` is addressed from the CLI (and by the service, and by the canary)
+# as `agent/model/opencode-key`. Values are carried byte-identical (DESIGN §4), and the
+# layer never prints or stores them.
+# The in-store layout is SECRETS.md §2's short list — one directory per target, plus the
+# secrets the Paperclip service itself needs rendered into its environment.
+#
+# `canary: true` means the service cannot do its job without the entry, so
+# `paperclip-secrets-canary` proves it at start. Both lists live here, in one place, on
+# purpose: if the egress proxy (T4b) takes over the GitHub credential, remove
+# `github/token` and the matching gitconfig helper line in the same commit, or the canary
+# will hold the service down for an entry the proxy made superfluous.
+# `optional: true` means the operator may legitimately not have it yet (the read-only
+# cluster token is inserted by hand, see the RUNBOOK); the layer converges when it appears
+# and never fails for its absence.
+paperclip_gopass_entries:
+  - name: infra/paperclip/db-password
+    as: paperclip/db-password
+    canary: true
+  - name: infra/paperclip/better-auth-secret
+    as: paperclip/better-auth-secret
+    canary: true
+  - name: infra/paperclip/tool-action-signing-secret
+    as: paperclip/tool-action-secret
+    canary: true
+  - name: infra/paperclip/agent-jwt-secret
+    as: paperclip/agent-jwt-secret
+    canary: true
+  - name: infra/paperclip/opencode-key
+    as: model/opencode-key
+    canary: true
+  - name: infra/exa/api-key
+    as: search/exa-api-key
+    canary: true
+  - name: cluster/github/token
+    as: github/token
+    canary: true
+  # The read-only ServiceAccount token for cluster *observation* (PLAN T4). The operator
+  # reads it out of the generated Secret and inserts it into their own store; the k8s
+  # RBAC lives in tazlab-k8s (`paperclip-observer` in `flux-system`).
+  - name: paperclip/k8s-token
+    as: k8s/token
+    canary: false
+    optional: true
+# A path that lives only in the operator's store: the canary requires the read to *fail*,
+# which is the observable proof that the agent store does not silently open everything
+# (P4 row E2). Reading it must never start working.
+paperclip_canary_foreign_entry: cluster/github/token
+
+# The secrets the service reads at provisioning time, and the environment variable each
+# one becomes in /etc/paperclip/paperclip.env. One list so that the render, the canary and
+# the README of the store layout cannot drift apart.
+# They are read from the *agent* store (as the service user, cold, through the
+# passphrase-less key) and not from the operator's store: the store is the single source
+# of truth after the seed, and a read that works here is the same read the service makes
+# at every start.
+paperclip_env_secrets:
+  - var: PAPERCLIP_DB_PASSWORD
+    entry: paperclip/db-password
+  - var: BETTER_AUTH_SECRET
+    entry: paperclip/better-auth-secret
+  - var: PAPERCLIP_TOOL_ACTION_SIGNING_SECRET
+    entry: paperclip/tool-action-secret
+  - var: PAPERCLIP_AGENT_JWT_SECRET
+    entry: paperclip/agent-jwt-secret
+  - var: OPENCODE_API_KEY
+    entry: model/opencode-key
+  - var: EXA_API_KEY
+    entry: search/exa-api-key
+
+# ─── Service ────────────────────────────────────────────────────────────────
+paperclip_version: "2026.916.1"
+paperclip_port: 3100
+paperclip_host: "0.0.0.0"
+paperclip_bind: lan
+paperclip_deployment_mode: authenticated
+paperclip_deployment_exposure: private
+# `ansible_host` is the address create.sh discovered for the guest (see inventory.ini);
+# the public URL and the accepted Host header both derive from it, so a renumbered
+# container needs no template edit.
+paperclip_bind_host: "{{ ansible_host | default(inventory_hostname) }}"
+paperclip_public_url: "http://{{ paperclip_bind_host }}:{{ paperclip_port }}"
+paperclip_allowed_hostnames: "{{ paperclip_bind_host }}"
+
+# PostgreSQL: the existing external cluster, reached over the pinned LAN NodePort.
+# The database is *not* re-created for the new container — it is the company (DESIGN §4).
+# sslmode=require encrypts; the server's certificate carries only its in-cluster name, so
+# hostname verification is not available from here (TD-085).
+paperclip_db_host: "192.168.1.211"
+paperclip_db_port: 32227
+paperclip_db_name: paperclip
+paperclip_db_user: paperclip
+paperclip_db_pool_max: 10
+
+# ─── Tooling baseline (T2: the same baseline as CT106) ──────────────────────
+# Node 24 from NodeSource; Paperclip refuses an older system Node.
+paperclip_node_floor: "v24.11.0"
+pi_version: "0.86.1"
+# Terraform is pinned here (unlike the CT106 layer, which follows the checkpoint API):
+# this container's whole point is to converge from the repository, so its own tooling
+# version is part of the declared state.
+paperclip_terraform_version: "1.15.7"
+# Kubernetes tooling (the kubectl apt repo major, as on CT106).
+paperclip_kubernetes_repo: "v1.31"
+# Exa search for the agents' CLI: reached over MCP, key interpolated from the service
+# environment (see templates/pi-mcp.json.j2 for why not `!gopass …`).
+paperclip_mcp_exa_url: "https://mcp.exa.ai/mcp"
+# Skills are a git checkout on the data volume (`clone-workspace.sh` clones the `skills`
+# repo as `SKILLS/`); the agent CLI loads them from there.
+paperclip_skills_path: "{{ paperclip_data_volume }}/SKILLS"
+
+# ─── Read-only cluster observation (PLAN T4, guest side) ────────────────────
+# The ServiceAccount and the RBAC live in tazlab-k8s (owned by the Flux layer); the
+# operator reads its token out of the generated Secret and inserts it into the *agent*
+# store, because provisioning-time rendering is the only shape that works with no
+# warm gpg-agent (P4 §2.2).
+paperclip_gopass_k8s_token: paperclip/k8s-token
+# Where the operator's kubeconfig lives on the orchestration host. Only the API server
+# URL and the cluster CA are taken from it — both are public cluster data — and the
+# credential in the rendered kubeconfig is the read-only ServiceAccount token above,
+# never the cluster-admin credential that file carries.
+paperclip_orch_kubeconfig: "{{ paperclip_orch_workspace }}/ephemeral-castle/clusters/tazlab-k8s/proxmox/configs/kubeconfig"
+
+# ─── Runtime limits and alerts ──────────────────────────────────────────────
+# The guest has 4 cores / 6144 MB (T1). The V8 ceiling stays below MemoryMax on purpose,
+# so a memory-hungry agent run trips V8's own abort inside the cgroup instead of the
+# container OOM killer, and the limits are owned by this one layer (P7 §8.3 checklist).
+paperclip_node_max_old_space: 3072
+paperclip_memory_high: 3G
+paperclip_memory_max: 5G
+paperclip_cpu_quota: "350%"
+paperclip_tasks_max: 1024

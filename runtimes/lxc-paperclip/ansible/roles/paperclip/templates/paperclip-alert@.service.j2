@@ -1,0 +1,13 @@
+[Unit]
+Description=Paperclip failure alert (%i)
+
+[Service]
+Type=oneshot
+# Journal-only, on purpose. The alert path must not need a credential, a network round
+# trip or a second service to be running: an alerting mechanism that can itself fail
+# silently is worse than none, and this container's own egress is meant to be a chokepoint.
+# `SyslogIdentifier=paperclip-alert` (set by `logger -t`) makes the entry greppable:
+#   journalctl -t paperclip-alert
+# The unit is instantiated by `OnFailure=paperclip-alert@%n.service`, so `%i` is the failed
+# unit's own name and the message is copy-pasteable.
+ExecStart=/usr/bin/logger -t paperclip-alert -p daemon.err "paperclip unit %i failed: journalctl -u %i -n 80 (the ExecStartPre canary failing means the secret path is broken, not the app)"

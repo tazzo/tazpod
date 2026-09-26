@@ -1,0 +1,141 @@
+[Unit]
+Description=Paperclip agent company (dedicated container)
+Documentation=https://github.com/paperclipai/paperclip
+After=network-online.target
+Wants=network-online.target
+# Fail-closed, visibly: the canary is an ExecStartPre, so a broken secret path stops the
+# start here instead of surfacing at the first push, and the failure lands in the alert
+# unit's journal entry rather than in a silent "service is up".
+OnFailure=paperclip-alert@%n.service
+
+[Service]
+Type=exec
+User={{ paperclip_user }}
+Group={{ paperclip_group }}
+# HOME is on the data volume, not on the container rootfs: the CLI writes its session
+# transcripts under ~/.pi and its skills/config under ~/.pi/agent, and the keyring
+# (~/.gnupg) and the store mount (~/.local/share/gopass) live there too. A rebuild must
+# not take any of them (DESIGN §8.3: point HOME at the volume instead of replacing $HOME
+# with StateDirectory=).
+Environment=HOME={{ paperclip_service_home }}
+# The keyring is pinned explicitly as well as through HOME, so the unit and the canary
+# always agree on which keyring and which agent socket they are using.
+Environment=GNUPGHOME={{ paperclip_gpg_home }}
+WorkingDirectory={{ paperclip_service_home }}
+# Environment file (0600, owned by the service user) holding DATABASE_URL and the
+# application secrets; it is sourced by the provisioning tasks, so no secret ever travels
+# in argv or in a task environment. It is also where the egress drop-in (role
+# `paperclip-egress`) can rely on being readable.
+EnvironmentFile=/etc/paperclip/paperclip.env
+
+# The master key is passed as a systemd credential rather than as a plain path in the
+# environment: credentials are exposed as a read-only file whose access is checked per
+# read and restricted to this unit's user, and they are not inherited down the process
+# tree the way environment variables are (systemd.io/CREDENTIALS). The pin is explicit
+# because the derived path is what DESIGN §4 tells us not to rely on.
+# Consequence, deliberately accepted: if the file is not there the unit does not start —
+# which is the fail-closed behaviour we want, and it happens before the first run, not
+# during it.
+LoadCredential=master-key:{{ paperclip_master_key_file }}
+# `%d` is the credentials directory; systemd expands specifiers in Environment= (it does
+# not expand them inside EnvironmentFile= contents, which is why the path is set here).
+Environment=PAPERCLIP_SECRETS_MASTER_KEY_FILE=%d/master-key
+
+# The canary proves the whole secret path (store readable, expected entries decrypt, the
+# key is this container's own, an operator-only path is *not* readable) before the server
+# binds a port.
+ExecStartPre=/usr/local/bin/paperclip-secrets-canary
+# The managed shim, not `npx`: an npx-started unit would report itself as an ephemeral
+# install (losing `update`/`--rollback`) and re-resolve the payload from the registry at
+# every start, defeating the version pin.
+ExecStart={{ paperclip_service_home }}/.local/bin/paperclipai run
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+KillSignal=SIGTERM
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=paperclip
+
+# Resources: the guest has 4 cores / 6144 MB. The V8 ceiling stays below MemoryMax on
+# purpose, so a memory-hungry run trips V8's own abort inside the cgroup instead of the
+# container OOM killer; these limits are owned by this layer only (P7 §8.3 checklist).
+Environment=NODE_OPTIONS=--max-old-space-size={{ paperclip_node_max_old_space }}
+Environment=PATH={{ paperclip_service_home }}/.local/bin:/usr/local/bin:/usr/bin:/bin
+MemoryHigh={{ paperclip_memory_high }}
+MemoryMax={{ paperclip_memory_max }}
+CPUQuota={{ paperclip_cpu_quota }}
+TasksMax={{ paperclip_tasks_max }}
+
+# ─── Hardening ──────────────────────────────────────────────────────────────
+# The extension over the operator container's unit is DESIGN §8.3's delta, spelled with
+# explicit booleans (`=yes`): an empty value on a boolean directive is a parse error in
+# systemd 255, and a silently ignored directive is worse than no directive.
+NoNewPrivileges=yes
+ProtectSystem=strict
+# ProtectHome MUST stay `no`: `yes`/`read-only`/`tmpfs` make /home, /root *and /run/user*
+# inaccessible, and /run/user/<uid> is where the user manager keeps the agent socket that
+# `enable-linger` guarantees from boot (P4 §3.1). The service's own home is on the data
+# volume and is granted write access below.
+ProtectHome=no
+# Everything the service writes lives on the data volume; its home is a directory under it.
+ReadWritePaths={{ paperclip_data_volume }}
+PrivateTmp=yes
+PrivateDevices=yes
+# Required by the credentials concept: without PrivateMounts the credential directory
+# (/run/credentials/<unit>) stays visible to other units of the same user.
+PrivateMounts=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+# ProtectProc= and ProcSubset= are implemented with procfs mount options and degrade
+# gracefully if the kernel or the container refuses them. ProcSubset=pid hides the
+# non-process parts of /proc — systemd's own man page calls that unsuitable for "most
+# non-trivial programs", so if this workload ever turns out to read /proc/cpuinfo or
+# /proc/meminfo, this is the first line to relax (and the reason to record it in the
+# retrospective). It is kept because the design mandates it and because the failure is
+# fail-closed at start, not silent corruption.
+ProtectProc=invisible
+ProcSubset=pid
+# The container has no business mounting anything under these; they become empty tmpfs, so
+# a misconfigured path inside the service cannot accidentally reach real content there.
+TemporaryFileSystem=/media /mnt /srv
+# AF_NETLINK is required: libuv enumerates the network interfaces with a netlink socket,
+# and without it the process dies at startup with
+# "uv_interface_addresses returned Unknown system error 97" (EAFNOSUPPORT).
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+# Only the filesystem types this container actually uses: `overlay` is the container
+# rootfs, `ext4` is the data volume (local-lvm thin), the rest are the kernel API
+# filesystems a Node process touches. systemd applies this as an allow-list, so an
+# unlisted type would fail *closed* at the first access — if a new mount type ever
+# appears here, extend the list (findmnt -no FSTYPE <path>) instead of removing the line.
+RestrictFileSystems=ext4 overlay tmpfs proc sysfs devtmpfs devpts cgroup2 ramfs mqueue
+# Unprivileged LXC on x86-64: the native ABI is the only one this service can need, and
+# the filter removes the 32-bit syscall surface from the kernel's attack surface.
+SystemCallArchitectures=native
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+# Match the operator shell's umask so files an agent writes in a repository are not
+# unexpectedly unreadable to the rest of the tooling.
+UMask=0022
+# Test-gated — present here, deliberately not enabled, and not "forgotten":
+#
+# SystemCallFilter=@system-service
+# MemoryDenyWriteExecute=yes
+#
+# Why they are not trusted blindly: the operator container's unit omits a syscall filter on
+# purpose ("the Node/V8 syscall surface is not worth the risk"), and V8's JIT needs
+# writable+executable pages, so MemoryDenyWriteExecute= would stop the runtime at start on
+# this machine. Both need a real agent run behind them before they can be adopted: enable
+# one at a time, run a full `heartbeat:invoke` → `runtime-state succeeded`, and only then
+# keep it. Until that evidence exists, adopting them would trade a measured risk for an
+# unmeasured one.
+
+[Install]
+WantedBy=multi-user.target

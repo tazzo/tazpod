@@ -1,0 +1,69 @@
+[Unit]
+Description=paperclip egress chokepoint (allowlisting forward proxy with per-host credential injection)
+# The packet filter and the proxy are two halves of one chokepoint, and the filter is the half
+# that must be in place *first*: with the filter up, a mistake in the policy is a refused
+# request; without it, a mistake in the policy would be an unfiltered network.
+Requires=paperclip-egress-firewall.service
+After=paperclip-egress-firewall.service
+# A crash loop gives up after a few attempts instead of flapping: the agent stays down until a
+# human looks, which is the fail-closed reading of "if the chokepoint cannot come up, the agent
+# does not run".
+StartLimitIntervalSec=120
+StartLimitBurst=3
+
+[Service]
+# `exec` rather than `simple`: systemd only considers the unit started once the binary actually
+# ran, so a missing interpreter fails `systemctl start` instead of waiting for the first request.
+Type=exec
+User=paperclip-egress
+Group=paperclip-egress
+# No bytecode cache: /etc is read-only for this service (ProtectSystem=strict below), and Python
+# would otherwise log a silent, harmless write failure on every start.
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/mitmdump --set confdir={{ paperclip_egress_state_dir }} --set listen_host={{ paperclip_egress_listen_host }} --set listen_port={{ paperclip_egress_port }} --set paperclip_egress_policy={{ paperclip_egress_policy_path }} --set paperclip_egress_credentials_dir={{ paperclip_egress_credentials_dir }}{% if paperclip_egress_upstream_ca_file %} --set ssl_verify_upstream_trusted_ca={{ paperclip_egress_upstream_ca_file }}{% endif %} --set flow_detail=1 -s {{ paperclip_egress_addon_path }}
+# Readiness gate: mitmproxy has no sd_notify, so the unit proves for itself that something is
+# listening before it reports success. If this fails the unit is failed *and* the main process is
+# torn down — the agent (bound to this unit) then never starts. The probe is a bare TCP connect,
+# so mitmproxy logs one junk connection per start; that is the cost of a real readiness signal.
+ExecStartPost=/bin/bash -c 'for _ in $(seq 1 50); do (exec 3<>/dev/tcp/{{ paperclip_egress_listen_host }}/{{ paperclip_egress_port }}) 2>/dev/null && exit 0; sleep 0.2; done; echo "paperclip-egress: nothing listening on {{ paperclip_egress_listen_host }}:{{ paperclip_egress_port }}" >&2; exit 1'
+Restart=on-failure
+RestartSec=2
+# The one writable path, created at start with the right owner: mitmproxy stores the CA it loads
+# plus one leaf certificate per intercepted host here, and loads a DH parameter file from it.
+# `StateDirectory` must agree with `paperclip_egress_state_dir` (they are the same string).
+StateDirectory=paperclip-egress
+StateDirectoryMode=0700
+
+# ── sandbox ────────────────────────────────────────────────────────────────
+# This process holds the brokered credentials in memory, so it is the most interesting target
+# inside the container: give it nothing but the loopback socket and its own state directory.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=yes
+UMask=0077
+# Deliberately absent, and both are decisions rather than omissions:
+#   * SystemCallFilter= — the design's rule is to prove a syscall filter against the real
+#     workload before adopting it (the sibling unit omits it for the Node surface for the same
+#     reason). Enable it here only after a full brokered round trip shows no EPERM in the journal.
+#   * MemoryDenyWriteExecute= — a Python interpreter's C extensions are not guaranteed to avoid
+#     writable-and-executable mappings, and a filter that breaks the chokepoint's startup is a
+#     worse trade than the one it buys.
+
+[Install]
+WantedBy=multi-user.target

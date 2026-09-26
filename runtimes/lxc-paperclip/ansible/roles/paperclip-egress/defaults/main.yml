@@ -1,0 +1,335 @@
+---
+# paperclip-egress — role defaults (design T4b: "egress chokepoint with credential injection").
+#
+# WHAT THIS ROLE BUILDS, AND WHY MITMPROXY
+# The agent (Paperclip + the CLIs it spawns) runs as `paperclip_user`, without root and
+# without sudo. Everything it needs from the outside world leaves through one forward proxy
+# on loopback that holds the credentials the agent is *not* allowed to have, and the packet
+# filter makes sure there is no second way out.
+#
+# Software choice: **mitmproxy** (the Ubuntu package, `mitmdump`) with one addon
+# (`files/paperclip_egress.py`). The enterprise-shaped alternative is Envoy with
+# `credential_injector`; the reasons it was not chosen here, in order:
+#   * the allowlist and the injection have to agree on the same host list. In mitmproxy that
+#     is one file (`policy.json`) with one matching function; in Envoy it is a cluster +
+#     an `ext_authz`/`credential_injector` filter chain per target, and a host list that can
+#     drift from the filter chain. Here the policy is the single source of truth.
+#   * the AppRole SecretID has to be injected into a **JSON body field**, not a header
+#     (a SecretID is not a Vault token: the agent exchanges it at
+#     `/v1/auth/approle-agent/login`). Envoy's credential injector is header-oriented.
+#   * the CA story is a first-class feature of mitmproxy (it mints the leaf certificates and
+#     reads the operator's CA from its confdir) instead of a hand-rolled SDS resource.
+# The cost we accept: a Python program in the path of every request, and a CA private key on
+# the container's disk (mode 0600, nobody but the proxy user and root can read it).
+#
+# WHAT IS *NOT* BROKERED, DELIBERATELY
+# The model-provider key and the search key stay in the container's environment
+# (`/etc/paperclip/paperclip.env`, rendered by the sibling layer): the CLI *inside* the
+# container is what calls those endpoints, so brokering them would buy nothing — the
+# credential would still have to be reachable by the process that must spend it. They are in
+# this policy as **allowed hosts without injection**. The design's split (PLAN.md T4b:
+# "what moves, and what stays") is exactly: GitHub push, Proxmox API token, Vault AppRole
+# SecretID move to the proxy; the model and search keys stay; only the residue with no
+# brokered path stays in the agent's gopass store.
+
+# ─── identity and paths ─────────────────────────────────────────────────────
+# The chokepoint gets its own uid: the packet filter grants internet egress to *this* uid
+# only (see templates/nftables.nft.j2), so "who may reach the internet" is a property of the
+# process identity and not of the agent's environment (which the agent can rewrite).
+paperclip_egress_user: paperclip-egress
+# The agent's identity. Not redefined here: the sibling layer owns `paperclip_user`; this is
+# only a fallback for running this role on its own.
+paperclip_egress_agent_user: "{{ paperclip_user | default('paperclip') }}"
+
+paperclip_egress_conf_dir: /etc/paperclip-egress
+# Everything mitmproxy writes (the CA it loads, the per-host leaf certificates, the DH
+# parameters) lives here. It is the unit's StateDirectory, i.e. 0700 and owned by the proxy
+# user, and it is the *only* path the hardened unit can write (ProtectSystem=strict).
+paperclip_egress_state_dir: /var/lib/paperclip-egress
+paperclip_egress_credentials_dir: "{{ paperclip_egress_conf_dir }}/credentials"
+paperclip_egress_policy_path: "{{ paperclip_egress_conf_dir }}/policy.json"
+paperclip_egress_addon_path: "{{ paperclip_egress_conf_dir }}/paperclip_egress.py"
+paperclip_egress_nftables_dir: /etc/nftables.d
+paperclip_egress_nftables_file: "{{ paperclip_egress_nftables_dir }}/10-paperclip-egress.nft"
+
+# ─── listener ───────────────────────────────────────────────────────────────
+# Loopback only. A listener on the container's LAN address would be a second door, and the
+# packet filter's first rule is what makes loopback the agent's only way out.
+paperclip_egress_listen_host: 127.0.0.1
+paperclip_egress_port: 3128
+
+# ─── interception CA ────────────────────────────────────────────────────────
+# Generated on the container (never carried from the operator's machine) because its only
+# consumer is this container's trust store. A rebuild regenerates it and the tasks below
+# re-install it in the same run, so nothing outside this guest depends on its continuity.
+paperclip_egress_ca_cn: "TazLab Paperclip Egress CA"
+paperclip_egress_ca_org: "TazLab"
+paperclip_egress_ca_days: 3650
+# The system trust-store copy. The agent-facing variables below point at the *bundle*
+# (/etc/ssl/certs/ca-certificates.crt) rather than at this file, so a tool that reads the
+# bundle and a tool that reads its own variable can never disagree about which CAs exist.
+paperclip_egress_ca_trust_file: /usr/local/share/ca-certificates/paperclip-egress-ca.crt
+paperclip_egress_ca_bundle: /etc/ssl/certs/ca-certificates.crt
+# Set this when a brokered target presents a certificate mitmproxy cannot verify on its own
+# (a private CA, or a self-signed service certificate). This is NOT hypothetical: the Proxmox
+# API is self-signed in this lab (the runtime calls it with `curl -sk`, see
+# tazpod/runtimes/lxc/create.sh), so without this file the proxy refuses the upstream TLS
+# session and the Proxmox rule below is dead. Deliberately narrow: the blunt alternative,
+# `--set ssl_insecure=true`, would stop verifying *every* brokered upstream at once.
+paperclip_egress_upstream_ca_file: ""
+
+# ─── the packet filter (the half of the chokepoint the proxy cannot be) ─────
+paperclip_egress_firewall_enabled: true
+# The guest this role runs on, as declared by the Terraform layer (static, no DHCP): used by the
+# host-side firewall template and by the probes below.
+paperclip_egress_guest_address: "192.168.1.208"
+paperclip_egress_ctid: 108
+paperclip_egress_proxmox_node: tazlab
+# The Paperclip UI port, for the host-side firewall template's inbound rules (the sibling layer
+# owns `paperclip_port`; this is a fallback for running this role on its own).
+paperclip_egress_ui_port: "{{ paperclip_port | default(3100) }}"
+# The host-side rule set is shipped as a *template* the operator applies on the Proxmox host: the
+# file it belongs in (/etc/pve/firewall/{{ paperclip_egress_ctid }}.fw) lives outside the guest.
+# See templates/proxmox-firewall-108.fw.j2 for what that half can and cannot do.
+# Provisioning-time proof that the chokepoint actually works (see tasks/main.yml). Turn it off
+# only for a run where a target is knowingly down: it is the check that catches a used-up
+# wrapping token and a filter that does not match, and both are otherwise silent until an
+# agent run fails hours later.
+paperclip_egress_verify: true
+# Test destination for the "the agent has no direct egress" probe. Any address outside the
+# internal networks would do; this one is a public resolver that answers on 443 so the positive
+# half of the probe (the chokepoint's uid reaches it) is meaningful.
+paperclip_egress_verify_probe_address: 1.1.1.1
+paperclip_egress_verify_probe_port: 443
+# Addresses that are *not* egress: the lab LAN (the Paperclip database at 192.168.1.211:32227,
+# the cluster API, the Talos endpoints) and the tailnet (100.64.0.0/10 + its IPv6 range).
+# They stay reachable directly for every uid, because (a) T5's `DATABASE_URL` is a raw TCP
+# connection that no HTTP proxy can carry, and (b) the chokepoint's value here is the
+# *internet*: the credentials for the targets reached over these networks are simply not in
+# the container any more.
+paperclip_egress_internal_cidrs:
+  - 192.168.1.0/24
+  - 100.64.0.0/10
+  - fd7a:115c:a1e0::/48
+# Escape hatch, empty by default and it must stay empty: an address listed here is reachable
+# WITHOUT the chokepoint for the agent uid, which is precisely the fallback the design forbids
+# ("if one layer fails, the other cannot be bypassed"). Use it only for a client that cannot
+# be made to honour the proxy variables, and record the reason in git next to the change.
+paperclip_egress_bypass_cidrs: []
+
+# An explicit override for the uid the filter matches, for the case where the guest's idmap
+# makes the kernel compare the *host-side* uid (see tasks/main.yml: the role derives both
+# values from /proc/self/uid_map and emits both rules, so this is only needed if a future
+# idmap changes the arithmetic).
+paperclip_egress_proxy_uid_override: ""
+
+# ─── agent-facing environment (rendered into the paperclip.service drop-in) ─
+# NO_PROXY deliberately does NOT list the Proxmox host: a connection to the Proxmox API has
+# to be intercepted for the token to be injected. It does list the container's own address
+# and the database, so the service's health checks and the Postgres connection never take a
+# pointless detour through the proxy (`tazpod/runtimes/lxc-paperclip/terraform` pins the
+# guest at 192.168.1.208).
+paperclip_egress_no_proxy:
+  - 127.0.0.1
+  - localhost
+  - "::1"
+  - 192.168.1.208
+  - 192.168.1.211
+
+# The environment the agent's tools get, as one dictionary so the drop-in that renders it and the
+# probes that test it cannot drift apart. Order and grouping carry meaning; the *why* of each
+# entry is in the drop-in template's comments.
+paperclip_egress_client_env:
+  # Both spellings of each variable: libcurl ignores the uppercase HTTP_PROXY for http:// URLs but
+  # honours HTTPS_PROXY, Go and Python read either, and a client that reads only one of them must
+  # not end up with no proxy at all (with the packet filter in place an unproxied client does not
+  # leak, it fails — but a failing agent is a false alarm nobody should have to debug).
+  HTTP_PROXY: "http://{{ paperclip_egress_listen_host }}:{{ paperclip_egress_port }}"
+  http_proxy: "http://{{ paperclip_egress_listen_host }}:{{ paperclip_egress_port }}"
+  HTTPS_PROXY: "http://{{ paperclip_egress_listen_host }}:{{ paperclip_egress_port }}"
+  https_proxy: "http://{{ paperclip_egress_listen_host }}:{{ paperclip_egress_port }}"
+  ALL_PROXY: "http://{{ paperclip_egress_listen_host }}:{{ paperclip_egress_port }}"
+  NO_PROXY: "{{ paperclip_egress_no_proxy | join(',') }}"
+  no_proxy: "{{ paperclip_egress_no_proxy | join(',') }}"
+  # Node's own fetch/undici ignores the proxy variables unless this is set (Node >= 24), and
+  # Paperclip's Node floor is above that. Without it the CLI goes straight to the provider it was
+  # pointed at, which the packet filter drops: a silent "the model is unreachable" instead of a
+  # brokered call.
+  NODE_USE_ENV_PROXY: "1"
+  # Node >= 24.6: also trust the system store, in addition to the explicit bundle below.
+  NODE_USE_SYSTEM_CA: "1"
+  # The interception CA. The bundle (not the CA file itself) is the value for all of them: the
+  # trust store generated it, so a tool that reads the bundle and a tool that reads its own
+  # variable can never disagree about which CAs exist — the failure mode that produces
+  # "certificate verify failed" in exactly one client and nowhere else.
+  SSL_CERT_FILE: "{{ paperclip_egress_ca_bundle }}"
+  REQUESTS_CA_BUNDLE: "{{ paperclip_egress_ca_bundle }}"
+  CURL_CA_BUNDLE: "{{ paperclip_egress_ca_bundle }}"
+  GIT_SSL_CAINFO: "{{ paperclip_egress_ca_bundle }}"
+  NODE_EXTRA_CA_CERTS: "{{ paperclip_egress_ca_bundle }}"
+  # pip verifies against certifi's own bundle and does not consult the system store; without this
+  # an install through the proxy fails on the interception certificate.
+  PIP_CERT: "{{ paperclip_egress_ca_bundle }}"
+
+# ─── brokered credentials ──────────────────────────────────────────────────
+# Read from gopass **at provisioning time** (delegate_to: localhost, no_log) and rendered to
+# 0600 files owned by the proxy user. The runtime path is then: the addon reads a file. No
+# gpg, no gpg-agent, no pinentry and no operator session is involved when the *service* starts
+# — that is the TAZ-18/TD-091 lesson applied one step further out, where the credential now
+# lives in the chokepoint instead of in the container.
+# `gopass` is only ever read here; if a path is missing the role **fails** rather than leaving
+# a rule without its credential (a rule without a credential would forward the agent's request
+# unauthenticated, which is a silent failure — the opposite of what this layer is for).
+paperclip_egress_credentials:
+  - name: github-token
+    gopass: cluster/github/token
+    note: >-
+      GitHub push credential (a GitHub App installation token once T4 mints them, or a
+      fine-grained PAT as the fallback). Injected as HTTP Basic, the form GitHub accepts both
+      for App tokens (`x-access-token` as the user) and for a PAT.
+  - name: proxmox-token-id
+    gopass: infra/paperclip/proxmox-token-id
+    note: >-
+      The Proxmox API token T4 creates for the agent (a privilege-separated token for a
+      passwordless user whose custom roles are scoped to a pool). Deliberately **not** the
+      bootstrap pair (`bootstrap/proxmox/token-id`/`-secret`) that exists in gopass today: that is
+      the operator's own `root@pam`-equivalent capability, and brokering it here would hand the
+      agent the hypervisor — the exact boundary P2 draws and this layer exists to hold.
+  - name: proxmox-token-secret
+    gopass: infra/paperclip/proxmox-token-secret
+    note: "Secret half of the same token; injected as `PVEAPIToken=<id>=<secret>`."
+  - name: vault-approle-wrapped-secret-id
+    gopass: vault/approle-agent/wrapped-secret-id
+    note: >-
+      The **wrapping token** Vault answers when the operator mints the AppRole SecretID
+      (`vault write -wrap-ttl=120s -force auth/approle-agent/role/paperclip-agent/secret-id`).
+      It is the value that goes into gopass, not the SecretID: the addon unwraps it at service
+      start, logs in, and never writes the result anywhere. The mint is operator-side and short:
+      the wrapping token lives 120s and the SecretID behind it 600s with `secret_id_num_uses=1`,
+      so insert it and run the layer immediately — both are consumed exactly once, and after a
+      proxy restart the Vault path stays refused until the layer runs again.
+  - name: vault-approle-role-id
+    gopass: vault/approle-agent/role-id
+    note: >-
+      The AppRole `role_id`: a Vault-assigned UUID (the Vault layer exports it with
+      `terragrunt output -raw role_id`), which is why it is delivered as a file at provisioning
+      time instead of being rendered from a literal here. Not a secret, but it is part of the
+      login pair and the layer must not guess it — a wrong value fails the login and the agent's
+      Vault calls are refused.
+
+# ─── Vault (injection target) ──────────────────────────────────────────────
+# The lab's Vault is reached over Tailscale (ephemeral-castle pins the same address), so the
+# proxy resolves it through MagicDNS and the packet filter lets the tailnet through as an
+# internal network. `role_id` is an identifier and not a secret (Vault's own docs treat it as
+# non-secret), which is why it is rendered here rather than kept in gopass.
+paperclip_egress_vault_addr: lushycorp-vault.magellanic-gondola.ts.net
+paperclip_egress_vault_port: 8200
+# The addon performs the AppRole login itself (the agent must never hold a SecretID or a token),
+# so these two are its own login parameters, not an injection target. `role_id` is an identifier
+# and not a secret (Vault's own documentation treats it as non-secret), which is why it is
+# rendered here instead of being kept in gopass.
+paperclip_egress_vault_approle_login_path: /v1/auth/approle-agent/login
+paperclip_egress_vault_role_id: paperclip-agent
+# Renew at half the token's period: a periodic token with an explicit max TTL is a hard bound, so
+# waiting for the last moment would turn a slow network into an outage. Below a 30s floor the
+# layer refuses to schedule, because a tighter loop than that is a bug and not a policy.
+paperclip_egress_vault_renew_fraction: 0.5
+paperclip_egress_vault_timeout: 10
+
+# ─── the policy: who may leave, and which header carries what ─────────────
+# One list, two kinds of entry:
+#   * an entry with `set_headers`/`set_json` **brokers** the destination: the credential is
+#     injected here and is not available to the agent at all;
+#   * an entry without them **allows** the destination unchanged: the client carries its own
+#     credential (the model and search keys, the package registries).
+# A destination in neither list is refused.
+# A host that is missing here is a loud 403 in the journal, never a silent bypass — which is
+# the point, so keep the list short and add to it deliberately.
+paperclip_egress_policy:
+  version: 1
+  comment: >-
+    Rendered by roles/paperclip-egress from defaults/main.yml. Do not edit on the guest: the
+    next provisioning run overwrites it. Brokered rules carry a credential the agent never
+    sees; the remaining rules are hosts the agent may reach on its own.
+  # What the addon needs in order to be Vault's client for this container: it unwraps the
+  # delivered wrapping token, logs in with the role_id, and keeps the resulting token in memory.
+  # Both files are delivered by this role into the credentials directory; neither is a `{cred:}`
+  # reference, because a missing one must disable the Vault rule alone rather than the whole
+  # chokepoint.
+  vault:
+    address: "https://{{ paperclip_egress_vault_addr }}:{{ paperclip_egress_vault_port }}"
+    login_path: "{{ paperclip_egress_vault_approle_login_path }}"
+    wrapping_token_file: vault-approle-wrapped-secret-id
+    role_id_file: vault-approle-role-id
+    renew_fraction: "{{ paperclip_egress_vault_renew_fraction }}"
+    timeout: "{{ paperclip_egress_vault_timeout }}"
+    ca_file: "{{ paperclip_egress_upstream_ca_file }}"
+  rules:
+    # ── brokered: the container holds no credential for these ──
+    - name: github-push
+      note: >-
+        Pushed over HTTPS: git is pointed at the proxy by the environment, and the client-side
+        Authorization header (if the agent sends one) is stripped so what reaches GitHub is
+        only ever the brokered token — the agent cannot replay a header it guessed.
+        host_suffix covers api.github.com and codeload.github.com (same trust domain, same
+        credential), not `evilgithub.com`: the matcher requires a label boundary.
+      hosts: [github.com]
+      host_suffix: true
+      ports: [443]
+      strip_headers: [authorization, proxy-authorization]
+      set_headers:
+        Authorization: "Basic {basic:x-access-token:{cred:github-token}}"
+    - name: proxmox-api
+      note: >-
+        The Proxmox API on the trusted orchestration host. The token is injected for any path
+        on that host:8006, so the agent can run inventory calls and guest-scoped operations
+        (the ACL is what bounds it, T4) without ever holding the token. The self-signed
+        certificate this node presents is why `paperclip_egress_upstream_ca_file` exists.
+      hosts: ["192.168.1.200"]
+      ports: [8006]
+      strip_headers: [authorization]
+      set_headers:
+        Authorization: "PVEAPIToken={cred:proxmox-token-id}={cred:proxmox-token-secret}"
+    - name: vault
+      note: >-
+        The agent calls Vault normally and never holds a credential: the addon mints the AppRole
+        client token itself at startup (unwrap -> login, see the addon header), renews it on the
+        token's period, and injects it here. A client-supplied `X-Vault-Token` is stripped, so the
+        only token Vault ever sees from this container is the one the chokepoint minted — which is
+        also the reason a failed login is a 403 on this rule instead of an unauthenticated call.
+      hosts: ["{{ paperclip_egress_vault_addr }}"]
+      ports: ["{{ paperclip_egress_vault_port }}"]
+      strip_headers: [x-vault-token]
+      set_headers:
+        X-Vault-Token: "{vault:client-token}"
+
+    # ── allowed, never injected: the credential for these is in the container by decision ──
+    - name: model-provider
+      note: >-
+        opencode-go is what `pi` runs on; the key is in the service environment because the CLI
+        itself is the caller. VERIFY the exact host against the provider's documentation (or
+        `strace -f -e trace=connect` on one real call) — a missing host here is a loud failure,
+        not a silent one, so it is safe to run and then correct.
+      hosts: [opencode.ai]
+      host_suffix: true
+      ports: [443]
+    - name: search
+      note: "Exa. The key is in the service environment for the `omp` binary and interpolated into the MCP server header for `pi`."
+      hosts: [api.exa.ai]
+      ports: [443]
+    - name: package-registries
+      note: >-
+        The agent installs and updates its own tooling (`npm`, `pip`, GitHub release assets).
+        Ubuntu's apt is *not* here: apt runs as root inside this guest and the filter leaves
+        root's egress alone, so package management does not depend on the chokepoint being up.
+      hosts:
+        - registry.npmjs.org
+        - pypi.org
+        - files.pythonhosted.org
+        - objects.githubusercontent.com
+      ports: [443]
+
+# ─── keep the guest's own tooling honest ───────────────────────────────────
+# The proxy is the only thing in this container that verifies upstream certificates on the
+# agent's behalf, so a broken upstream CA is a brokered call that fails. Left as a knob rather
+# than a task because the operator, not the agent, owns the decision to trust a private CA.

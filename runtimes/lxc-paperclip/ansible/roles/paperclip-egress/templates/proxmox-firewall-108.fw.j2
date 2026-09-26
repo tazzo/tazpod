@@ -1,0 +1,70 @@
+# /etc/pve/firewall/{{ paperclip_egress_ctid }}.fw
+# ─────────────────────────────────────────────────────────────────────────────
+# The *host-side* half of the agent container's network posture. Rendered by the ansible role
+# `paperclip-egress` but applied by the operator, because this file lives on the Proxmox node
+# (`{{ paperclip_egress_proxmox_node }}`), outside the guest: it is the one egress control the
+# agent cannot reach even if it were root inside its own container.
+#
+# READ THIS BEFORE ENABLING — WHAT THIS FILE CAN AND CANNOT EXPRESS
+#   * It is evaluated by the *host's* netfilter, on this guest's veth. The agent cannot edit it,
+#     which is the reason it exists at all.
+#   * It **cannot** distinguish the chokepoint's own upstream traffic from the agent's: both leave
+#     the same veth with the same source address ({{ paperclip_egress_guest_address }}). So a
+#     blanket `policy_out: DROP` here stops the proxy too — it does not "keep the agent in and let
+#     the chokepoint out", it just cuts the guest off.
+#   * The uid-level split (agent cannot reach the internet, the chokepoint can) is therefore
+#     enforced **inside** the guest, by paperclip-egress-firewall.service, where the uid of the
+#     sender is knowable. That unit is the enforcement; this file is the NIC-level record of what
+#     the guest is allowed to do at all, plus the inbound side, which the guest-side ruleset does
+#     not touch.
+#   * Making this file the *authoritative* egress control needs one more step, and it is a real
+#     change rather than a config flag: the chokepoint's upstream sockets must leave from a
+#     dedicated source address (a second address on eth0, bound by the proxy) so the host can
+#     allow *that* address and drop the guest's own. Until that exists, do not set
+#     `policy_out: DROP`.
+#
+# OPERATOR STEPS (all three, in this order — see the runbook for the surrounding procedure)
+#   1. Datacenter-wide: /etc/pve/firewall/cluster.fw must contain `enable: 1` ([OPTIONS]). The
+#      firewall is completely disabled by default on a fresh cluster.
+#   2. Per guest: /etc/pve/lxc/{{ paperclip_egress_ctid }}.conf must contain `firewall=1`. The
+#      Terraform layer does not set it (it cannot: the raw-config phase over root SSH owns that
+#      file, like the idmap and cap.drop entries).
+#   3. Install this file as /etc/pve/firewall/{{ paperclip_egress_ctid }}.fw and verify what the
+#      firewall actually compiled — the directions are easy to invert, and `pve-firewall` reports
+#      nothing when a rule is silently wrong:
+#         pve-firewall compile | sed -n '/{{ paperclip_egress_ctid }}/,/^$/p'
+#      Then, from a second SSH session on the node: `systemctl reload pve-firewall`.
+#
+# Note on `ipfilter`: left off. It is a useful MAC/IP sanity filter, but on a container it also
+# implicitly restricts IPv6 link-local addresses to those derived from the interface MAC, and this
+# guest runs tailscale over the bridged interface. If the isolation is worth more than that here,
+# enable it and verify tailscale still comes up.
+
+[OPTIONS]
+enable: 1
+# Inbound: default deny, with the two services the operator and the company actually use below.
+policy_in: DROP
+# Outbound: still ACCEPT on purpose — the guest-side uid filter is the enforcement (see above),
+# and dropping here would take the chokepoint down with the agent. Set DROP only together with the
+# dedicated-source-address change described above.
+policy_out: ACCEPT
+
+[RULES]
+# ── inbound the operator needs ──────────────────────────────────────────────
+IN ACCEPT -p tcp -dport 22 -source 192.168.1.0/24 -log nolog
+# The Paperclip UI (and nothing else of the application) for the LAN.
+IN ACCEPT -p tcp -dport {{ paperclip_egress_ui_port }} -source 192.168.1.0/24 -log nolog
+# Diagnostics the operator will otherwise miss: replies to ping are what distinguishes "the
+# firewall is blocking" from "the guest is down".
+IN ACCEPT -p icmp -log nolog
+
+# ── inbound the container needs to keep existing ────────────────────────────
+# The database is *outbound* from this guest, so its replies ride the established state; nothing
+# to add here. Inbound is deliberately just SSH and the UI: the agents are callers, not servers.
+
+# ── what is NOT here, on purpose ────────────────────────────────────────────
+#   * no `OUT` rules at all: with `policy_out: ACCEPT` they would be decoration, and the guest-side
+#     ruleset is where the real outbound decision lives (uid `{{ paperclip_egress_agent_user }}`
+#     may reach the chokepoint and the internal networks, nothing else).
+#   * no rule for the tailnet: that traffic is bridged, not routed through the node's firewall
+#     chains, and the guest-side ruleset already classifies it as an internal network.

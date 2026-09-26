@@ -1,0 +1,23 @@
+{# MCP server configuration for the agent CLI (`pi`), which has no native web search and
+   reaches Exa over MCP. Written to the in-store path `~/.pi/agent/mcp.json`.
+
+   Why the header interpolates `${EXA_API_KEY}` and not the obvious `!gopass show -o …`
+   form: the `!command` form makes the CLI shell out to gopass at connect time. On the
+   operator container that failed whenever the pinentry cache was cold (TD-091) and it
+   needed `gopass` plus a working keyring in the *client's* environment. The `${VAR}` form
+   is resolved from the environment of the `pi` process, and the process's environment
+   comes from /etc/paperclip/paperclip.env, which layer2 renders from the agent store.
+
+   This is not a new exposure: the same value already sits in that mode-0600 env file, and
+   `omp` reads the same variable natively. It only means the agent's search does not depend
+   on a second secret-resolution path that has already failed once in this lab. #}
+{
+  "mcpServers": {
+    "exa": {
+      "url": "{{ paperclip_mcp_exa_url }}",
+      "headers": {
+        "x-api-key": "${EXA_API_KEY}"
+      }
+    }
+  }
+}

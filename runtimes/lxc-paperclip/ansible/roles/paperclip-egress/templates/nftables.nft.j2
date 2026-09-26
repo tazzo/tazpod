@@ -1,0 +1,72 @@
+# ───────────────────────────────────────────────────────────────────────────────
+# paperclip-egress packet filter — rendered from roles/paperclip-egress/defaults.
+#
+# The chokepoint has two halves and this is the one the agent cannot talk to:
+#   * the allowlist and the credential injection live in the proxy (uid
+#     {{ paperclip_egress_user }}), because only HTTP can be filtered per host and injected;
+#   * this table decides *who is allowed to speak to the internet at all*, which is the half
+#     that has to hold when the proxy is down, misconfigured, or bypassed by a client that
+#     ignores HTTP_PROXY. It is uid-based, so an agent that rewrites its own environment
+#     changes nothing.
+#
+# Loaded atomically by paperclip-egress-firewall.service. The three statements below are the
+# standard replace-in-one-transaction idiom: `add` is idempotent whether or not the table
+# exists, `delete` frees the previous rules, and the definition recreates them — all in a single
+# netlink batch, so there is never a window in which the agent has no filter.
+add table inet paperclip_egress
+delete table inet paperclip_egress
+
+table inet paperclip_egress {
+  chain output {
+    type filter hook output priority filter; policy drop;
+
+    # The agent's only permitted destination: the proxy on loopback. Nothing here depends on the
+    # agent's environment, which is why the loopback rule is unconditional.
+    oifname "lo" accept
+
+    # Root inside this guest is the *operator's* identity — the agent has no root and no sudo —
+    # so leaving root's egress alone is what keeps apt, the tailscale daemon (which needs its
+    # control plane and DERP relays) and this layer itself working. The agent is explicitly not
+    # covered by this rule.
+    meta skuid 0 accept
+
+    # The chokepoint itself. Its destinations are decided by the addon's allowlist, not by this
+    # table: duplicating the host list here is how the two would silently drift apart. More than
+    # one rule means the guest's idmap gave the identity two candidate numbers (tasks/main.yml
+    # derives both) and only one of them can ever match — that is what makes this exact without
+    # guessing at the namespace semantics.
+{% for uid in paperclip_egress_uids %}
+    meta skuid {{ uid }} accept
+{% endfor %}
+    # Answers to connections that came from the LAN (the operator's SSH, the Paperclip UI, the
+    # database's replies) must be able to leave again.
+    ct state established,related accept
+
+    # The internal plane is not egress: the Paperclip database (T5's DATABASE_URL is a raw TCP
+    # connection no HTTP proxy can carry), the cluster API, the Talos endpoints and the tailnet
+    # (which is how the lab's Vault is reached). What bounds the agent here is credential
+    # scoping, not packets.
+{% for cidr in paperclip_egress_internal_cidrs %}
+{% if ':' in cidr %}
+    ip6 daddr {{ cidr }} accept
+{% else %}
+    ip daddr {{ cidr }} accept
+{% endif %}
+{% endfor %}
+{% if paperclip_egress_bypass_cidrs %}
+    # Escape hatch, empty by default: an address here is reachable for the agent uid WITHOUT the
+    # chokepoint. Each entry is a written exception, not a convenience.
+{% for cidr in paperclip_egress_bypass_cidrs %}
+{% if ':' in cidr %}
+    ip6 daddr {{ cidr }} accept
+{% else %}
+    ip daddr {{ cidr }} accept
+{% endif %}
+{% endfor %}
+{% endif %}
+    # Everything else — the whole internet, for anyone but root and the chokepoint — is dropped
+    # here. The counter is the operator's only view of what the agent tried to reach:
+    #   nft -a list table inet paperclip_egress
+    counter drop
+  }
+}

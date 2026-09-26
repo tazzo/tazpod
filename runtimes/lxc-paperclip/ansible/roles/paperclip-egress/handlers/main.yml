@@ -1,0 +1,27 @@
+---
+# Handlers, in dependency order — Ansible runs notified handlers in the order they are defined here,
+# not in the order they were notified, and the order matters: systemd has to learn about the units
+# before they are restarted, the CA trust store before anything is restarted to use it, the packet
+# filter before the proxy (the proxy's unit Requires= it), and the agent last of all (it is bound to
+# the proxy with BindsTo=, so it must come back after the chokepoint is up).
+- name: "paperclip-egress: reload systemd"
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+# `update-ca-certificates` is idempotent, and it only ever runs when the CA file changed: on an
+# unchanged second run the copy that notifies it does not report a change, so this stays silent.
+# The bundle it rebuilds is the one `paperclip_egress_ca_bundle` names for every client in the
+# container.
+- name: "paperclip-egress: update the CA trust store"
+  ansible.builtin.command:
+    cmd: update-ca-certificates
+
+- name: "paperclip-egress: restart the packet filter"
+  ansible.builtin.systemd:
+    name: paperclip-egress-firewall.service
+    state: restarted
+
+- name: "paperclip-egress: restart the chokepoint"
+  ansible.builtin.systemd:
+    name: paperclip-egress.service
+    state: restarted

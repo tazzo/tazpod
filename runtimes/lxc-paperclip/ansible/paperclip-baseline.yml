@@ -1,0 +1,13 @@
+---
+- name: Deploy the Paperclip agent container baseline
+  hosts: paperclip
+  become: yes
+  roles:
+    # The container's own provisioning: tooling, identity, service, agent side.
+    - paperclip
+    # The egress chokepoint (T4b) ships with the container (board decision 2026-09-26).
+    # It is a sibling role in this same runtime and renders its own systemd drop-in
+    # (`paperclip.service.d/`), so it needs the unit above to exist first — hence the
+    # order. It owns the proxy variables (HTTP_PROXY, *_CA_BUNDLE, …); this role never
+    # sets them.
+    - paperclip-egress

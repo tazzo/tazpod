@@ -1,0 +1,326 @@
+---
+# Layer 2 — the service: environment file, git configuration, CLI install, the carried
+# state, the unit, the canary and the alert.
+#
+# The layer *provisions the environment*; it never creates the company. There is
+# deliberately no `paperclipai onboard` anywhere in this role: onboarding would mint a new
+# instance id and a new `master.key`, and the company lives in the external database with
+# its stored secrets encrypted under the *carried* key — a fresh instance would come up
+# empty and the delivered artefacts would be quietly orphaned. So the layer installs,
+# renders, and then waits for the operator's carry (RUNBOOK step 3), which is the only
+# step in this runtime that a human must perform.
+
+# ─── Configuration directory ────────────────────────────────────────────────
+- name: Configuration directory
+  ansible.builtin.file:
+    path: /etc/paperclip
+    state: directory
+    owner: root
+    group: "{{ paperclip_group }}"
+    mode: "0750"
+
+# ─── Secrets: read from the agent store as the service user ─────────────────
+# `check_mode: false` keeps this read-only lookup running during `--check`, so the env
+# template can be compared against the real rendered content. Without it the lookup is
+# skipped in check mode, the template can only render with empty values, and it reports
+# `changed` on every dry run — a false drift signal.
+- name: Read the service secrets from the agent store
+  become_user: "{{ paperclip_user }}"
+  environment: "{{ paperclip_service_env }}"
+  ansible.builtin.command:
+    cmd: gopass show -o "{{ paperclip_gopass_store }}/{{ item.entry }}"
+  loop: "{{ paperclip_env_secrets }}"
+  register: paperclip_env_secret_reads
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+# `no_log: true` because this is the one place where the *values* live in a task result:
+# a `set_fact` prints its result in verbose mode, and the whole point of the store is that
+# the values never appear in a log.
+- name: Map them onto their environment variables
+  ansible.builtin.set_fact:
+    paperclip_env_secret_values: >-
+      {{ dict(paperclip_env_secrets | map(attribute='var') |
+              zip(paperclip_env_secret_reads.results | map(attribute='stdout') | map('trim'))) }}
+  no_log: true
+
+- name: Every secret the env file needs was readable
+  ansible.builtin.assert:
+    that:
+      - paperclip_env_secret_reads.results | selectattr('rc', 'ne', 0) | list | length == 0
+      - paperclip_env_secret_values.values() | select('equalto', '') | list | length == 0
+    fail_msg: >-
+      The agent store did not return one of {{ paperclip_env_secrets | map(attribute='var') | join(', ') }}.
+      Check `paperclip-secrets-canary` output and the store contents; do not start the
+      service with a partial environment.
+
+# The rendered env file is read twice: systemd parses it as an EnvironmentFile, and the
+# provisioning tasks *source* it (`set -a; . /etc/paperclip/paperclip.env`) before invoking
+# the CLI. A value containing whitespace, a quote, a backslash, `$` or `#` therefore breaks
+# the shell path in a way that looks like a missing variable, hours later. The lab's
+# entries are API keys and base64/JWT secrets, so this is a guard, not a limitation — and
+# it fails at provisioning time, where the fix is obvious.
+- name: The service secrets are single-line and shell-safe
+  ansible.builtin.assert:
+    that:
+      - paperclip_env_secret_values | dict2items | selectattr('value', 'search', '[[:space:]"#$\\]') | list | length == 0
+    fail_msg: >-
+      One of the secrets in the agent store contains whitespace, a quote, a backslash, `$`
+      or `#`, which the rendered environment file cannot carry safely for both systemd and
+      the shell that sources it. Store it as a single-line value or teach the consumer to
+      read it from a file instead of the environment.
+    success_msg: "all service secrets are single-line and shell-safe"
+
+# ─── Rendered configuration ─────────────────────────────────────────────────
+- name: Git configuration for the service (identity + credential helper)
+  ansible.builtin.template:
+    src: paperclip.gitconfig.j2
+    dest: /etc/paperclip/gitconfig
+    owner: root
+    group: "{{ paperclip_group }}"
+    mode: "0644"
+
+- name: Environment file (readable only by the service user; systemd reads it as root)
+  ansible.builtin.template:
+    src: paperclip.env.j2
+    dest: /etc/paperclip/paperclip.env
+    owner: "{{ paperclip_user }}"
+    group: "{{ paperclip_group }}"
+    mode: "0600"
+  no_log: true
+  notify: restart paperclip
+
+# ─── CLI install (pinned, managed) ──────────────────────────────────────────
+# The CLI payload lives under the service user's HOME on the data volume: it is
+# re-verified on every run (so a rebuild reinstalls it) but the version marker keeps the
+# common case a no-op. `pi` is installed system-wide because the `pi_local` adapter spawns
+# it from the service PATH.
+- name: Installed paperclip version marker
+  ansible.builtin.slurp:
+    src: /etc/paperclip/.installed-version
+  register: paperclip_version_marker
+  failed_when: false
+  changed_when: false
+
+- name: Managed shim
+  ansible.builtin.slurp:
+    src: "{{ paperclip_service_home }}/.local/bin/paperclipai"
+  register: paperclip_shim
+  failed_when: false
+  changed_when: false
+
+- name: Install Paperclip at the pinned version (managed install)
+  become_user: "{{ paperclip_user }}"
+  environment: "{{ paperclip_service_env }}"
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      set -a; . /etc/paperclip/paperclip.env; set +a
+      # the shim records the Node that runs the installer: pin the system one, so the
+      # service never depends on a user-managed Node tree
+      export PATH=/usr/bin:/usr/local/bin:/bin
+      exec npx --yes paperclipai@{{ paperclip_version }} install --version {{ paperclip_version }} --yes
+    chdir: "{{ paperclip_service_home }}"
+    executable: /bin/bash
+  when: >-
+    (paperclip_version_marker.content | default('') | b64decode | trim) != paperclip_version
+    or '/usr/bin/node' not in (paperclip_shim.content | default('') | b64decode)
+  register: paperclip_install
+  no_log: true
+
+- name: Record the installed version
+  ansible.builtin.copy:
+    content: "{{ paperclip_version }}\n"
+    dest: /etc/paperclip/.installed-version
+    owner: root
+    group: root
+    mode: "0644"
+  when: paperclip_install is changed
+
+- name: Installed pi version
+  ansible.builtin.command: /usr/bin/pi --version
+  register: paperclip_pi_version
+  failed_when: false
+  changed_when: false
+  check_mode: false
+
+- name: Install the pi CLI system-wide (the `pi_local` adapter needs it on the service PATH)
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      export PATH=/usr/bin:/usr/local/bin:/bin
+      exec npm install --global --no-fund --no-audit @earendil-works/pi-coding-agent@{{ pi_version }}
+    executable: /bin/bash
+  when: paperclip_pi_version.stdout | default('') | trim != pi_version
+  register: paperclip_pi_install
+  changed_when: paperclip_pi_install.rc == 0
+
+# ─── The carried company (the operator's step) ──────────────────────────────
+# These four artefacts are *not* produced by this role, and the layer proves that by
+# requiring them: `master.key` (the DB's stored secrets are encrypted with it), the
+# instance `config.json`, and the two data directories that hold attachments and run logs.
+- name: Inspect the carried state
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop: "{{ paperclip_carried_state }}"
+  register: paperclip_carried
+  changed_when: false
+
+- name: Which carried artefacts are still missing
+  ansible.builtin.set_fact:
+    paperclip_carried_missing: "{{ paperclip_carried.results | selectattr('stat.exists', 'equalto', false) | map(attribute='item') | list }}"
+    paperclip_state: "{{ paperclip_carried.results[0].stat }}"
+
+- name: The service does not start until the company's state is here
+  ansible.builtin.debug:
+    msg: >-
+      Provisioned, but the company's state is not on this container yet; missing:
+      {{ paperclip_carried_missing | join(', ') }}. Nothing was generated on purpose.
+      Copy the state from the old instance (RUNBOOK "carry the company" — stop the old
+      service first: two schedulers against one database is the failure DESIGN §4
+      forbids), then re-run this playbook. The unit is installed but stays disabled.
+  when: paperclip_carried_missing | length > 0
+
+# ─── State on the data volume ───────────────────────────────────────────────
+- name: PAPERCLIP_HOME on the data volume (survives a container rebuild)
+  ansible.builtin.file:
+    path: "{{ paperclip_home }}"
+    state: directory
+    owner: "{{ paperclip_user }}"
+    group: "{{ paperclip_group }}"
+    mode: "0700"
+
+# The operator copies the instance tree with `rsync` as root, so everything arrives
+# root-owned. Ownership — not mode — is fixed recursively here, before the service starts;
+# a service that cannot read its own state fails with a permission error that looks like a
+# corrupt instance.
+- name: The service owns its state
+  ansible.builtin.file:
+    path: "{{ paperclip_home }}"
+    state: directory
+    owner: "{{ paperclip_user }}"
+    group: "{{ paperclip_group }}"
+    recurse: true
+
+# Guarded by the carried-state probe: on the first run — before the operator has carried
+# anything — these paths do not exist yet, and a `file` task on a missing path fails.
+- name: Instance secrets directory
+  ansible.builtin.file:
+    path: "{{ paperclip_instance_dir }}/secrets"
+    state: directory
+    owner: "{{ paperclip_user }}"
+    group: "{{ paperclip_group }}"
+    mode: "0700"
+  when: paperclip_state.exists
+
+- name: Master key permissions (0600 — it decrypts the database's stored secrets)
+  ansible.builtin.file:
+    path: "{{ paperclip_master_key_file }}"
+    owner: "{{ paperclip_user }}"
+    group: "{{ paperclip_group }}"
+    mode: "0600"
+  when: paperclip_state.exists
+
+# ─── Unit, canary, alert ────────────────────────────────────────────────────
+- name: The secrets canary (proves the whole secret path before the service starts)
+  ansible.builtin.template:
+    src: paperclip-secrets-canary.j2
+    dest: /usr/local/bin/paperclip-secrets-canary
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: The alert unit for `OnFailure=`
+  ansible.builtin.template:
+    src: "paperclip-alert@.service.j2"
+    dest: /etc/systemd/system/paperclip-alert@.service
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: systemd unit
+  ansible.builtin.template:
+    src: paperclip.service.j2
+    dest: /etc/systemd/system/paperclip.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart paperclip
+
+# The carried `config.json` knows the *old* container's address; the new one has to be
+# accepted as a Host header or the UI answers 400 to its own address. Guarded by a grep of
+# the carried file, because `paperclipai allowed-hostname` is an append and would grow the
+# file on every run.
+- name: Does the carried instance config know this container's address?
+  ansible.builtin.command:
+    cmd: grep -qF "{{ paperclip_bind_host }}" "{{ paperclip_instance_dir }}/config.json"
+  register: paperclip_hostname_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: paperclip_state.exists
+
+- name: Teach the carried instance config this container's address
+  become_user: "{{ paperclip_user }}"
+  environment: "{{ paperclip_service_env }}"
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      set -a; . /etc/paperclip/paperclip.env; set +a
+      exec "{{ paperclip_service_home }}/.local/bin/paperclipai" allowed-hostname "{{ paperclip_bind_host }}"
+    executable: /bin/bash
+  when:
+    - paperclip_state.exists
+    - paperclip_hostname_probe.rc | default(1) != 0
+  changed_when: true
+  no_log: true
+  notify: restart paperclip
+
+# ─── Start ──────────────────────────────────────────────────────────────────
+# Fail-closed by construction: the unit's `ExecStartPre` is the canary, so a broken secret
+# path stops the start instead of surfacing at the first push (the TD-091 failure), and
+# `OnFailure=` turns that into an alert entry.
+- name: Enable and start Paperclip
+  ansible.builtin.systemd:
+    name: paperclip.service
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: paperclip_carried_missing | length == 0
+
+- name: Wait for the Paperclip health endpoint
+  ansible.builtin.uri:
+    url: "http://{{ paperclip_bind_host }}:{{ paperclip_port }}/api/health"
+    status_code: 200
+  register: paperclip_health
+  until: paperclip_health.status == 200
+  retries: 60
+  delay: 5
+  changed_when: false
+  when: paperclip_carried_missing | length == 0
+
+- name: pi can reach the model provider as the service user (warning only)
+  become_user: "{{ paperclip_user }}"
+  environment: "{{ paperclip_service_env }}"
+  ansible.builtin.shell:
+    cmd: |
+      set -a; . /etc/paperclip/paperclip.env; set +a
+      export PATH=/usr/bin:/usr/local/bin:/bin
+      exec /usr/bin/pi auth check --provider opencode-go
+  register: paperclip_pi_auth
+  changed_when: false
+  failed_when: false
+  no_log: true
+  when: paperclip_carried_missing | length == 0
+
+- name: pi readiness
+  ansible.builtin.debug:
+    msg: "pi provider opencode-go: {{ (paperclip_pi_auth.stdout | default('') | trim) or 'NOT READY (check the model/opencode-key entry in the agent store)' }}"
+  when: paperclip_carried_missing | length == 0
+
+- name: Service summary
+  ansible.builtin.debug:
+    msg: >-
+      paperclip {{ paperclip_version }} on {{ paperclip_public_url }} (home {{ paperclip_home }},
+      state {{ 'carried' if paperclip_carried_missing | length == 0 else 'pending the operator carry' }})

@@ -1,0 +1,40 @@
+# /etc/systemd/system/paperclip.service.d/50-paperclip-egress.conf
+#
+# Rendered by the ansible role `paperclip-egress`. It is a *drop-in* on purpose: the main unit
+# belongs to the Paperclip layer, and the two facts this file carries are the chokepoint's:
+# the fail-closed dependency and the proxy/CA environment. Keep both here so the chokepoint
+# stays one reviewable object and the sibling layer never has to know about it.
+#
+# Precedence worth knowing: systemd merges `Environment=` from the main unit and all drop-ins
+# (later files win) and then applies `EnvironmentFile=` **on top of that**. So do not put any of
+# these variables into `/etc/paperclip/paperclip.env`: that file would override this one.
+
+[Unit]
+# ── fail-closed, stated exactly ────────────────────────────────────────────
+# `After=` + `BindsTo=`: the agent is started only once the chokepoint is up, and it is stopped
+# when the chokepoint stops or fails. Nothing in the container gives the agent a second way out —
+# the packet filter drops its egress outright — so "the proxy is down" cannot degrade into
+# "the agent talks to the internet directly": it degrades into "the agent's outbound calls fail".
+# That is the whole point of putting the credential outside the boundary, and it is why this
+# dependency is not a `Wants=`.
+BindsTo=paperclip-egress.service
+After=paperclip-egress.service
+# `PartOf=` propagates a restart of the chokepoint to the agent, so the pair moves together for
+# an operator-initiated restart. (After a *failed* restart of the proxy, check the pair anyway:
+# `systemctl is-active paperclip-egress.service paperclip.service`; the operator step is in the
+# runbook.)
+PartOf=paperclip-egress.service
+
+[Service]
+# ── the proxy the clients must use, and the CA they must trust ─────────────
+# Rendered from `paperclip_egress_client_env` in the role's defaults, which is also the dictionary
+# the provisioning-time probes use — one source, so the environment the agent gets and the
+# environment the layer tests cannot drift apart. Per-variable reasons live next to the entries in
+# defaults/main.yml; the shapes that matter are: both spellings of each proxy variable, a NO_PROXY
+# that deliberately excludes the Proxmox host (it has to be intercepted for the token to be
+# injected) and includes the container's own address and the database (the health checks and the
+# Postgres connection must not take a detour), and the trust-store bundle for every tool that has
+# its own CA variable.
+{% for name, value in paperclip_egress_client_env.items() %}
+Environment="{{ name }}={{ value }}"
+{% endfor %}
