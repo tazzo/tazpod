@@ -10,8 +10,22 @@
 # runs, from this directory, with a token that holds Permissions.Modify:
 #
 #   terraform apply -var manage_proxmox_access=true
+#   terraform output -raw proxmox_agent_token_id \
+#     | gopass insert -f infra/paperclip/proxmox-token-id
 #   terraform output -raw proxmox_agent_token_value \
-#     | gopass insert -f infra/paperclip/proxmox-token
+#     | gopass insert -f infra/paperclip/proxmox-token-secret
+#
+# Two entries, not one: the egress chokepoint's credential list
+# (`roles/paperclip-egress/defaults/main.yml`) injects `PVEAPIToken=<id>=<secret>`, so it
+# consumes the halves separately — the id half is not a secret (it names the user and the
+# token), the value half is.
+#
+# The two `/nodes/<node>` ACLs below are the one part this apply cannot do on its own: the
+# bootstrap token holds Permissions.Modify where the pool lives but not on the node path, so
+# the API answers `403 Permission check failed (/nodes/tazlab, Permissions.Modify)`. They are
+# applied once by an operator with root on the node:
+#   pveum acl modify /nodes/tazlab --roles PVEAuditor \
+#     --users paperclip-agent@pve --tokens 'paperclip-agent@pve!agent' --propagate 0
 #
 # Order matters: the pool membership references the guest, so run ./create.sh
 # first, then this apply.
