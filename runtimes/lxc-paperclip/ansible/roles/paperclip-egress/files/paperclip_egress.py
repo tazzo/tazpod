@@ -149,6 +149,12 @@ class PaperclipEgress:
         )
 
     async def _vault_startup(self) -> None:
+        # No `vault` block in the policy means the chokepoint brokers nothing to Vault (the
+        # AppRole stays defined in Vault for when an agent actually consumes it), so there is
+        # nothing to bootstrap and no endpoint to reach: log it once and stay out of the way.
+        if not self.vault:
+            ctx.log.info("paperclip-egress vault: no Vault rule in the policy, AppRole bootstrap skipped")
+            return
         # Off the event loop: a hung Vault must not stall every request through the proxy.
         await asyncio.to_thread(self._vault_bootstrap)
         await self._vault_renewal_loop()
