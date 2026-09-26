@@ -200,7 +200,12 @@
       [ -s "$id_file" ] || { echo "no recipient list at $id_file"; exit 1; }
       fpr="$(tr -d '[:space:]' < {{ paperclip_gpg_home }}/fingerprint | tr 'A-F' 'a-f' | sed 's/^0x//')"
       mapfile -t ids < <(grep -v '^[[:space:]]*$' "$id_file")
-      [ "${#ids[@]}" -eq 1 ] || { echo "expected exactly one recipient, found ${#ids[@]}"; exit 1; }
+      # The count is computed with `grep -c` rather than with the shell's array-length
+      # expansion: that expansion contains a hash-brace pair, which Jinja reads as the
+      # opening of a comment and fails the whole task with "Missing end of comment tag"
+      # before the shell ever runs. Do not reintroduce it, not even in a comment here.
+      count="$(grep -c -v '^[[:space:]]*$' "$id_file")"
+      [ "$count" -eq 1 ] || { echo "expected exactly one recipient, found $count"; exit 1; }
       one="$(printf '%s' "${ids[0]}" | tr -d '[:space:]' | tr 'A-F' 'a-f' | sed 's/^0x//')"
       [ "${one: -16}" = "${fpr: -16}" ] || { echo "recipient ...${one: -16} is not the container key ...${fpr: -16}"; exit 1; }
       # Count primary secret keys (`sec` records), not fingerprint records: a key with an
@@ -247,7 +252,16 @@
 
 - name: Entries to seed
   ansible.builtin.set_fact:
-    paperclip_entries_missing: "{{ paperclip_entries_probe.results | selectattr('rc', 'ne', 0) | map(attribute='item') | list }}"
+    # An entry that exists but returns *nothing* counts as missing. That is not a
+    # hypothetical: the first successful run of this layer seeded empty values because the
+    # controller's gopass could not open the operator's keyring at that moment, and the
+    # read below returned rc=0 with empty stdout — a state that then looked "present" to
+    # every later run, so the emptiness was never repaired. "Missing or empty" makes the
+    # next run fix it instead of inheriting it.
+    paperclip_entries_missing: >-
+      {{ (paperclip_entries_probe.results | selectattr('rc', 'ne', 0) | map(attribute='item') | list)
+         + (paperclip_entries_probe.results | selectattr('rc', 'eq', 0)
+            | selectattr('stdout', 'match', '^\\s*$') | map(attribute='item') | list) }}
 
 - name: Read them from the operator's store on the orchestration host
   delegate_to: localhost
@@ -261,6 +275,44 @@
   # declared optional; a required one is reported below rather than swallowed here.
   failed_when: false
   no_log: true
+
+- name: The operator's store actually yielded values (a cold GPG cache is not a silent empty)
+  # The failure this catches, as it actually happened: an unreadable operator keyring made
+  # every read return rc=0 with empty stdout, the values were seeded empty, and the problem
+  # only surfaced two layers later as "no password to display" — after the agent store had
+  # been populated with junk. Anything that yields nothing must stop the run here, with the
+  # cause named (`failed_when: false` above exists for *absent* entries, not for empty ones).
+  ansible.builtin.assert:
+    that:
+      - item.stdout | length > 0
+    fail_msg: >-
+      {{ item.item.name }} produced an empty value from the operator's gopass. If the entry
+      exists, the controller's GPG cache is probably cold: unlock the operator's store and
+      re-run. Seeding an empty secret would be worse than failing here.
+    success_msg: "{{ item.item.name }} yielded a value"
+  loop: "{{ paperclip_entries_read.results | default([]) }}"
+  # An entry declared `optional` is allowed to be absent *or* unreadable: the k8s observer
+  # token is the one real case, and the operator creates it after the cluster issues the
+  # Secret. Everything else must yield a value.
+  when:
+    - item.rc == 0
+    - not (item.item.optional | default(false))
+  no_log: true
+
+- name: Unseal the store for the seeding (the seal blocks the repair path too)
+  # `core.readonly` is applied at the end of this layer, so on a first run the store is
+  # open here and this is a no-op. On a *re-run* the store is already sealed, and the
+  # "missing or empty" repair above would then die with `writing to agent is disabled by
+  # core.readonly` — the repair could never run exactly when it is needed. Unsealing for
+  # the duration of the write is what makes the repair path reachable; the task below
+  # re-seals it, and its own probe keeps that idempotent.
+  become_user: "{{ paperclip_user }}"
+  environment: "{{ paperclip_service_env }}"
+  ansible.builtin.command:
+    cmd: gopass config --store {{ paperclip_gopass_store }} core.readonly false
+  when: >-
+    paperclip_entries_read.results | default([]) | selectattr('rc', 'eq', 0) | list | length > 0
+  changed_when: false
 
 - name: Seed them into the agent store
   become_user: "{{ paperclip_user }}"
