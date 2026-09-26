@@ -6,6 +6,7 @@
 #   3 → the agent side (CLI config, skills, cluster observation)
 # `main.yml` is only the include list; each layer is a file, as in `roles/tazpod`.
 - import_tasks: layer0-system.yml
+- import_tasks: layer0b-tailnet.yml
 - import_tasks: layer1-identity.yml
 - import_tasks: layer2-paperclip.yml
 - import_tasks: layer3-agents.yml

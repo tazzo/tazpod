@@ -199,7 +199,12 @@ paperclip_deployment_exposure: private
 # container needs no template edit.
 paperclip_bind_host: "{{ ansible_host | default(inventory_hostname) }}"
 paperclip_public_url: "http://{{ paperclip_bind_host }}:{{ paperclip_port }}"
-paperclip_allowed_hostnames: "{{ paperclip_bind_host }}"
+# The address the service binds, plus — once the guest is on the tailnet — the tailnet name and
+# its short form, so the dashboard answers on both. `paperclip_tailnet_name` is set by
+# layer0b-tailnet.yml; without it this is exactly the bind address.
+paperclip_allowed_hostnames: >-
+  {{ paperclip_bind_host }}{% if paperclip_tailnet_name | default("") %},{{ paperclip_tailnet_name }},{{ paperclip_tailnet_name.split(".")[0] }}{% endif %}
+paperclip_tailnet_hostname: paperclip-agent
 
 # PostgreSQL: the existing external cluster, reached over the pinned LAN NodePort.
 # The database is *not* re-created for the new container — it is the company (DESIGN §4).

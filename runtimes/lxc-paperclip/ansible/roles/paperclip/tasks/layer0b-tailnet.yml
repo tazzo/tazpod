@@ -1,0 +1,164 @@
+---
+# Layer 0b — the guest on the tailnet.
+#
+# WHY THIS LAYER EXISTS: the chokepoint has to reach Vault to mint its AppRole token, and Vault
+# is reached over the tailnet (its certificate covers tailnet names only, and it is not on the
+# LAN). The operator container has had Tailscale since the beginning; this guest did not, and the
+# design's packet-filter comment assumed it did ("the tailnet, which is how the lab's Vault is
+# reached") — the one thing the filter allowed and nothing provided.
+#
+# The mechanism is the same one `SKILLS/tools/tailscale/start.sh` uses on CT106: mint a
+# short-lived, ephemeral, preauthorized auth key from the Tailscale **OAuth client** (the static
+# key in gopass is the fallback nobody should need), then bring the interface up. The key is
+# minted on the *controller* — the OAuth credentials live in the operator's store, which the
+# guest must never be able to read — and handed to the guest task as a no_log variable.
+
+- name: Tailscale (upstream repository)
+  ansible.builtin.shell:
+    cmd: |
+      set -eu
+      curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg \
+        | tee /usr/share/keyrings/tailscale-archive-keyring.gpg >/dev/null
+      curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.tailscale-keyring.list \
+        | tee /etc/apt/sources.list.d/tailscale.list >/dev/null
+      apt-get update -qq && apt-get install -y -qq tailscale
+  args:
+    creates: /usr/bin/tailscale
+
+# The mode the daemon runs in. Kernel-native networking needs the TUN device, which an
+# unprivileged LXC only has when the node passes it through (the operator runtime writes
+# `lxc.cgroup2.devices.allow` + a bind mount in its raw-config phase; this runtime does not yet).
+# Without it the daemon still runs, in userspace mode — the guest gets a tailnet identity and can
+# reach the *control plane*, but peers are only reachable through its SOCKS proxy, which is why
+# this is not a substitute for the device: the chokepoint opens a direct socket to Vault.
+- name: Does this guest have the TUN device
+  ansible.builtin.stat:
+    path: /dev/net/tun
+  register: paperclip_tun
+  changed_when: false
+
+- name: Mint a Tailscale auth key from the OAuth client (on the controller)
+  delegate_to: localhost
+  become: true
+  become_user: "{{ paperclip_operator_user }}"
+  ansible.builtin.shell:
+    cmd: |
+      set -eu
+      cid=$(gopass show -o bootstrap/tailscale/oauth-client-id | tr -d "'\" \t\r\n")
+      csec=$(gopass show -o bootstrap/tailscale/oauth-client-secret | tr -d "'\" \t\r\n")
+      [ -n "$cid" ] && [ -n "$csec" ] || { echo "OAuth client missing from gopass" >&2; exit 1; }
+      tok=$(curl -s --request POST --header 'Content-Type: application/x-www-form-urlencoded' \
+        --data-urlencode "client_id=$cid" --data-urlencode "client_secret=$csec" \
+        --data 'grant_type=client_credentials' https://api.tailscale.com/api/v2/oauth/token \
+        | python3 -c 'import json,sys; print(json.load(sys.stdin).get("access_token",""))')
+      [ -n "$tok" ] || { echo "no access token from the Tailscale API" >&2; exit 1; }
+      curl -s --request POST --header "Authorization: Bearer $tok" --header 'Content-Type: application/json' \
+        --data '{"capabilities":{"devices":{"create":{"reusable":true,"ephemeral":true,"preauthorized":true,"tags":["tag:tazpod"]}}},"expirySeconds":3600,"description":"paperclip-agent tailnet login"}' \
+        https://api.tailscale.com/api/v2/tailnet/-/keys \
+        | python3 -c 'import json,sys; print(json.load(sys.stdin).get("key",""))'
+    executable: /bin/bash
+  register: paperclip_tailscale_key
+  changed_when: false
+  check_mode: false
+  no_log: true
+  when: not ansible_check_mode
+
+- name: The drop-in directory for tailscaled exists
+  # systemd does not create the parent of a drop-in, and the tailscale package ships none.
+  ansible.builtin.file:
+    path: /etc/systemd/system/tailscaled.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: The tailscaled unit runs in the mode this guest can support
+  # Kernel-native networking needs the TUN device; an unprivileged LXC only has it when the node
+  # passes it through (the operator runtime writes the two raw-config lines for it, this runtime
+  # does not yet — TD-093). Without it the daemon still runs, in userspace mode: the guest gets a
+  # tailnet identity and reaches the control plane, but peers are only reachable through its SOCKS
+  # proxy, which is *not* a substitute for the device because the chokepoint opens a direct socket.
+  # Managed by systemd rather than backgrounded from a shell task: a daemon started inside an
+  # Ansible shell dies with the task's session, and then `tailscale up` has nothing to talk to.
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/tailscaled.service.d/10-userspace.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Service]
+      ExecStart=
+      ExecStart=/usr/sbin/tailscaled --state=/var/lib/tailscale/tailscaled.state --socket=/run/tailscale/tailscaled.sock --tun=userspace-networking
+  when: not paperclip_tun.stat.exists
+  notify: "reload systemd"
+
+- name: tailscaled is running
+  ansible.builtin.systemd:
+    name: tailscaled
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Is the guest already on the tailnet
+  ansible.builtin.command:
+    cmd: tailscale status --json
+  register: paperclip_tailscale_status
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Hand the auth key to the guest as a file (never as an argument)
+  # `TS_AUTHKEY=file:…` is the documented form and keeps the key out of argv, where any process in
+  # the guest could read it from `ps`. The file is root-only and removed in the same run.
+  ansible.builtin.copy:
+    dest: /run/paperclip-tailscale-authkey
+    owner: root
+    group: root
+    mode: "0600"
+    content: "{{ paperclip_tailscale_key.stdout | trim }}"
+  no_log: true
+  when:
+    - not ansible_check_mode
+    - paperclip_tailscale_key.stdout | default('') | length > 0
+
+- name: Join the tailnet
+  ansible.builtin.command:
+    cmd: >-
+      tailscale up
+      --hostname={{ paperclip_tailnet_hostname | default('paperclip-agent') }}
+      --accept-dns=false --stateful-filtering=false
+    # `--authkey` is deliberately absent: the key arrives through TS_AUTHKEY as `file:…`.
+  environment:
+    TS_AUTHKEY: "file:/run/paperclip-tailscale-authkey"
+  register: paperclip_tailscale_join
+  changed_when: paperclip_tailscale_join.rc == 0
+  when:
+    - not ansible_check_mode
+    - >-
+      '"Online": true' not in (paperclip_tailscale_status.stdout | default(''))
+
+- name: The auth key file is gone
+  ansible.builtin.file:
+    path: /run/paperclip-tailscale-authkey
+    state: absent
+
+- name: The guest's tailnet identity
+  ansible.builtin.command:
+    cmd: tailscale status --json
+  register: paperclip_tailscale_now
+  changed_when: false
+  check_mode: false
+
+- name: Record the tailnet name (the service must accept it as a hostname)
+  ansible.builtin.set_fact:
+    paperclip_tailnet_name: >-
+      {{ (paperclip_tailscale_now.stdout | from_json).Self.DNSName | default('') | regex_replace('\.$', '') }}
+  when: (paperclip_tailscale_now.stdout | from_json).Self.DNSName | default('') | length > 0
+
+- name: Report the tailnet identity
+  ansible.builtin.debug:
+    msg: >-
+      tailnet: {{ paperclip_tailnet_name | default('(not joined)') }}
+      {%- if paperclip_tun.stat.exists %} (kernel networking: TUN present){% else %}
+      (userspace networking: /dev/net/tun absent — the chokepoint cannot open a direct socket to
+      Vault until the node passes the device through; see TD-093){% endif %}
