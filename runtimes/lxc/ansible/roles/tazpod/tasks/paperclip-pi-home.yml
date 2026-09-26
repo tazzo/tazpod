@@ -103,12 +103,17 @@
 
 # Exa web search for the *agents'* CLI. `pi` 0.86.1 (what the `pi_local` adapter
 # runs) has no native `web_search` tool; it reaches Exa through the MCP server
-# declared here, served by the already-installed `pi-mcp-adapter`. The `!` prefix
-# makes the adapter run the command when the server connects, so the API key is
-# read from gopass at connect time and never stored in this file — which is why
-# this config holds no secret and can live in the repository. `omp` (the operator's
-# own binary) has native Exa and reads `EXA_API_KEY` from the service environment /
-# operator shell instead; the two mechanisms are independent.
+# declared here, served by the already-installed `pi-mcp-adapter`. The header value
+# is `${EXA_API_KEY}`, which the adapter interpolates from the environment of the
+# `pi` process: the service unit loads `/etc/paperclip/paperclip.env`, where the
+# layer exports the key from gopass at provisioning time, so no secret is stored in
+# this file. Reading that exported variable (instead of having the adapter shell out
+# to `gopass` at connect time) is deliberate: a non-interactive `gopass` cannot open
+# the key when the operator's pinentry cache is cold (TD-091), which would break
+# agent search whenever nobody is logged in — exactly the case this container is
+# meant to be free of. It adds no exposure: the same value already sits in the
+# mode-0600 env file. `omp` (the operator's own binary) has native Exa and reads the
+# same `EXA_API_KEY`; the two mechanisms are independent.
 #
 # Written to the pet volume directly (`paperclip_pi_home`), so it is present whether
 # or not `~/.pi` is already the canonical symlink, and a rebuilt container converges
@@ -134,7 +139,7 @@
           "exa": {
             "url": "https://mcp.exa.ai/mcp",
             "headers": {
-              "x-api-key": "!gopass show -o infra/exa/api-key"
+              "x-api-key": "${EXA_API_KEY}"
             }
           }
         }

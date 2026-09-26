@@ -75,8 +75,9 @@ paperclip_gopass_opencode_key: infra/paperclip/opencode-key
 #    `EXA_API_KEY`; the layer exports it into the service environment below and the
 #    operator shell gets the same variable at start (dotfiles/.bashrc).
 #  * `pi` 0.86.1 (what the `pi_local` adapter runs) has no native `web_search` tool;
-#    it reaches Exa over the MCP server declared in `~/.pi/agent/mcp.json`, where
-#    the key is read from gopass by the adapter at connect time (`!gopass show …`).
+#    it reaches Exa over the MCP server declared in `~/.pi/agent/mcp.json`, whose
+#    header interpolates `${EXA_API_KEY}` from the service environment (no `gopass`
+#    at connect time, so it works with a cold pinentry cache).
 # The key value is never written to a repository file, a comment or a log.
 paperclip_gopass_exa_key: infra/exa/api-key
 # Push credential for the agents: the service's own git config reads it from
