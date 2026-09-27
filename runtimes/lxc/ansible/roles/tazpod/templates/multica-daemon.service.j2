@@ -1,0 +1,73 @@
+[Unit]
+Description=Multica agent daemon (control-plane runtime for CT106)
+Documentation=https://github.com/multica-ai/multica/blob/main/CLI_AND_DAEMON.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User={{ multica_user }}
+Group={{ multica_user }}
+WorkingDirectory={{ multica_user_home }}
+# Non-secret daemon knobs (identity, workspaces root, concurrency, watchdogs, PATH,
+# HOME, the autoupdate/autoreload switches); see the template for why the server URL
+# and the token are not here. Rendered 0600 and owned by the service user; systemd
+# reads it as root.
+EnvironmentFile={{ multica_env_file }}
+# `multica daemon start` daemonizes by default; `--foreground` hands the process to
+# systemd, which then owns its lifetime, its restarts and its logs. The binary is
+# pinned by the layer (`multica_version`, checksum-verified) — never `multica update`,
+# which would move the running service off the commit that pins it.
+ExecStart={{ multica_cli_bin }} daemon start --foreground
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+KillSignal=SIGTERM
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=multica
+
+# Resources. The daemon itself is a supervisor (Go, heartbeat + WebSocket, modest
+# footprint); the load is in the agent CLIs it spawns as children, which the same
+# cgroup accounts for. Bounded well inside the container, which has 2 cores / 8 GiB
+# shared with the operator's interactive agents.
+MemoryHigh=1G
+MemoryMax=2G
+CPUQuota=100%
+TasksMax=512
+
+# Hardening — the same shape as paperclip.service, for the same reason: the service
+# runs as the operator user and its agents must be able to edit the repositories, so
+# the writable surface is exactly the pet volume and that user's home, and everything
+# else stays read-only (ProtectSystem=strict). ProtectHome cannot be read-only here
+# because the agent CLIs write sessions under ~/.pi and ~/.omp. NoNewPrivileges also
+# closes the sudo path from inside an agent run.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=no
+ReadWritePaths=/workspace {{ multica_user_home }}
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+# AF_NETLINK is required: Go's net package (and libuv inside the Node-based agent
+# CLIs) enumerates interfaces over a netlink socket, and without it a process dies at
+# startup with an EAFNOSUPPORT the daemon log reports as a bare network error.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+# Match the operator shell's umask so files an agent writes in a repository are not
+# unexpectedly unreadable to the rest of the tooling.
+UMask=0022
+# Deliberately NOT set: MemoryDenyWriteExecute (the agent CLIs are Node/V8 and Bun
+# binaries that JIT) and SystemCallFilter (the daemon's syscall surface is Go's, and a
+# blocked call here breaks agent runs in ways that are hard to attribute).
+
+[Install]
+WantedBy=multi-user.target
