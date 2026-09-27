@@ -14,13 +14,14 @@
 # and the handler restarts the unit. The daemon's own self-update and binary auto-reload
 # are switched off in the unit, for the systemd reason documented in `multica.env.j2`.
 #
-# The token is the only secret here, and it is *deferred*: nobody can mint a `mul_...`
-# personal access token before the control plane exists (project phase 2), so this layer
-# converges in two states. Without a token it installs and renders everything and stops
-# short of starting the unit, printing exactly where the token has to go; with a token it
-# renders the CLI's 0600 profile config and starts the daemon, which then registers one
-# runtime per detected agent CLI by itself. There is no other manual step, and no value
-# is invented: the layer reads gopass, and a missing entry is a valid, expected state.
+# The daemon token is the one secret this layer *gates* on, and it is *deferred*: nobody
+# could mint a `mul_...` personal access token before the control plane existed (project
+# phase 2), so this layer converges in two states. Without a token it installs and
+# renders everything and stops short of starting the unit, printing exactly where the
+# token has to go; with a token it renders the CLI's 0600 profile config and starts the
+# daemon, which then registers one runtime per detected agent CLI by itself. There is no
+# other manual step, and no value is invented: the layer reads gopass, and a missing
+# entry is a valid, expected state.
 #
 # Rebuild survivability: everything durable comes from gopass + Git. The repository cache
 # the daemon keeps for its task workspaces is the one piece of local state worth keeping,
@@ -196,6 +197,30 @@
          else 'NOT available — `gopass ' ~ multica_gopass_exa_key ~ '` is empty or unreadable: the agents the daemon
                spawns will run without the search tool the interactive ones have' }}
 
+- name: Read the agent provider key from gopass
+  delegate_to: localhost
+  become: false
+  ansible.builtin.command:
+    cmd: "gopass show -o {{ multica_gopass_opencode_key }}"
+  register: multica_opencode_lookup
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Agent provider key
+  ansible.builtin.set_fact:
+    multica_opencode_key: "{{ (multica_opencode_lookup.stdout | default('')) | trim }}"
+  no_log: true
+
+- name: The provider key the daemon-spawned agent CLIs authenticate with
+  ansible.builtin.debug:
+    msg: >-
+      model provider key
+      {{ 'wired into the daemon environment (opencode-go, for `pi` and `omp`)' if multica_opencode_key | length > 0
+         else 'MISSING — `gopass ' ~ multica_gopass_opencode_key ~ '` is empty or unreadable: `pi` has an empty
+               auth.json and `omp` routes to opencode-go, so every task the daemon claims will fail at the CLI handshake' }}
+
 # ─── The CLI's own credential file ─────────────────────────────────────────
 # Same directory layout the CLI itself uses (`~/.multica/config.json`, written 0600 by
 # `multica login`), which is why the file below is the right place for the token and not
@@ -287,7 +312,7 @@
     msg:
       - "multica-daemon.service is installed and NOT started: gopass has no `{{ multica_gopass_token }}`."
       - "That is the expected state until the control plane exists (project phase 2 — nothing can mint a `mul_...` token before then)."
-      - "When it does: create a personal access token in the Multica UI (Settings → tokens), then `gopass insert -m {{ multica_gopass_token }}` with the single line `mul_...`, and re-run this layer."
+      - "When it does: mint a personal access token (UI → Settings → tokens, or the headless flow the wiki page documents), then `gopass insert -m {{ multica_gopass_token }}` with the single line `mul_...`, and re-run this layer."
       - "The token is then rendered into {{ multica_cli_config_path }} (0600, owned by {{ multica_user }}) — this CLI's own credential file, the equivalent of `/etc/paperclip/paperclip.env` for Paperclip. It never enters git and never travels in argv."
       - "No further step: on start the daemon registers one runtime per detected agent CLI in every workspace the account belongs to."
   when: multica_token | length == 0

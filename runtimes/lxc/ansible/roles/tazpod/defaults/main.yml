@@ -146,12 +146,21 @@ multica_env_dir: /etc/multica
 multica_env_file: "{{ multica_env_dir }}/multica.env"
 multica_unit_path: /etc/systemd/system/multica-daemon.service
 multica_cli_config_path: "{{ multica_user_home }}/.multica/config.json"
-# The daemon token: a personal access token (`mul_...`, 90 days) created in the control
-# plane's UI. It is the only secret this layer needs, it lives in gopass, and it never
-# travels in argv — see the layer header for where it is rendered and why there.
+# The daemon token: a personal access token (`mul_...`, 90 days) minted against the
+# control plane (UI → Settings → tokens, or the headless flow in the wiki page). It is
+# the only secret this layer gates on, it lives in gopass, and it never travels in argv
+# — see the layer header for where it is rendered and why there.
 multica_gopass_token: infra/multica/daemon-token
 # Web search for the agent CLIs the daemon spawns. `omp` reads EXA_API_KEY natively and
 # the operator's shell exports the same key from this same entry (dotfiles/.bashrc);
 # a systemd unit inherits no shell environment, so without this line the daemon-spawned
 # agents would silently lose the search tool the interactive ones have.
 multica_gopass_exa_key: infra/exa/api-key
+# The model provider the daemon-spawned agent CLIs authenticate with. `pi` and `omp`
+# both route to the lab's `opencode-go` provider and read `OPENCODE_API_KEY` from the
+# environment — `pi`'s own `auth.json` is empty and `omp`'s `agent/config.yml` names
+# `opencode-go/deepseek-v4.1-flash`, so the key is not optional: without it every task
+# the daemon claims fails at the CLI handshake. Same entry the Paperclip layer exports
+# for the same two CLIs, delivered here instead of in the control plane's agent env so
+# the provider credential stays in gopass and never lands in the Multica database.
+multica_gopass_opencode_key: infra/paperclip/opencode-key
