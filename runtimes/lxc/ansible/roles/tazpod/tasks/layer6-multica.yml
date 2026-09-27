@@ -1,0 +1,362 @@
+---
+# Layer 6: Multica — the agent daemon on CT106 (project multica-agent-orchestration, T3.1/T3.2).
+#
+# Install shape: a *pinned release binary* of the `multica` CLI (Go, static — no
+# Node, no Docker, no npm) installed system-wide in /usr/local/bin, plus a hand-owned
+# `multica-daemon.service` under `Type=exec` running it as the *operator* user. That is
+# the same deliberate trade the Paperclip layer (layer5) documents: the agents this
+# daemon spawns inherit exactly the operator environment — the repositories, the git
+# identity, the SSH keys, the agent CLIs' own state — because the daemon sandboxes
+# nothing and the boundary it declares is the operating-system account.
+#
+# The layer owns the version: `multica_version` + `multica_cli_sha256` (the value the
+# release publishes in its own `checksums.txt`) are bumped together in the same commit,
+# and the handler restarts the unit. The daemon's own self-update and binary auto-reload
+# are switched off in the unit, for the systemd reason documented in `multica.env.j2`.
+#
+# The token is the only secret here, and it is *deferred*: nobody can mint a `mul_...`
+# personal access token before the control plane exists (project phase 2), so this layer
+# converges in two states. Without a token it installs and renders everything and stops
+# short of starting the unit, printing exactly where the token has to go; with a token it
+# renders the CLI's 0600 profile config and starts the daemon, which then registers one
+# runtime per detected agent CLI by itself. There is no other manual step, and no value
+# is invented: the layer reads gopass, and a missing entry is a valid, expected state.
+#
+# Rebuild survivability: everything durable comes from gopass + Git. The repository cache
+# the daemon keeps for its task workspaces is the one piece of local state worth keeping,
+# so it lives on the pet volume (`/workspace`); the profile directory itself (`~/.multica`:
+# config, daemon.log, daemon.pid) stays on the rootfs on purpose — the run record lives in
+# the control plane, not on this host.
+
+- name: Multica configuration directory
+  ansible.builtin.file:
+    path: "{{ multica_env_dir }}"
+    state: directory
+    owner: root
+    group: "{{ multica_user }}"
+    mode: "0750"
+
+# ─── CLI: pinned release binary, checksum-verified ──────────────────────────
+# The upstream install paths are Homebrew or a release tarball; this container has no
+# Homebrew, and `multica update` is deliberately not used (it would move the running
+# service off the commit that pins it). So: the release tarball, verified, installed
+# where `omp` already is.
+- name: Installed multica CLI version
+  ansible.builtin.command: "{{ multica_cli_bin }} version"
+  register: multica_installed
+  failed_when: false
+  changed_when: false
+  # read-only probe: it must also run in `--check`, or the install block below has no
+  # verdict to test
+  check_mode: false
+
+- name: Install the multica CLI at the pinned version
+  when:
+    # `get_url` downloads nothing in check mode, so the extraction below would have no
+    # source: report the pending install and skip, instead of failing the check run.
+    - not ansible_check_mode
+    - multica_installed.rc != 0 or multica_version not in (multica_installed.stdout | default(''))
+  block:
+    - name: Release tarball
+      ansible.builtin.get_url:
+        url: "{{ multica_release_base_url }}/v{{ multica_version }}/multica-cli-{{ multica_version }}-linux-amd64.tar.gz"
+        dest: "/tmp/multica-cli-{{ multica_version }}-linux-amd64.tar.gz"
+        # The published checksum, so a truncated or swapped download cannot become a
+        # service binary. Bumping `multica_version` means copying the matching line out
+        # of that release's `checksums.txt` into `multica_cli_sha256`.
+        checksum: "sha256:{{ multica_cli_sha256 }}"
+        owner: root
+        group: root
+        mode: "0644"
+      register: multica_tarball
+
+    - name: Scratch directory for the release
+      ansible.builtin.file:
+        path: "{{ multica_extract_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Extract the CLI from the tarball
+      ansible.builtin.unarchive:
+        src: "{{ multica_tarball.dest }}"
+        dest: "{{ multica_extract_dir }}"
+        remote_src: true
+        creates: "{{ multica_extract_dir }}/multica"
+
+    - name: Install the binary
+      ansible.builtin.copy:
+        src: "{{ multica_extract_dir }}/multica"
+        dest: "{{ multica_cli_bin }}"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0755"
+      notify: restart multica-daemon
+
+    - name: Scratch space is not left behind
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ multica_tarball.dest }}"
+        - "{{ multica_extract_dir }}"
+
+  rescue:
+    - name: The pinned release could not be installed
+      ansible.builtin.fail:
+        msg: >-
+          could not install multica {{ multica_version }} from
+          {{ multica_release_base_url }} — check the tag, the checksum and this
+          container's egress to GitHub Releases.
+
+- name: The CLI install is pending
+  ansible.builtin.debug:
+    msg: >-
+      check mode: {{ multica_cli_bin }} is
+      {{ multica_installed.stdout | default('not installed') | trim }}; a real run would
+      install multica {{ multica_version }} from {{ multica_release_base_url }}.
+  when:
+    - ansible_check_mode
+    - multica_installed.rc != 0 or multica_version not in (multica_installed.stdout | default(''))
+
+# ─── State on the pet volume ────────────────────────────────────────────────
+- name: Multica state directory on the pet volume
+  ansible.builtin.file:
+    path: "{{ multica_workspaces_root | dirname }}"
+    state: directory
+    owner: "{{ multica_user }}"
+    group: "{{ multica_user }}"
+    mode: "0700"
+
+- name: Workspace root for the agent runs (per-task directory + shared repo cache)
+  ansible.builtin.file:
+    path: "{{ multica_workspaces_root }}"
+    state: directory
+    owner: "{{ multica_user }}"
+    group: "{{ multica_user }}"
+    mode: "0700"
+
+# ─── Secrets: read here, never passed on a command line ─────────────────────
+# `check_mode: false` keeps these read-only lookups running during `--check` (the same
+# reason the Paperclip layer sets it): without it the templates below can only render
+# with empty values and report a change on every check run — a false drift signal.
+- name: Read the Multica daemon token from gopass
+  delegate_to: localhost
+  become: false
+  ansible.builtin.command:
+    cmd: "gopass show -o {{ multica_gopass_token }}"
+  register: multica_token_lookup
+  changed_when: false
+  # A missing entry is expected until the control plane exists; `failed_when: false`
+  # makes that a state of the layer rather than an error.
+  failed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Token availability
+  ansible.builtin.set_fact:
+    multica_token: "{{ (multica_token_lookup.stdout | default('')) | trim }}"
+  no_log: true
+
+- name: The stored value is a Multica personal access token
+  ansible.builtin.assert:
+    that:
+      - multica_token is match('^mul_[0-9a-f]+$')
+    fail_msg: >-
+      gopass `{{ multica_gopass_token }}` does not hold a personal access token: expected
+      a single line `mul_...` (store it with `gopass insert -m`, so no newline is carried
+      in).
+    success_msg: "token present"
+  when: multica_token | length > 0
+  no_log: true
+
+- name: Read the Exa API key from gopass
+  delegate_to: localhost
+  become: false
+  ansible.builtin.command:
+    cmd: "gopass show -o {{ multica_gopass_exa_key }}"
+  register: multica_exa_lookup
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Exa API key
+  ansible.builtin.set_fact:
+    multica_exa_key: "{{ (multica_exa_lookup.stdout | default('')) | trim }}"
+  no_log: true
+
+- name: Exa web search for the spawned agents
+  ansible.builtin.debug:
+    msg: >-
+      Exa web search
+      {{ 'wired into the daemon environment' if multica_exa_key | length > 0
+         else 'NOT available — `gopass ' ~ multica_gopass_exa_key ~ '` is empty or unreadable: the agents the daemon
+               spawns will run without the search tool the interactive ones have' }}
+
+# ─── The CLI's own credential file ─────────────────────────────────────────
+# Same directory layout the CLI itself uses (`~/.multica/config.json`, written 0600 by
+# `multica login`), which is why the file below is the right place for the token and not
+# a unit environment variable: `resolveAuth` reads the daemon's credential *only* from
+# the profile config (`MULTICA_TOKEN` is the per-task token the daemon injects into an
+# agent, never its own).
+- name: Multica CLI profile directory
+  ansible.builtin.file:
+    path: "{{ multica_cli_config_path | dirname }}"
+    state: directory
+    owner: "{{ multica_user }}"
+    group: "{{ multica_user }}"
+    mode: "0755"
+
+- name: Multica CLI profile config (server and app URL, daemon token) — 0600
+  ansible.builtin.copy:
+    content: "{{ multica_cli_config | to_nice_json }}\n"
+    dest: "{{ multica_cli_config_path }}"
+    owner: "{{ multica_user }}"
+    group: "{{ multica_user }}"
+    mode: "0600"
+  vars:
+    # The three keys `multica login --token` would have written. Rendered instead of
+    # obtained by running `login`, because provisioned state must not depend on a
+    # reachable server: the layer converges with or without the control plane, and a
+    # rebuilt container comes back authenticated from gopass alone.
+    multica_cli_config:
+      server_url: "{{ multica_server_url }}"
+      app_url: "{{ multica_app_url }}"
+      token: "{{ multica_token }}"
+  when: multica_token | length > 0
+  no_log: true
+  notify: restart multica-daemon
+
+# ─── Unit ───────────────────────────────────────────────────────────────────
+- name: Environment file (readable only by the service user; systemd reads it as root)
+  ansible.builtin.template:
+    src: multica.env.j2
+    dest: "{{ multica_env_file }}"
+    owner: "{{ multica_user }}"
+    group: "{{ multica_user }}"
+    mode: "0600"
+  notify: restart multica-daemon
+  no_log: true
+
+- name: systemd unit
+  ansible.builtin.template:
+    src: multica-daemon.service.j2
+    dest: "{{ multica_unit_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart multica-daemon
+
+- name: Unit syntax
+  ansible.builtin.command: systemd-analyze verify {{ multica_unit_path }}
+  register: multica_unit_verify
+  changed_when: false
+  failed_when: false
+  # In `--check` the template above wrote nothing, so there is no file to hand to the
+  # parser; the real run owns this gate.
+  when: not ansible_check_mode
+
+- name: The unit is accepted by systemd's own parser
+  ansible.builtin.assert:
+    that:
+      - multica_unit_verify.rc == 0
+    fail_msg: >-
+      systemd-analyze verify rejected multica-daemon.service:
+      {{ multica_unit_verify.stderr | default(multica_unit_verify.stdout | default('')) | trim }}
+    success_msg: "multica-daemon.service verified"
+  when: not ansible_check_mode
+
+- name: Enable and start the Multica daemon
+  ansible.builtin.systemd_service:
+    name: "{{ multica_unit_path | basename }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  when:
+    - multica_token | length > 0
+    # A check run writes no unit file, and systemd fails on a name it does not know:
+    # on a host the layer has never touched, `--check` would abort here for a reason
+    # that is an artifact of the preview, not a property of the layer.
+    - not ansible_check_mode
+
+- name: The daemon is provisioned but cannot start yet — no control-plane token
+  ansible.builtin.debug:
+    msg:
+      - "multica-daemon.service is installed and NOT started: gopass has no `{{ multica_gopass_token }}`."
+      - "That is the expected state until the control plane exists (project phase 2 — nothing can mint a `mul_...` token before then)."
+      - "When it does: create a personal access token in the Multica UI (Settings → tokens), then `gopass insert -m {{ multica_gopass_token }}` with the single line `mul_...`, and re-run this layer."
+      - "The token is then rendered into {{ multica_cli_config_path }} (0600, owned by {{ multica_user }}) — this CLI's own credential file, the equivalent of `/etc/paperclip/paperclip.env` for Paperclip. It never enters git and never travels in argv."
+      - "No further step: on start the daemon registers one runtime per detected agent CLI in every workspace the account belongs to."
+  when: multica_token | length == 0
+
+# ─── Gates that hold before the control plane exists ────────────────────────
+# What can be proven locally is proven locally: the binary runs in the environment the
+# unit gives it, and the daemon will find at least one agent CLI to register. The rest
+# (runtime appears in the server, a task runs end to end) is T3.3 and needs the plane.
+- name: The daemon binary runs with the unit's environment
+  become_user: "{{ multica_user }}"
+  ansible.builtin.command: "{{ multica_cli_bin }} version"
+  environment:
+    HOME: "{{ multica_user_home }}"
+    PATH: "{{ multica_path }}"
+  register: multica_cli_version
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: The installed CLI is the pinned version
+  ansible.builtin.assert:
+    that:
+      - "('multica ' ~ multica_version) in (multica_cli_version.stdout | default(''))"
+    fail_msg: >-
+      {{ multica_cli_bin }} under the unit's environment reports
+      {{ multica_cli_version.stdout | default('nothing') }}
+      (rc {{ multica_cli_version.rc | default('unknown') }}), expected
+      multica {{ multica_version }}.
+    success_msg: "multica {{ multica_version }} runs under the unit's environment"
+  when: not ansible_check_mode
+
+- name: Agent CLIs on the daemon's PATH (what it will register as runtimes)
+  become_user: "{{ multica_user }}"
+  ansible.builtin.shell:
+    cmd: |
+      set -u
+      export PATH={{ multica_path }}
+      for b in pi omp opencode; do
+        if path=$(command -v "$b") && version=$("$b" --version 2>/dev/null | head -n1); then
+          echo "ok:$b:$path:$version"
+        else
+          echo "missing:$b"
+        fi
+      done
+    executable: /bin/bash
+  register: multica_agent_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: At least one supported agent CLI is installed for the service user
+  ansible.builtin.assert:
+    that:
+      - "'ok:' in multica_agent_probe.stdout"
+    fail_msg: >-
+      none of `pi`, `omp`, `opencode` is executable as {{ multica_user }} on
+      {{ multica_path }}: the daemon would start and register no runtime at all.
+    success_msg: "at least one agent CLI is executable — see the detection list below"
+
+- name: Agent CLI detection
+  ansible.builtin.debug:
+    msg: "{{ multica_agent_probe.stdout_lines }}"
+
+- name: Multica daemon provisioned
+  ansible.builtin.debug:
+    msg: >-
+      multica {{ multica_version }} at {{ multica_cli_bin }}; multica-daemon.service
+      {{ 'enabled and running' if (multica_token | length > 0 and not ansible_check_mode)
+         else ('would be started (check mode)' if multica_token | length > 0
+               else 'installed, not started (no control-plane token)') }};
+      workspaces under {{ multica_workspaces_root }}; check with
+      `systemctl status multica-daemon` and, as {{ multica_user }}, `multica daemon status`.

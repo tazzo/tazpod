@@ -89,3 +89,69 @@ pi_version: "0.86.1"
 # switch, so the first-run onboarding is bounded by this timeout (seconds); the
 # systemd unit owns the server lifetime afterwards.
 paperclip_onboard_timeout: 240
+
+# ─── Multica (project multica-agent-orchestration, phase 3: the daemon) ─────
+# The daemon is the *runtime* of the control plane: it discovers the agent CLIs
+# installed for this user, registers them as runtimes and executes the tasks the
+# control plane hands it. It is a plain user process — the upstream guide says
+# explicitly "not inside Docker" — it needs no root and it sandboxes nothing: the
+# boundary is the operating-system account, which is why it runs as `tazpod`, the
+# same deliberate trade the Paperclip layer documents (the agents it spawns inherit
+# exactly the operator environment).
+#
+# Install shape: a *pinned release binary* from the upstream GitHub release, installed
+# system-wide in /usr/local/bin (like `omp` in layer4) and verified against the sha256
+# the same release publishes in `checksums.txt`. The layer owns the update — bump
+# `multica_version` + `multica_cli_sha256` together, re-run, and the handler restarts
+# the unit — while the daemon's own update/reload pollers are switched off in the unit
+# (see `multica.env.j2`: under systemd a self-spawned successor outlives the unit).
+multica_version: "0.5.3"
+multica_cli_sha256: "4ed222cc829d89ac318a3707df34f6754b08df02357939036d0a5bab5e494d92"
+multica_release_base_url: "https://github.com/multica-ai/multica/releases/download"
+multica_cli_bin: /usr/local/bin/multica
+# Scratch space for the release tarball and its single-member extraction (the tarball
+# also carries LICENSE/NOTICE/README, which must not land in /usr/local/bin).
+multica_extract_dir: "/tmp/multica-cli-{{ multica_version }}"
+multica_user: tazpod
+multica_user_home: "/home/{{ multica_user }}"
+# The PATH the daemon discovers the agent CLIs on. `omp` is a native binary in
+# /usr/local/bin; `pi` and `opencode` are npm installs under ~/.local/bin whose
+# shebang is `#!/usr/bin/env node`, so node must be on this PATH as well — which is
+# how this container already exposes it (/usr/local/bin/node, symlinked to nvm by
+# tazpod-deploy, with /usr/bin/node from layer5 as the other candidate).
+multica_path: "/home/{{ multica_user }}/.local/bin:/usr/local/bin:/usr/bin:/bin"
+# Labels for the server's Runtimes view; the daemon id stays the hostname.
+multica_device_name: tazpod-proxmox
+multica_runtime_name: "CT106 (TazPod)"
+# The control plane (this project's phase 2, Kubernetes) exposes only the *frontend*,
+# on a LAN address: the Next.js app proxies /v1, /api, /auth, /uploads and /ws to the
+# backend at runtime, so one same-origin URL serves both the REST API and the
+# WebSocket the daemon holds open. No port 80/443 on that VIP is free (occupied by the
+# lab's other surfaces) and no `*.tazlab.net` name is involved: those resolve from the
+# public DNS wildcard and are forbidden for this app.
+multica_server_url: "http://192.168.1.240:3000"
+multica_app_url: "{{ multica_server_url }}"
+# Dedicated workspace root, on the pet volume: the daemon must never be handed the
+# operator's checkouts (it creates one isolated directory per task and keeps a shared
+# bare-clone cache under `.repos/`, which is expensive to re-clone after a rebuild).
+multica_workspaces_root: /workspace/.multica/workspaces
+# The container is 2 cores / 8 GiB shared with the operator's interactive agents, so the
+# upstream default of 20 concurrent runs is not a resource plan; the watchdogs are
+# declared explicitly rather than left to the built-in defaults.
+multica_max_concurrent_tasks: 4
+multica_poll_interval: 30s
+multica_heartbeat_interval: 15s
+multica_agent_idle_watchdog: 2h
+multica_env_dir: /etc/multica
+multica_env_file: "{{ multica_env_dir }}/multica.env"
+multica_unit_path: /etc/systemd/system/multica-daemon.service
+multica_cli_config_path: "{{ multica_user_home }}/.multica/config.json"
+# The daemon token: a personal access token (`mul_...`, 90 days) created in the control
+# plane's UI. It is the only secret this layer needs, it lives in gopass, and it never
+# travels in argv — see the layer header for where it is rendered and why there.
+multica_gopass_token: infra/multica/daemon-token
+# Web search for the agent CLIs the daemon spawns. `omp` reads EXA_API_KEY natively and
+# the operator's shell exports the same key from this same entry (dotfiles/.bashrc);
+# a systemd unit inherits no shell environment, so without this line the daemon-spawned
+# agents would silently lose the search tool the interactive ones have.
+multica_gopass_exa_key: infra/exa/api-key

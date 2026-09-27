@@ -5,6 +5,26 @@
     state: restarted
     daemon_reload: yes
 
+# The Multica daemon follows the binary the layer pins: a version bump, a new profile
+# config or an environment change is applied by restarting the unit, because the unit's
+# own auto-reload is off (see `multica.env.j2`).
+#
+# Gated on the same condition as the unit's `Enable and start` task, for the same
+# reason: a handler is a lifecycle statement too, and `state: restarted` starts a
+# service that is not running. Without the token the layer deliberately leaves the
+# daemon down (it would only exit with "not authenticated" and restart-loop), so a
+# binary that arrived before the control plane must not be enough to start it.
+- name: restart multica-daemon
+  systemd:
+    name: "{{ multica_unit_path | basename }}"
+    state: restarted
+    daemon_reload: yes
+  when:
+    - multica_token | default('') | length > 0
+    # A check run writes nothing, so on a host the layer has never touched there is no
+    # unit for systemd to restart and `restarted` fails on the unknown name.
+    - not ansible_check_mode
+
 - name: restart sshd
   systemd:
     name: ssh
