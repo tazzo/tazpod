@@ -1,0 +1,22 @@
+# Git configuration inherited by every agent run the Multica daemon spawns on this host.
+#
+# Why it lives here and not in ~/.gitconfig: git reads `$XDG_CONFIG_HOME/git/config`
+# (default `~/.config/git/config`) **in addition to** `~/.gitconfig`, and it is picked up
+# with no environment variable at all. The daemon runs as this same user and passes HOME
+# through to the agent CLIs, so a key set here reaches every agent — and a key the
+# operator's own `~/.gitconfig` also sets stays theirs (the closer file wins), which is why
+# the commit identity is deliberately absent below.
+#
+# What this buys: the Release agent pushes through the pipeline with the credential helper
+# reading gopass, exactly as the Paperclip service does (see `paperclip.gitconfig.j2`), so
+# the token never appears in a command line, in `ps`, in shell history, in a repository URL
+# or in a comment. Without it an agent's only options are an inline helper with the token in
+# argv or embedding it in the remote URL — both worse.
+#
+# Scoped to github.com on purpose: this is the credential for the lab's forge, not a global
+# rewrite of how git authenticates everywhere. The assistant is a shell fragment run by git
+# itself; `gopass show -o` prints the entry with no trailing newline.
+[credential "https://github.com"]
+	helper = "!f() { echo username=x-access-token; echo password=$(gopass show -o {{ multica_gopass_github_token }}); }; f"
+[push]
+	autoSetupRemote = true

@@ -1,0 +1,198 @@
+---
+# Layer 7: the agent team — the roster, reconciled onto the Multica control plane.
+#
+# Layers 0-6 provision the *host*: the shell, the CLIs, the daemon. This layer provisions
+# the *team that runs on it* — the shared skills and the agents — and it does so from Git,
+# because the control plane's database is the one place in this lab where a hand-made object
+# can exist without a commit behind it. Ten agents created in a dashboard are ten objects
+# that a rebuild restores only if the backup was good and the timing was lucky; ten agents
+# declared in `configs/multica-team/roster.yml` come back from the repository.
+#
+# Shape: one markdown file per agent (its `instructions`, the durable behaviour contract the
+# daemon ships to the provider), one per skill, and a roster that ties them to a workspace
+# and a runtime. `scripts/multica-team-apply.py` compares the roster against the live control
+# plane and writes only what drifted — that comparison, not a cache or a marker file, is what
+# makes the second run `changed=0`.
+#
+# Two things this layer deliberately does NOT do:
+#   * it never deletes an agent or a skill. Removal is an operator decision on an issue, not
+#     a side effect of editing a YAML file.
+#   * it never touches secrets. `custom_env` and `mcp_config` are outside the roster's remit;
+#     the only credential involved is the forge token, and it is read by git from gopass at
+#     push time (see `multica.gitconfig.j2`) rather than rendered anywhere.
+#
+# Run conditions, both inherited from layer 6:
+#   * the tasks run **as the operator user** (`become: false`), the one whose `~/.multica`
+#     profile and gopass store hold the credential the `multica` CLI authenticates with.
+#     Root has neither, so a play that runs this layer privileged must skip it.
+#   * the control plane must be reachable and the daemon token valid; without them the layer
+#     fails loudly instead of converging to a half-built team, because unlike layer 6 there is
+#     no meaningful "token not yet minted" state to wait in — if the API answers, the team is
+#     meant to be there.
+#
+# Rebuild survivability: the roster is in Git, the workspace is named by slug and the runtime
+# by name (no id is stored anywhere), and the reconciler re-resolves both on every run — so a
+# rebuilt control plane, a new workspace or a re-registered runtime all converge without an
+# edit here.
+
+- name: The reconciler's Python runtime
+  ansible.builtin.command:
+    cmd: python3 -c "import yaml, json, subprocess"
+  register: multica_team_python
+  changed_when: false
+  failed_when: false
+  become: false
+  check_mode: false
+
+- name: The reconciler has what it needs
+  ansible.builtin.assert:
+    that:
+      - multica_team_python.rc == 0
+    fail_msg: >-
+      `python3 -c "import yaml, json, subprocess"` failed as the operator user
+      ({{ multica_team_python.stderr | default('') | trim }}). The roster reconciler is a
+      Python script because deciding idempotence by comparing live state needs a JSON
+      differ, not three `command` tasks guessing. Install python3 + python3-yaml for the
+      user that runs this layer.
+    success_msg: "python3 with yaml is available"
+
+- name: The reconciler is in the checkout
+  ansible.builtin.stat:
+    path: "{{ multica_team_script }}"
+  register: multica_team_script_stat
+  become: false
+  check_mode: false
+
+- name: The reconciler was found
+  ansible.builtin.assert:
+    that:
+      - multica_team_script_stat.stat.exists
+    fail_msg: >-
+      {{ multica_team_script }} is missing. This layer applies the team from the tazpod
+      checkout, so the playbook must run from the repository
+      ({{ multica_team_checkout_hint }}).
+    success_msg: "reconciler present"
+
+# ─── The team roster ────────────────────────────────────────────────────────
+# Staged rather than read in place: the control plane is a *remote* surface, and the layer
+# should behave the same whether the playbook runs on this host or against it.
+- name: Team roster staging directory
+  ansible.builtin.file:
+    path: "{{ multica_team_staging_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Stage the roster and its content
+  ansible.builtin.copy:
+    src: "{{ multica_team_config_dir }}/"
+    dest: "{{ multica_team_staging_dir }}/"
+    owner: root
+    group: root
+    mode: "0644"
+    directory_mode: "0755"
+
+- name: The staged roster (check mode reads this instead of writing it)
+  ansible.builtin.stat:
+    path: "{{ multica_team_staging_dir }}/roster.yml"
+  register: multica_team_staged
+  check_mode: false
+
+# `check_mode: false` on purpose: the *task* always runs, and it is the `--dry-run` flag that
+# makes it read-only. Ansible skips `command`/`script` in check mode by default, which would
+# leave `--check` unable to answer the only question worth asking here — how far the control
+# plane has drifted from Git.
+- name: Reconcile the agent team on the control plane
+  ansible.builtin.script:
+    cmd: >-
+      {{ multica_team_script }} --roster {{ multica_team_staging_dir }}/roster.yml
+      {{ '--dry-run' if ansible_check_mode else '' }}
+  register: multica_team_apply
+  become: false
+  check_mode: false
+  changed_when: (multica_team_apply.stdout | from_json).changed
+  failed_when: >-
+    multica_team_apply.rc != 0
+    or ((multica_team_apply.stdout | from_json).errors | length) > 0
+  when: not ansible_check_mode or multica_team_staged.stat.exists
+  environment:
+    # The CLI resolves its profile from HOME and the workspace from this variable; the
+    # reconciler sets the latter itself once it has resolved the slug, from the roster.
+    HOME: "{{ multica_user_home }}"
+
+- name: The reconciliation could not run in check mode
+  ansible.builtin.debug:
+    msg: >-
+      check mode: the roster has not been staged on this host yet, so there is nothing to
+      compare against. A real run would stage {{ multica_team_staging_dir }} and then
+      reconcile the team.
+  when:
+    - ansible_check_mode
+    - not multica_team_staged.stat.exists
+
+- name: What the reconciliation found
+  ansible.builtin.debug:
+    msg: >-
+      {{ 'check mode: ' if ansible_check_mode else '' }}
+      {{ (multica_team_apply.stdout | from_json).actions
+         if (multica_team_apply.stdout | default('') | length) > 0
+         else ['roster already converged — nothing to change'] }}
+  when: multica_team_apply is defined and multica_team_apply.stdout | default('') | length > 0
+
+# ─── The release lane's credential ──────────────────────────────────────────
+# The one thing the Release agent needs from the host that is not the daemon: a way to push
+# to the lab's forge without a token on a command line. Read `multica.gitconfig.j2` for why
+# it lives in the XDG path and why the commit identity is not set here.
+- name: Git configuration directory for the agent runs
+  ansible.builtin.file:
+    path: "{{ multica_team_gitconfig_path | dirname }}"
+    state: directory
+    owner: "{{ multica_user }}"
+    group: "{{ multica_user }}"
+    mode: "0755"
+
+- name: Git configuration the agent runs inherit (forge credential via gopass)
+  ansible.builtin.template:
+    src: multica.gitconfig.j2
+    dest: "{{ multica_team_gitconfig_path }}"
+    owner: "{{ multica_user }}"
+    group: "{{ multica_user }}"
+    mode: "0644"
+  # The rendered file names the gopass entry, never its value, so the diff is safe to show.
+
+- name: The rendered git configuration
+  ansible.builtin.stat:
+    path: "{{ multica_team_gitconfig_path }}"
+  register: multica_team_gitconfig_stat
+  check_mode: false
+  become: false
+
+- name: The credential helper resolves to the operator's forge entry
+  ansible.builtin.command:
+    cmd: git config --file {{ multica_team_gitconfig_path }} --get credential.https://github.com.helper
+  register: multica_team_gitcred
+  changed_when: false
+  become: false
+  check_mode: false
+  when: multica_team_gitconfig_stat.stat.exists
+
+- name: The release lane has a credential path
+  ansible.builtin.assert:
+    that:
+      - multica_team_gitcred.rc == 0
+      - multica_gopass_github_token in multica_team_gitcred.stdout
+    fail_msg: >-
+      the git configuration at {{ multica_team_gitconfig_path }} does not carry the
+      credential helper for https://github.com — the Release agent would have no way to
+      push except by putting a token in a command line, which the lab forbids.
+    success_msg: "forge credential helper in place (entry: {{ multica_gopass_github_token }})"
+  when: multica_team_gitconfig_stat.stat.exists
+
+- name: What the release credential would look like
+  ansible.builtin.debug:
+    msg: >-
+      check mode: {{ multica_team_gitconfig_path }} is not on this host yet. A real run
+      would render it with the credential helper reading gopass `{{ multica_gopass_github_token }}`
+      — the entry's name, never its value.
+  when: not multica_team_gitconfig_stat.stat.exists

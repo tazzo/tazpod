@@ -1,0 +1,132 @@
+---
+# Declarative roster of the TazLab agent team on the Multica control plane.
+#
+# This file is the SOURCE OF TRUTH for the team. The control plane is a consequence of
+# it: `layer7-multica-team` renders this roster through `scripts/multica-team-apply.py`,
+# which creates, updates and binds whatever drifted. A change to the team — a new agent,
+# a new skill, a reworded instruction, a different concurrency — is a commit here and a
+# layer run, exactly like every other part of the lab.
+#
+# What this buys: after a rebuild the team comes back from Git alone. The control plane's
+# database is restored from backup, but an agent created by hand in the dashboard exists
+# only there; an agent declared here exists in the repository, in review, with a reason.
+#
+# What it deliberately does NOT do:
+#   * it never deletes. An agent or a skill that disappears from this file is left in the
+#     control plane untouched (that is a decision for the operator, made on purpose, and
+#     not a side effect of a typo).
+#   * it holds no id. The workspace is named by slug and the runtime by name; both are
+#     resolved at run time, so a rebuilt control plane does not invalidate the roster.
+#   * it holds no secret. Agent `custom_env` and MCP credentials are not managed here.
+#
+# Per-agent fields, and why each one is what it is:
+#   permission: workspace  -> permission_mode `public_to` with a workspace invocation
+#                             target: any member may route work to the agent, which is
+#                             what makes the delegation protocol work at all.
+#   max_concurrent_tasks: 1 -> one run per agent. The whole protocol is written around a
+#                             single-concurrency worker: a handoff is a wakeup, not a
+#                             call, and a second run must never race the first.
+#   model: ""               -> the runtime's own default (opencode-go/deepseek-v4.1-flash
+#                             on the `omp` runtime). Pinning a model here would make the
+#                             roster depend on what the provider serves that week.
+
+workspace: tazlab
+runtime: "Oh-My-Pi (tazpod-proxmox)"
+
+# ─── Skills ─────────────────────────────────────────────────────────────────
+# A workspace skill is content plus supporting files, bound to agents. The two below are
+# the shared layer of the team: the map and the road. Both are mounted on every agent,
+# because both are true for every agent.
+skills:
+  - name: lab-team
+    description: >-
+      Roster of the TazLab agent team and the delegation protocol between agents. Read it
+      before opening work to another agent.
+    content: skills/lab-team.md
+
+  - name: lab-orchestration
+    description: >-
+      The orchestration protocol: stages and wakeups, the human approval gate, the handoff
+      contract, failure handling and the release lane. Read it before moving work.
+    content: skills/lab-orchestration.md
+
+# ─── Agents ─────────────────────────────────────────────────────────────────
+# Defaults apply to every agent below; a per-agent key overrides them.
+defaults:
+  permission: workspace
+  max_concurrent_tasks: 1
+  model: ""
+
+agents:
+  - name: Ambrogio (CEO)
+    description: >-
+      Chief agent and single point of contact for the operator: turns goals into scoped
+      work, opens issues to the specialist who owns the domain, follows the outcome and
+      reports back.
+    instructions: agents/ambrogio.md
+
+  - name: Blog
+    description: >-
+      Editorial agent for blog.tazlab.net: writes TazLab articles in /workspace/blog-src
+      following the blog skill, proposes one title then waits for operator approval;
+      never publishes.
+    instructions: agents/blog.md
+
+  - name: Cluster
+    description: >-
+      Owns the Kubernetes/Talos clusters, their add-ons and the Proxmox/LXC guests behind
+      them: Git-first changes, read-only diagnosis, verified against the live cluster.
+    instructions: agents/cluster.md
+
+  - name: TazPod
+    description: >-
+      Owns the TazPod CLI environment and its provisioning layers under /workspace/tazpod:
+      declarative layer changes, gopass-backed secrets, no secrets in Git.
+    instructions: agents/tazpod.md
+
+  - name: Wiki
+    description: >-
+      Owns wiki.tazlab.net: durable homelab documentation, kept aligned with the live
+      system and organised by the wiki skill's four-level model.
+    instructions: agents/wiki.md
+
+  - name: Security
+    description: >-
+      Audits secrets handling, identities, permissions and exposure across the lab;
+      evidence-backed findings with severity, read-only by default.
+    instructions: agents/security.md
+
+  - name: Design
+    description: >-
+      Owns the research and design phase (CRISP) before a build: options, trade-offs,
+      structure and a validation plan. Writes no implementation code.
+    instructions: agents/design.md
+
+  - name: Memory
+    description: >-
+      Owns the lab's long-lived memory: the /workspace/SKILLS/memory baseline and the
+      Mnemosyne semantic layer, written from verified evidence and never duplicated across
+      layers.
+    instructions: agents/memory.md
+
+  - name: Diagrams
+    description: >-
+      Owns the lab's architecture diagrams as diagrams-as-code, kept in Git with their
+      build and verified by rendering.
+    instructions: agents/diagrams.md
+
+  - name: Teaching
+    description: >-
+      Owns teaching.tazlab.net: the exercise/problem generators, their verification
+      (SymPy), the rendering and PDF export, and the GitOps lane that deploys the pod.
+    instructions: agents/teaching.md
+
+  # The release lane's agent. It exists so that the agent that produced a change is never
+  # the only agent that ships it: it owns the outward-facing last mile (push, merge, image,
+  # deploy) and the gate in front of it, and nothing else. See `lab-orchestration` §6.
+  - name: Release
+    description: >-
+      The lab's outward-facing last mile: pushes, merges, watches the image pipeline and
+      the Flux image automation, and verifies the change on the live surface. Holds the
+      operator approval gate; decides nothing about whether a change should ship.
+    instructions: agents/release.md

@@ -174,3 +174,25 @@ multica_gopass_exa_key: infra/exa/api-key
 # for the same two CLIs, delivered here instead of in the control plane's agent env so
 # the provider credential stays in gopass and never lands in the Multica database.
 multica_gopass_opencode_key: infra/paperclip/opencode-key
+
+# ─── Multica agent team (layer7-multica-team) ───────────────────────────────
+# The team — the shared skills and the agents — is declared in Git next to the layer that
+# applies it, and reconciled onto the control plane by a script rather than by a sequence of
+# `command` tasks: deciding idempotence there means *comparing* the roster against live
+# state field by field, which is a differ's job, not a template's. The roster itself
+# (`configs/multica-team/roster.yml`) is the source of truth and carries its own rationale.
+multica_team_config_dir: "{{ role_path }}/../../../configs/multica-team"
+multica_team_script: "{{ role_path }}/../../../scripts/multica-team-apply.py"
+# Named in the failure message when the script is missing, so the operator is told which
+# checkout the layer expects rather than just that a path was empty.
+multica_team_checkout_hint: "runtimes/lxc of the tazpod repository"
+# Staged under /etc/multica beside the daemon environment file: it is the layer's declared
+# input, and it doubles as the record of the last roster that was applied to this host.
+multica_team_staging_dir: "{{ multica_env_dir }}/team"
+# `git` reads this path in addition to ~/.gitconfig, with no environment variable, and the
+# daemon passes HOME through to every agent it spawns — which is what gives the Release
+# agent a forge credential without a token on a command line. See `multica.gitconfig.j2`.
+multica_team_gitconfig_path: "{{ multica_user_home }}/.config/git/config"
+# The forge token the rendered credential helper reads at push time. It is never rendered
+# into any file: only the path appears in `multica.gitconfig.j2`.
+multica_gopass_github_token: cluster/github/token
