@@ -147,9 +147,19 @@ multica_env_file: "{{ multica_env_dir }}/multica.env"
 multica_unit_path: /etc/systemd/system/multica-daemon.service
 multica_cli_config_path: "{{ multica_user_home }}/.multica/config.json"
 # The daemon token: a personal access token (`mul_...`, 90 days) minted against the
-# control plane (UI → Settings → tokens, or the headless flow in the wiki page). It is
-# the only secret this layer gates on, it lives in gopass, and it never travels in argv
-# — see the layer header for where it is rendered and why there.
+# control plane (UI → Settings → tokens, or the headless flow in the wiki page) **for the
+# operator account**, `roberto.tazzoli@gmail.com` — not for a lab/service account. The
+# daemon registers its runtimes under the token's user, and that user owns everything
+# registered through this machine: the runtime rows, every agent bound to them, and the
+# runtime's MCP inventory, which only the owner (or a runtime flipped to `public`) may
+# read (`server/internal/handler/runtime.go`, `canUseRuntimeForAgent`). Minted for a lab
+# account instead, the operator sees an empty default tab on the Agents page and a
+# permission refusal in an agent's MCP section, with nothing on the host actually broken.
+# The token is the only secret this layer gates on, it lives in gopass, and it never
+# travels in argv — see the layer header for where it is rendered and why there. The
+# daemon keeps it alive itself (`POST /api/tokens/current/renew`, ~3-day cadence against a
+# server-side 7-day threshold, extending `expires_at` in place), so the gopass entry is
+# written once and not rotated while the daemon runs.
 multica_gopass_token: infra/multica/daemon-token
 # Web search for the agent CLIs the daemon spawns. `omp` reads EXA_API_KEY natively and
 # the operator's shell exports the same key from this same entry (dotfiles/.bashrc);
