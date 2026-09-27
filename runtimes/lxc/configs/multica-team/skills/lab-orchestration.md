@@ -185,6 +185,11 @@ Hence the two rules:
    be woken by the answer. Moving it to `done` or `cancelled` disables every wakeup on it
    and the answer arrives with nobody listening. "Done is not an intermediate step toward
    Closed", and it is not a parking spot either.
+   **The failure mode is real and it is the agent's own last command.** A run that arms its
+   gate and then closes with the habitual `multica issue status <id> done --no-start` has
+   disarmed the gate it just built, in the same run, silently — the issue looks complete and
+   the operator's approval is delivered to nobody. A gate run's last command is `in_review`;
+   `done` belongs to a release that has been executed and verified live.
 2. **The gate is only real if the instruction is explicit.** The agent that reaches the
    gate writes, on the issue: the exact action it will take, the command, the expected
    effect, the rollback, and the sentence *"I will not run this until the operator

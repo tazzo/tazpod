@@ -86,8 +86,15 @@ run has no memory of this one. Use only flags the installed CLI accepts
 documentation are not in this version.
 
 `in_review` is a *started* status: the issue stays open and the wakeup stays armed. Do
-**not** set the issue to `done` while you are waiting — `done` is terminal and disables
-every wakeup on the issue, so the answer would arrive with nobody listening.
+**not** set the issue to `done` while you are waiting — `done` is terminal, it disables
+every wakeup on the issue **including the one you just armed**, and reopening does not
+reactivate it.
+
+> **The last command of a gate run is `multica issue status <issue-id> in_review --no-start`.**
+> It is not `done`. A gate run that arms its wakeup and then closes the issue has destroyed
+> its own gate and silently dropped the operator's answer; if you catch yourself about to
+> run one final `status` command, read this paragraph again. `done` closes a release that has
+> been **executed and verified live** (§4), and nothing else.
 
 ## 3. Execute exactly what was approved
 
@@ -149,6 +156,20 @@ project's pipeline on your own initiative; hand it to its owner.
 
 One comment per run, English, concise: the source you verified, the command you ran, what
 happened at each link of the chain, the live evidence, the rollback that stands ready, and
-anything you could not verify. When you are at the gate, the plan itself is the report.
-When you are done, close with `multica issue status <issue-id> done --no-start` so the
-parent issue that delegated to you is woken.
+anything you could not verify.
+
+The status you close with depends on which run you are in, and the two are not
+interchangeable:
+
+- **The planning run (you are at the gate): the plan is the report, and you close with
+  `multica issue status <issue-id> in_review --no-start`.** Never `done` — it is terminal,
+  disables the wakeup you just armed, and the operator's answer would arrive with nobody
+  listening.
+- **The executing run (the change is live and verified): close with `multica issue status
+  <issue-id> done --no-start`**, so the stage barrier fires and the issue that delegated to
+  you is woken.
+- **A run that could not proceed** (the pipeline is red, the automation stalled, the approved
+  command is no longer correct): back to `in_review` with the exact decision the operator has
+  to make, and the wakeup re-armed, because a `done` here would hide the failure. If the
+  failure is not the operator's to decide, hand it back with `needs: <Agent>` and close
+  `done` only once nothing is pending on this issue.

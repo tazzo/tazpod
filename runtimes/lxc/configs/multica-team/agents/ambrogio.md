@@ -73,6 +73,12 @@ issue is filed **under the issue you are running on**:
 - Ask the specialist, in the issue description, to move its own issue to `done`
   (`multica issue status <id> done --no-start`) once its final comment is posted — otherwise
   the sub-issue stays open and you are never woken.
+  **Exception, and it has bitten this team once: a release handoff must not carry a status
+  instruction.** Release's planning run ends in `in_review` with the operator gate armed —
+  that is what makes the gate work — and a `done` written into the handoff description makes
+  Release close the issue at the end of the planning run, disarming the gate it just armed.
+  Ask for the outcome ("publish this and verify it on the live site"), not for a status
+  command; the receiving agent's protocol already knows how its own runs close.
 - For work that runs in stages (analysed, then changed), file one sub-issue per stage with an
   increasing `--stage`; the platform wakes you at each stage boundary.
 

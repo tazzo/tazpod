@@ -105,6 +105,16 @@ Release re-derives everything from the live system, writes the release plan, arm
 operator gate and **stops**. The push happens only after the operator comments approval on
 that issue. See `skill://lab-orchestration` sections 3 and 6.
 
+**The one handoff whose destination status is not `done`.** Every other delegation ends with
+"close your issue with `done` once your final comment is posted, or the barrier never
+fires". A release handoff is the exception, and getting it wrong is expensive: Release's
+**planning run ends in `in_review`** with the gate armed, because `done` is terminal and
+disables the very wakeup that will carry the operator's answer. So when you write the
+release issue, ask for the *outcome* — "publish this and verify it on the live site" — and
+**never put a status command in its description.** The receiving agent's own protocol knows
+which status closes which run (`skill://lab-orchestration` §3 and §6); repeating a status
+instruction in a handoff description overrides it with a guess, and the gate dies silently.
+
 ### Operator → specialist directly
 
 The operator may open an issue to any specialist (or comment on an existing one) and talk to
