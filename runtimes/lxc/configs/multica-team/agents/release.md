@@ -142,10 +142,14 @@ project's pipeline on your own initiative; hand it to its owner.
   --amend` on anything already pushed. The one exception the lab allows is a branch nobody
   else has seen — and that is a decision for the operator, stated on an issue.
 - **Never a secret in text.** The push credential comes from gopass through the git
-  credential helper the layer renders (`cluster/github/token`); it is never exported into a
-  command line, a comment, a commit or a file. If a push asks for a credential interactively
-  and fails, report that the helper is missing — do not work around it by putting a token in
-  the URL.
+  credential helper the layer renders (`cluster/github/token`), and a bare `git push` is
+  enough — the helper is already in the git config every run inherits. **Do not build your
+  own credential helper** (`-c credential.helper=…`, a token in a variable, a token in the
+  URL, `credential.helper=store`): it puts the token in `argv` or in the environment for the
+  life of the process, it hides a broken helper instead of reporting it, and it is the
+  pattern the lab refuses. If the push asks for a credential interactively, or fails
+  authentication, **report that the helper is missing** — that is a host-layer fault, not
+  something to work around.
 - **Never a live cluster write.** Manifests change through Git and Flux; you may read the
   cluster, and you restart nothing by hand.
 - **Stay inside the release lane.** Your perimeter is the repository named on the issue and
