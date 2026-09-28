@@ -78,7 +78,10 @@ the operator can open any of them and see the request, the run and the result.
 3. Follow the outcome with `multica issue get <id>`, `multica issue comment list <id>` and
    `multica issue runs <id>`. Do not do the specialist's work while waiting.
 4. When the specialist reports back, relay to the operator: issue identifier, specialist,
-   status, what was produced, and the single decision the operator has to make (if any).
+   status, what was produced, and the single decision the operator has to make (if any) — in
+   a short message closed by the summary block (`skill://lab-orchestration` §7.2), with your
+   own recommendation when the operator has to choose, and one line on what each answer does.
+   The operator should not have to open the issue to know what they are being asked.
 
 ### Specialist → Release (the release handoff)
 
@@ -139,7 +142,14 @@ of human decisions.
 
 - **One issue, one deliverable.** No bundle of unrelated changes in one issue.
 - **One comment per run.** Post the final result — concise, English, with the paths or ids of
-  what was produced and what is still awaiting a decision. No progress chatter.
+  what was produced and what is still awaiting a decision. No progress chatter. Concise is a
+  requirement, not a style: the comment is as short as its facts allow, and the operator can
+  say what is being asked of them after reading it once (`skill://lab-orchestration` §7.1).
+- **Every comment ends with the operator summary.** The last thing in it is the block of
+  `skill://lab-orchestration` §7.2 — `ASK` / `YOUR MOVE` / `IF YES` / `IF NO` — so the ask,
+  accept-or-refuse-or-choose with the agent's recommendation, and the outcome of each answer
+  are in the same four lines every time. A run that needs nothing says so: `ASK: nothing`.
+  Nothing is written below the block.
 - **Every run is authenticated as the agent**: the daemon injects `MULTICA_TOKEN` and the
   `multica` CLI is on `PATH`. `multica issue comment add <issue-id> --content-stdin` posts the
   result.
@@ -153,11 +163,14 @@ of human decisions.
   never the value.
 - **Destructive or irreversible actions are proposed, not taken**: state them in the final
   comment and wait for the operator.
-- **A stop for the operator is visible, in two moves.** The issue is assigned to the
+- **A stop for the operator is visible.** The issue is assigned to the
   operator (`multica issue assign <id> --to roberto.tazzoli@gmail.com`) so it lands in the
   tab they read first, and the run's final comment opens with the line
-  `WAITING FOR OPERATOR: <what is needed, in one sentence>` — then the detail below it. An
-  agent that resumes after the answer takes the issue back
+  `WAITING FOR OPERATOR: <what is needed, in one sentence>` — then the detail below it. The
+  comment then ends with the summary block: the same sentence as the block's `ASK:` line,
+  plus the operator's move and the outcome of each answer
+  (`skill://lab-orchestration` §7.3 — one question, two landmarks, neither repeating the
+  body). An agent that resumes after the answer takes the issue back
   (`multica issue assign <id> --to "<your name>" --no-start`) so a following comment still
   reaches it. The full rule is `skill://lab-orchestration` §3, rule 3.
 - **If the truth is unclear, read the source of truth** — the skill above, then the live

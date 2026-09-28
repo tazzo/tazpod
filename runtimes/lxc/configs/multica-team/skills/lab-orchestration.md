@@ -87,7 +87,9 @@ input to a later run. The consequences are hard rules:
   back to the operator and the comment opens with the `WAITING FOR OPERATOR:` line
   (section 3), because a question the operator never sees is the same as no question.
 - **One comment per run.** The final comment *is* the result. Progress chatter costs a
-  run's worth of context and tells the reader nothing.
+  run's worth of context and tells the reader nothing. *How* that comment has to read —
+  short, and closed by the block that says what the operator owes — is section 7, and it
+  binds every message an agent posts, this one included.
 
 What can start a run:
 
@@ -170,7 +172,8 @@ from parts that do exist, and it is only as strong as the four rules below.
 
 **The gate = an issue held in `in_review`, assigned to the operator, plus an armed
 actor-filtered wakeup, plus the instruction not to act before the approval comment, plus a
-comment whose first line says a decision is owed.**
+comment whose first line says a decision is owed and whose last lines say what the decision
+is.**
 
 The statuses are `backlog`, `todo`, `in_progress`, `in_review`, `done`, `blocked`,
 `cancelled`, grouped into four lifecycle categories, and the category — not the label —
@@ -263,6 +266,11 @@ Hence the four rules:
    no decision in do **not** carry the line — a signal that appears everywhere is not a
    signal.
 
+   The line is the *scanner's* half of the gate: it says that there is a wait and on what,
+   and it carries neither the options nor the consequences. The *reader's* half is the
+   closing summary of section 7.2, and section 7.3 states how the two relate — one
+   question, stated once by each landmark, in the same words.
+
 **Who may open the gate: an owner account, and only an owner account.** The wakeup is
 armed per owner `user_id` (section 2), so a peer agent's comment cannot open it, and no
 agent may answer another agent's gate — not with a comment, not with a status change, not
@@ -323,6 +331,10 @@ Rules for the handoff:
   check. "Looks good" is not.
 - **Say what you did not verify.** An unverified claim that the receiver believes is the
   most expensive thing a handoff can carry.
+- **A handoff obeys section 7 like every other message.** The blocks are a budget, not a
+  floor: each one carries what the receiver needs to act and nothing more. An issue
+  description that has to be scrolled to reach `## Boundaries` is one the receiver will
+  skim — and the part they skim is the boundary.
 
 ### The context that does not fit in an issue
 
@@ -405,10 +417,94 @@ Rules for the lane:
   live". The evidence is the tag the deployment actually runs, the response of the live
   URL, the content the browser receives.
 - **The rollback is stated before the push, not after the failure.**
+- **The plan is closed by the summary block.** Release's plan carries the gate sentence
+  (section 3, rule 2) and, after it, the block of section 7.2 — so the last thing on the
+  issue is the ask, the operator's move and what each answer does, in four lines.
 - **Afterwards, the record moves.** The wiki page, the memory entry and the parent issue
   are updated by their owners — not by Release, who only reports what it observed.
 
-## 7. Standing rules (all agents)
+## 7. How a run writes: short, and closed by what the operator owes
+
+Sections 1–6 say *what* a run has to say. This one says how it has to **read**, because a
+message that is precise and unreadable has still failed. The operator, who reads all of them,
+put it plainly: *"being precise is fine, but often I cannot tell what you are asking me."*
+Two rules answer that, and they bind every message an agent posts — the run's final comment,
+the gate comment, the description of a handoff.
+
+### 7.1 Short, and clear at first reading
+
+- **Short is a requirement, not a courtesy.** If the ask cannot be found without scrolling,
+  the message is too long. Precision is not length: `411 passed in 52.50 s` is one line, and
+  it is more precise than a paragraph about the tests.
+- **The test is the reader, on one pass.** After reading once, the operator can say what is
+  being asked of them. If that takes a second pass, cut — do not explain more. What fails
+  here is not precision; it is an ask buried under its own detail.
+- **Result first; the journey is not part of the result.** What was produced, what proves it,
+  what is asked: in that order. The attempts, the dead ends and the files re-read along the
+  way are not the operator's business — unless one of them changes the decision, and then it
+  is one line.
+- **Point at artifacts; do not paste them.** Section 4 gives the reason for a handoff (a
+  pasted copy is stale the moment it is pasted) and it holds for the final comment too. The
+  same goes for evidence: the command and its output, not a retelling of it.
+- **Say a thing once.** An unverified claim, a boundary left uncrossed, a part of the
+  deliverable not done — each is a line, stated plainly. Repetition is not emphasis.
+- **The budget is the facts, not a line count.** A release plan, a security finding, a design
+  with three options carry what the operator has to weigh, and they are as long as those
+  facts are. What is never allowed is the paragraph that carries no fact, and the closing
+  paragraph that repeats the body.
+
+### 7.2 The closing summary — mandatory, and the last thing written
+
+Every run that stops *and* every run that delivers ends with this block, as the last thing in
+the comment:
+
+```
+ASK:        <one or two sentences: what this run wants now, in the plainest words available>
+YOUR MOVE:  <accept | refuse | choose: A / B — recommend A>
+IF YES:     <one line: what happens if the operator accepts, or takes the recommended option>
+IF NO:      <one line: what happens if the operator refuses, or takes the other one>
+```
+
+- **It is a summary, not a conclusion.** The body carries the work, the evidence and the plan;
+  the block carries only the ask, the operator's move and the two outcomes. A block that
+  restates the body has failed at being a summary.
+- **Nothing follows it.** Not a closing sentence, not a sign-off, not an appendix: the last
+  line of the comment is the last line of the block.
+- **"Nothing to ask" is stated, not omitted.** A run that delivered and needs nothing writes
+  `ASK: nothing — <what was delivered, in one line>` and `YOUR MOVE: none`. A missing block is
+  indistinguishable from a run that forgot to say what it wanted, which is the whole problem
+  this section exists to fix.
+- **Options come with a recommendation**, and one line of why. A menu without the agent's own
+  view hands the thinking back to the operator, which is the opposite of what a specialist is
+  for.
+- **`IF YES` and `IF NO` are dropped only when the outcome is genuinely self-evident from the
+  ask.** A gate with a blast radius always carries both: *what happens next* is what the
+  operator is deciding about.
+
+### 7.3 The opening line and the closing block: one question, two landmarks
+
+A gate comment carries two landmarks, and they are not two questions:
+
+| Landmark | Who reads it | What it carries |
+| --- | --- | --- |
+| `WAITING FOR OPERATOR: <the decision>` — the comment's **first** line (section 3, rule 4) | the operator scanning the board and the issue's activity, before any comment is opened | *that* there is a wait, and on what |
+| the closing block (section 7.2) — the comment's **last** lines | the operator who opened the comment and read the plan | *what to do about it*: accept, refuse or choose — and what each answer does |
+
+They are kept distinct on purpose, and the rule that stops them from colliding is this: **the
+block's `ASK:` line is the opening line's sentence, verbatim and minus the marker.** One
+request, written once and shown twice — at the top, where a scanner sees it without opening
+the comment; at the bottom, where a reader already has the plan in front of them. A paraphrase
+at the bottom is exactly what makes a comment look like it is asking two things; a shared
+sentence makes it look like what it is.
+
+Nothing else is repeated. The block does not summarise the plan, the opening line carries
+neither the options nor the outcomes, and everything between the two landmarks is the body —
+evidence and plan — which neither of them touches.
+
+A run that is not waiting on the operator carries no opening line (a signal that appears
+everywhere is not a signal) and still closes with the block.
+
+## 8. Standing rules (all agents)
 
 - **Work moves on issues only.** Chat with the operator is conversation; an issue is a
   commitment. Anything another agent must act on is an issue.
@@ -426,4 +522,9 @@ Rules for the lane:
   read first, and the run's final comment opens with
   `WAITING FOR OPERATOR: <what is needed, in one sentence>`. Both halves are required: an
   issue nobody can find, with a reason written three paragraphs down, is a stall, not a
-  handoff.
+  handoff. The comment then ends with the summary block of section 7.2 — the same sentence,
+  plus what the operator is asked to do about it and what each answer does.
+- **Every message is short, and it ends with the ask.** Comments and handoff descriptions
+  obey section 7: the block at the bottom carries what the operator has to decide, with the
+  agent's own recommendation, and the body above it is no longer than the facts it carries. A
+  message the operator has to read twice to find the request has not been written yet.

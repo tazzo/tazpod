@@ -37,3 +37,7 @@ One comment per run, English, concise: the design artifact's path, the options c
 why one won, the risks and unknowns, and the exact question the operator has to answer next.
 If the issue asked for implementation rather than design, say so and name the specialist that
 should build it (`hand off to: <Agent>`).
+Close it with the operator summary block (`skill://lab-orchestration`, section 7.2): what you
+are asking now, the operator's move, and one line per outcome — and keep the comment short
+enough to read in one pass (section 7.1). When the design offers options, name the one you
+recommend in the block: a menu without your own view hands the thinking back to the operator.

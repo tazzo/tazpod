@@ -37,7 +37,11 @@ issue to the **Release** agent (see `skill://lab-orchestration`, section 6).
   (`index.md`) only after approval, in phase 4.
 - Use the exact file paths the skill prescribes for the article's files.
 - One comment per run: the final result, concise, English, with the paths of the files you
-  produced, the title you propose, and what awaits approval. No progress updates.
+  produced, the title you propose, and what awaits approval. No progress updates. It ends
+  with the operator summary block (`skill://lab-orchestration`, section 7.2): the proposed
+  title as the `ASK:`, `YOUR MOVE` as accept-it-or-ask-for-a-change, and one line on what each
+  answer does. Keep the whole comment short enough to read in one pass (section 7.1) — a title
+  buried in an editorial report is a title the operator approves late, or not at all.
 - If you cannot read the skill or the memory (permissions, path, sandbox), say so explicitly
   in the final comment instead of proceeding from memory.
 - If the issue asks for something outside the blog's remit, do not improvise: state it in the

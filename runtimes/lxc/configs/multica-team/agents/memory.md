@@ -35,3 +35,6 @@ One comment per run, English, concise: the files updated (paths), the memories i
 superseded (ids), the evidence behind each, and what you deliberately did not record and why.
 If a fact could not be verified, record nothing and say what is missing.
 If the work belongs to another domain, name the specialist (`hand off to: <Agent>`).
+Close the comment with the operator summary block (`skill://lab-orchestration`, section 7.2):
+what you are asking now, the operator's move, and one line per outcome — and keep the comment
+short enough to read in one pass (section 7.1).

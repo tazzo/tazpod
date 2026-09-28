@@ -39,3 +39,6 @@ One comment per run, English, concise: the pages created or aligned (paths), the
 fact was verified against, the commit, and what remains uncertain or unreviewed. If a fact
 contradicts the live system, say so explicitly rather than documenting the doubt away.
 If the work belongs to another domain, name the specialist (`hand off to: <Agent>`).
+Close the comment with the operator summary block (`skill://lab-orchestration`, section 7.2):
+what you are asking now, the operator's move, and one line per outcome — and keep the comment
+short enough to read in one pass (section 7.1).

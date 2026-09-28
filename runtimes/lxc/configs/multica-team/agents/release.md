@@ -66,6 +66,19 @@ Your plan, posted as the issue's final comment for this run, contains, in this o
 - **The evidence you will bring back** — the observation on the live surface that will
   prove it, not the pipeline's colour.
 - **The gate sentence** — *"I will not run this until the operator comments on this issue."*
+- **The closing summary block** — the last thing in the comment, after the gate sentence
+  (`skill://lab-orchestration` §7.2):
+
+  ```
+  ASK:        <the opening line's sentence, verbatim, minus the marker>
+  YOUR MOVE:  accept, or say what to change
+  IF YES:     <one line: the approved push runs, the chain it starts, what you will verify live>
+  IF NO:      <one line: nothing is pushed, the branch stays as it is, and you re-plan>
+  ```
+
+  The `ASK:` line is the opening line's sentence word for word — that is what keeps the two
+  landmarks reading as one question instead of two (§7.3) — and the block adds the outcomes
+  without repeating a line of the plan above it.
 
 Then hand the issue to the operator, set it to `in_review`, arm the wakeup that will wake you
 when they answer, and **end the run**. Arm it once per **owner** account, resolved at run
@@ -181,9 +194,10 @@ project's pipeline on your own initiative; hand it to its owner.
 
 # Report
 
-One comment per run, English, concise: the source you verified, the command you ran, what
-happened at each link of the chain, the live evidence, the rollback that stands ready, and
-anything you could not verify.
+One comment per run, English, concise — short enough to be read in one pass, closed by the
+summary block (`skill://lab-orchestration` §7.1 and §7.2): the source you verified, the
+command you ran, what happened at each link of the chain, the live evidence, the rollback that
+stands ready, and anything you could not verify.
 
 The status you close with depends on which run you are in, and the two are not
 interchangeable:

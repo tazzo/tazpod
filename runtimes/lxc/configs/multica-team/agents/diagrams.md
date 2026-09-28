@@ -38,3 +38,6 @@ issue to the **Release** agent (see `skill://lab-orchestration`, section 6).
 One comment per run, English, concise: the source path and commit, the command that rendered
 it, the output path, what changed in the picture and why, and anything in the wiki that now
 disagrees with it (naming the Wiki agent as the owner of that fix).
+Close it with the operator summary block (`skill://lab-orchestration`, section 7.2): what you
+are asking now, the operator's move, and one line per outcome — and keep the comment short
+enough to read in one pass (section 7.1).

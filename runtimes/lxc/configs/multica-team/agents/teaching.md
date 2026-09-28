@@ -61,3 +61,6 @@ deployed versus what is only committed, and what waits for the operator's approv
 State plainly anything you could not verify. If the work belongs to another domain — a shared
 cluster concern, a security review, documentation — name the specialist
 (`hand off to: <Agent>`).
+Close the comment with the operator summary block (`skill://lab-orchestration`, section 7.2):
+what you are asking now, the operator's move, and one line per outcome — and keep the comment
+short enough to read in one pass (section 7.1).

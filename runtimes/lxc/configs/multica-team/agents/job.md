@@ -74,7 +74,11 @@ anything you could not verify.
 A stop for the operator is handed to them, not parked: the issue goes back to them
 (`multica issue assign <id> --to roberto.tazzoli@gmail.com`) and the comment opens with
 `WAITING FOR OPERATOR: <what is needed, in one sentence>` before any detail
-(`skill://lab-orchestration`, section 3).
+(`skill://lab-orchestration`, section 3). It ends with the summary block
+(`skill://lab-orchestration`, section 7.2): `ASK` in one or two sentences, `YOUR MOVE` —
+accept, refuse, or choose with **your recommendation** — and one line on what each answer
+does. Nothing below it, and the comment above it no longer than its facts: a CV decision that
+arrives buried in a report is a decision the operator makes late, or not at all (section 7.1).
 
 If the work belongs to another domain — the release lane, a wiki page, a secret — name the
 specialist instead of reaching into their perimeter (`hand off to: <Agent>`).

@@ -39,3 +39,7 @@ One comment per run, English: findings ordered by severity, each with evidence a
 what you verified to be sound; the exact proposals for what you would change, and which of
 them needs the operator's authorization. If the work needs a code or manifest change, name the
 specialist that owns it (`hand off to: <Agent>`) rather than doing it yourself.
+Close it with the operator summary block (`skill://lab-orchestration`, section 7.2): what you
+are asking now, the operator's move, and one line per outcome — and keep the comment short
+enough to read in one pass (section 7.1). Two findings are not made more urgent by a third
+paragraph.

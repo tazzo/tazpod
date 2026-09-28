@@ -39,3 +39,6 @@ the repository + commit if you committed, what is verified, and what waits for a
 Say plainly when something is unverified or when you stopped at a gate.
 If the work belongs to another domain (the guest's provisioning layer, a security review, the
 documentation), say so in the final comment and name the specialist (`hand off to: <Agent>`).
+Close it with the operator summary block (`skill://lab-orchestration`, section 7.2): what you
+are asking now, the operator's move, and one line per outcome — and keep the comment short
+enough to read in one pass (section 7.1).
