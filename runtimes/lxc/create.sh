@@ -224,12 +224,21 @@ phase_verify() {
     set -u
     echo "── services ──"
     printf 'tailscale: %s\n' "$(systemctl is-active tailscaled 2>/dev/null)"
-    echo "── paperclip (operator UI, project paperclip-lxc-deployment) ──"
-    printf 'paperclip: %s\n' "$(systemctl is-active paperclip.service 2>/dev/null)"
-    if curl -fsS -m 5 http://192.168.1.206:3100/api/health >/dev/null 2>&1; then
-      echo "paperclip health: ok"
+    # Paperclip is provisioned as a *standby* since 2026-09-28: the layer installs it
+    # and never enables or starts it (the company runs on CT108 `paperclip`; two
+    # schedulers against one database is the failure that design forbids). So
+    # `inactive` is the expected state here, and only a *running* service with no
+    # health endpoint is a warning.
+    echo "── paperclip (standby, project paperclip-dedicated-container) ──"
+    paperclip_state="$(systemctl is-active paperclip.service 2>/dev/null)"
+    printf 'paperclip: %s\n' "$paperclip_state"
+    if [ "$(systemctl is-enabled paperclip.service 2>/dev/null)" = "disabled" ]; then
+      echo "paperclip boot-disabled: ok (start it by hand when it is wanted)"
     else
-      echo "WARN: paperclip health endpoint not answering"
+      echo "WARN: paperclip unit is not boot-disabled — a rebuild would start a second scheduler"
+    fi
+    if [ "$paperclip_state" = "active" ] && ! curl -fsS -m 5 http://192.168.1.206:3100/api/health >/dev/null 2>&1; then
+      echo "WARN: paperclip is running but its health endpoint does not answer"
     fi
     echo "── legacy surface (should all be absent) ──"
     command -v nginx >/dev/null 2>&1 && echo "WARN: nginx still installed" || echo "nginx absent"

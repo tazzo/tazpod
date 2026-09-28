@@ -7,6 +7,12 @@
 # in `paperclip_home` on the pet volume — so a `destroy.sh`/`create.sh` cycle does
 # NOT rotate `instances/default/secrets/master.key` and lose the stored keys.
 #
+# Lifecycle: since 2026-09-28 Paperclip is a *standby* on this host — the layer
+# provisions it and deliberately does not enable or start it (the company runs on
+# its own guest, CT108 `paperclip`; two schedulers against one database is the
+# failure that design forbids). See the Unit section for the shape and for how to
+# start it by hand.
+#
 # Secrets are read from gopass by this role (`delegate_to: localhost` +
 # `no_log: true`, the same pattern `tazpod-deploy.yml` uses for the kubeconfig) and
 # rendered into a root-only env file: they never travel in `-e`, in argv, in a
@@ -235,7 +241,29 @@
     fail_msg: "onboarding did not produce a config.json — the instance cannot start"
     success_msg: "instance config present"
 
-# ─── Unit ───────────────────────────────────────────────────────────────────
+# ─── Unit (provisioned; not started, never enabled) ─────────────────────────
+# Paperclip is a *standby* here since 2026-09-28: the operator stopped and disabled
+# this unit when the agent company moved to its own guest (CT108 `paperclip`,
+# project `paperclip-dedicated-container`), because two schedulers against one
+# database is the failure that design forbids. The CT106 copy is kept for the
+# comparison against Multica and Buzz and as the documented rollback path — so the
+# layer still provisions everything (unit, env, gitconfig, CLI, state on the pet
+# volume) and stops at "installed, unit present, boot-disabled".
+#
+# Why `enabled: false` and no `state:` is the deliberate shape:
+#  * `state: started` is what is being removed — it is what made a rebuilt container
+#    bring a second scheduler up against the shared database;
+#  * `state: stopped` would make the layer decide the *runtime* state, and it would
+#    kill a service an operator started by hand on the next provisioning run —
+#    including the rollback path below. Boot-disable is the layer's business; the
+#    runtime state is the operator's.
+#
+# Starting it by hand, when it is wanted:
+#   systemctl start paperclip.service          # until the next reboot or rebuild
+#   systemctl enable --now paperclip.service   # the full rollback: stop CT108's unit
+#                                              # first (one instance swap, see the wiki)
+# then `curl -fsS http://{{ paperclip_bind_host }}:{{ paperclip_port }}/api/health`
+# answers. The health gate below runs only when the service is already up.
 - name: systemd unit
   ansible.builtin.template:
     src: paperclip.service.j2
@@ -245,15 +273,60 @@
     mode: "0644"
   notify: restart paperclip
 
-- name: Enable and start Paperclip
+# Probed here, before any handler can run: the `restart paperclip` handler restarts
+# the service *only* if an operator already has it running (a handler is a lifecycle
+# statement too, and `state: restarted` starts a service that is not running), and
+# the health gate below is meaningful only in that same case.
+- name: Whether Paperclip is running right now
+  ansible.builtin.command: systemctl is-active paperclip.service
+  register: paperclip_service_active
+  changed_when: false
+  failed_when: false
+  # read-only probe: it must also run in `--check`, or the handler and the health
+  # gate below would both read an undefined fact
+  check_mode: false
+
+- name: The runtime state of the service (the operator's decision, not the layer's)
+  ansible.builtin.set_fact:
+    paperclip_service_was_active: "{{ paperclip_service_active.stdout | default('') | trim }}"
+
+- name: Whether the unit file exists yet
+  ansible.builtin.stat:
+    path: /etc/systemd/system/paperclip.service
+  register: paperclip_unit_file
+  changed_when: false
+
+- name: Paperclip is installed but cannot come up on its own
   ansible.builtin.systemd_service:
     name: paperclip.service
-    enabled: true
-    state: started
+    enabled: false
     daemon_reload: true
+  # A check run writes no unit file, and systemd fails on a name it does not know:
+  # on a host this layer has never touched, `--check` would abort here for a reason
+  # that is an artifact of the preview, not a property of the layer.
+  when: paperclip_unit_file.stat.exists
 
-# ─── Health gate (the layer is not done until the app answers) ──────────────
-- name: Wait for the Paperclip health endpoint
+- name: Whether the unit is enabled at boot
+  ansible.builtin.command: systemctl is-enabled paperclip.service
+  register: paperclip_unit_enabled
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: The unit is present and boot-disabled
+  ansible.builtin.assert:
+    that:
+      - paperclip_unit_enabled.stdout | default('') | trim == 'disabled'
+    fail_msg: >-
+      paperclip.service is `{{ paperclip_unit_enabled.stdout | default('unknown') | trim }}`:
+      this host keeps Paperclip as a standby, so the unit must stay disabled — an
+      enabled unit makes a rebuilt container start a second scheduler against the
+      shared database.
+    success_msg: "paperclip.service present and boot-disabled (start it by hand when it is wanted)"
+  when: paperclip_unit_file.stat.exists
+
+# ─── Gates (the layer is not done until the app answers — when it is up) ────
+- name: Wait for the Paperclip health endpoint (a hand-started service only)
   ansible.builtin.uri:
     url: "http://{{ paperclip_bind_host }}:{{ paperclip_port }}/api/health"
     status_code: 200
@@ -262,6 +335,7 @@
   retries: 60
   delay: 5
   changed_when: false
+  when: paperclip_service_was_active | default('') == 'active'
 
 - name: pi can reach OpenCode Go as the service user (warning only)
   become_user: "{{ paperclip_user }}"
@@ -279,6 +353,14 @@
   ansible.builtin.debug:
     msg: "pi provider opencode-go: {{ (paperclip_pi_auth.stdout | default('') | trim) or 'NOT READY (check infra/paperclip/opencode-key)' }}"
 
-- name: Paperclip is healthy
+- name: Paperclip is provisioned (standby)
   ansible.builtin.debug:
-    msg: "paperclip {{ paperclip_version }} healthy on {{ paperclip_bind_host }}:{{ paperclip_port }} (home {{ paperclip_home }})"
+    msg:
+      - "paperclip {{ paperclip_version }} provisioned; state on the pet volume at {{ paperclip_home }}."
+      - >-
+        paperclip.service is {{ paperclip_service_was_active | default('unknown') }} and
+        {{ 'enabled' if (paperclip_unit_enabled.stdout | default('') | trim) != 'disabled'
+           else 'boot-disabled' }}: this host does not start a scheduler by itself
+        (CT108 runs the company; two schedulers against one database is forbidden).
+      - "Start it by hand when it is wanted: `systemctl start paperclip.service`, or `systemctl enable --now paperclip.service` for the full rollback (stop CT108's unit first)."
+      - "Then check: `curl -fsS http://{{ paperclip_bind_host }}:{{ paperclip_port }}/api/health`."

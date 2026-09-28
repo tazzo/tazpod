@@ -1,9 +1,21 @@
 ---
+# Paperclip is a *standby* on this host (see `layer5-paperclip.yml`): a handler is a
+# lifecycle statement too, and `state: restarted` starts a service that is not
+# running. So the restart is applied only when an operator already had it running —
+# a hand-started service then picks up a re-rendered unit or env file (the credential
+# rotation procedure the wiki documents relies on exactly that), while a stopped one
+# is left stopped. `paperclip_service_was_active` is probed by the layer itself, from
+# the live unit, before any handler can run.
 - name: restart paperclip
   systemd:
     name: paperclip.service
     state: restarted
     daemon_reload: yes
+  when:
+    - paperclip_service_was_active | default('') == 'active'
+    # A check run writes nothing, so on a host the layer has never touched there is no
+    # unit for systemd to restart and `restarted` fails on the unknown name.
+    - not ansible_check_mode
 
 # The Multica daemon follows the binary the layer pins: a version bump, a new profile
 # config or an environment change is applied by restarting the unit, because the unit's
