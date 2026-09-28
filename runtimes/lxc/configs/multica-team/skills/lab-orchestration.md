@@ -83,7 +83,9 @@ input to a later run. The consequences are hard rules:
 
 - **State the blocker and end the run.** An agent that needs a decision posts its
   question as its final comment and stops. Waiting inside a run cannot be observed and
-  cannot be un-blocked.
+  cannot be un-blocked. A stop *for the operator* is also made **findable**: the issue goes
+  back to the operator and the comment opens with the `WAITING FOR OPERATOR:` line
+  (section 3), because a question the operator never sees is the same as no question.
 - **One comment per run.** The final comment *is* the result. Progress chatter costs a
   run's worth of context and tells the reader nothing.
 
@@ -93,7 +95,7 @@ What can start a run:
 | --- | --- |
 | Assignment of an issue to an agent | one run, at creation or reassignment |
 | A wakeup rule on the issue | a new ordinary run when its condition is met |
-| A human comment or @-mention | the assigned agent (or the mentioned one) is woken |
+| A human comment or @-mention | the assigned **agent** (or the mentioned one) is woken; a member assignee is reached by neither, which is why handing an issue to the operator is a *loan* (section 3, rule 3) |
 
 The kinds available to an agent are exactly the flags the **installed** CLI accepts
 (`multica issue wakeup create --help`): event subscriptions (`--event <type>`, with
@@ -143,8 +145,10 @@ platform **tries once** to deliver it, as a comment that @-mentions the parent's
 and a failed delivery is not replayed. Three consequences to design around:
 
 - **The parent must be an agent.** The wake is delivered as `mention://agent/<id>`; a
-  member-assigned parent is never notified (a member mention enqueues nothing). Delegated
-  work must therefore be filed under an issue whose assignee is an agent.
+  member-assigned parent is never woken *as a run* — the platform files an inbox item for
+  that member instead (`resolveWakeTarget` → `outcome: notified`) and starts no agent.
+  Delegated work must therefore be filed under an issue whose assignee is an agent, and an
+  issue with open children under it must not be handed to the operator (section 3, rule 3).
 - **It is best-effort, and 0.5.3 fires it even on an already-closed parent.** A delegated
   issue that must come back cannot rely on it alone — that is why section 4 requires the
   specialist to close its own issue *and* report, and why the parent re-reads the children
@@ -162,10 +166,11 @@ specialist that leaves its issue open has silently swallowed the work.
 **There is no approval object in Multica.** Nothing in the product blocks an action on a
 human signature: agents are trusted to follow their instructions, and the platform's own
 model of "done" is a status, not a verification. The gate is therefore a *protocol*, built
-from parts that do exist, and it is only as strong as the two rules below.
+from parts that do exist, and it is only as strong as the four rules below.
 
-**The gate = an issue held in `in_review`, plus an armed actor-filtered wakeup, plus the
-instruction not to act before the approval comment.**
+**The gate = an issue held in `in_review`, assigned to the operator, plus an armed
+actor-filtered wakeup, plus the instruction not to act before the approval comment, plus a
+comment whose first line says a decision is owed.**
 
 The statuses are `backlog`, `todo`, `in_progress`, `in_review`, `done`, `blocked`,
 `cancelled`, grouped into four lifecycle categories, and the category — not the label —
@@ -178,7 +183,7 @@ carries the behaviour:
 | `done` | `done` | **terminal**; all wakeup configurations are disabled |
 | `closed` | `cancelled` | **terminal**; all wakeup configurations are disabled |
 
-Hence the two rules:
+Hence the four rules:
 
 1. **An issue waiting for a human is `in_review`, never `done`.** `in_review` is a
    *started* status: the issue is still open, the wakeup stays armed, and the agent can
@@ -195,6 +200,68 @@ Hence the two rules:
    effect, the rollback, and the sentence *"I will not run this until the operator
    comments on this issue."* Then it arms the wakeup and ends the run. An agent that
    merely mentions "awaiting approval" has not built a gate, it has written a wish.
+3. **An issue waiting for a human is assigned to that human.** A gate the operator cannot
+   find is not a gate. Before the run ends, the agent that stopped hands the issue over:
+
+   ```sh
+   multica issue assign <issue-id> --to roberto.tazzoli@gmail.com
+   ```
+
+   The address is the operator account this team is owned by (`lab-team`), and `--to`
+   resolves a member by name or email — never by `user_id`, which is a control-plane
+   detail a rebuild would invalidate. The assignment is what puts the issue in the
+   operator's **default board tab** (the `assignee_id` tab), so the pending decisions are
+   where the operator already looks instead of something they have to search for. Four
+   properties make it safe to do at the gate:
+
+   - **It starts nothing.** A run is enqueued for an `agent` or `squad` assignee only
+     (`WillEnqueueRun`); a member assignment records ownership and wakes nobody, so the
+     agent that armed the gate does not wake itself with its own handoff.
+   - **It does not disarm the gate.** The written rule stays armed: wakeups are disabled
+     only when the issue moves to a terminal status (`StopClosedIssueWakeups`), and when
+     the rule fires it starts a run for the agent it was armed for, whatever the issue's
+     current assignee is. That is why the answer still reaches the agent that asked.
+   - **It is idempotent.** An issue already assigned to the operator is left as it is;
+     never bounce an issue back and forth to "refresh" the assignment.
+   - **The handover is a loan, and the answer takes it back.** The comment→assignee
+     routing wakes the issue's assigned **agent** only (`assigneeFallbackAgent` refuses a
+     member assignee), so while the issue sits in the operator's hands a second comment on
+     it reaches no run — unlike an issue assigned to an agent, where a follow-up question
+     wakes its owner. The run that the approval starts therefore takes the issue back
+     before it acts, and it takes it back without waking itself a second time:
+
+     ```sh
+     multica issue assign <issue-id> --to "<your agent name>" --no-start
+     ```
+
+     `--no-start` is not optional here: assigning an **agent** does enqueue a run, and that
+     run would race the one already executing. If the resumed run reaches a new gate, the
+     issue goes back to the operator, and it stays there until the answer arrives.
+
+   One issue must **not** be handed over: **the parent that is still collecting delegated
+   work.** The system `child_done` rule resolves its target when it fires, and a parent
+   assigned to a *member* produces an inbox notification for that person and starts no run
+   (section 2, "the parent must be an agent"). An orchestrator whose own issue is waiting on
+   a stage would therefore stop being woken. Hand over the leaf that is waiting — the
+   specialist's issue, Release's issue — never the parent with open children under it.
+
+4. **The gate comment opens with a line anyone can recognise.** The first line of the
+   comment is exactly
+
+   ```
+   WAITING FOR OPERATOR: <what is needed, in one sentence>
+   ```
+
+   followed by the detail of rule 2. The line exists so that the stop is legible while
+   scanning the issue and its activity — before the comment is opened, and before the plan
+   below it is read — and so that a board with ten issues on it shows at a glance which of
+   them is the operator's move. It is a claim, not a decoration: it appears only on a run
+   that has actually stopped with a gate armed, and the sentence after the colon names the
+   decision the operator has to make ("approve the push of `restyle/teaching-web:master`",
+   "say whether the new page replaces the old one"), never a summary of the work already
+   done. A completion comment, a handoff to another agent and a failure the operator has
+   no decision in do **not** carry the line — a signal that appears everywhere is not a
+   signal.
 
 **Who may open the gate: an owner account, and only an owner account.** The wakeup is
 armed per owner `user_id` (section 2), so a peer agent's comment cannot open it, and no
@@ -293,8 +360,11 @@ missed. The protocol fixes what happens next so that failure is legible instead 
   as it was. State the compensation in the failure comment even when it was not needed.
 - **Escalate to the operator when the budget is spent, or when the blast radius is
   larger than the issue.** Escalation is a comment on the issue plus the issue returned to
-  `in_review` — the same gate as section 3, used for a different reason. Name the decision
-  the operator has to make; do not hand over the problem.
+  `in_review` with the issue handed back to the operator — the same gate as section 3, used
+  for a different reason, so it carries the same obligations: `in_review`, the issue assigned
+  to the operator, the wakeup re-armed where the answer is what unblocks the work, and a
+  first line of `WAITING FOR OPERATOR: <the decision>`. Name the decision the operator has to
+  make; do not hand over the problem.
 - **Never work around a failure by weakening the check.** If a test blocks a release, the
   release waits. Editing the test to make it pass is not a failure-handling strategy, it
   is a defect with a nicer commit message.
@@ -312,7 +382,8 @@ The lane, end to end:
 specialist: commits on a branch, verifies locally, stops          → issue: in_review
    ↓ handoff (stage, new issue, assignee Release, --parent)
 Release: re-derives the state (branch, commit, clean tree, pipeline, rollback)
-         posts the release plan, arms the wakeup, stops            → issue: in_review
+         posts the plan, arms the wakeup, hands the issue to the operator, stops
+                                            → assignee: the operator, issue: in_review
    ↓ the operator comments approval on the issue
 Release: executes the exact approved command
          verifies on the live surface, pastes the evidence
@@ -350,3 +421,9 @@ Rules for the lane:
   before acting from a document that may have moved.
 - **The operator is the only approver.** No agent may approve another agent's gate. A
   gate is answered by a human comment, not by a peer's agreement.
+- **A stop is visible.** An issue waiting for the operator is assigned to the operator
+  (`multica issue assign <id> --to roberto.tazzoli@gmail.com`), so it sits in the tab they
+  read first, and the run's final comment opens with
+  `WAITING FOR OPERATOR: <what is needed, in one sentence>`. Both halves are required: an
+  issue nobody can find, with a reason written three paragraphs down, is a stall, not a
+  handoff.

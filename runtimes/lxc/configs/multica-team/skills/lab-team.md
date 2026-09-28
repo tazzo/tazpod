@@ -129,6 +129,12 @@ another domain, says so in its final comment and names the target agent
 (`needs: Ambrogio` / `hand off to: <Agent>`). It does not open issues on another specialist's
 behalf unless the triggering issue explicitly authorizes that.
 
+A decision that only the operator can make is not a handoff to Ambrogio: the issue changes
+hands to the operator (`multica issue assign <id> --to roberto.tazzoli@gmail.com`), whose
+*Mine* tab is the list they already read, and the final comment opens with the
+`WAITING FOR OPERATOR:` line. Ambrogio is the route to *another agent's work*, not the queue
+of human decisions.
+
 ## Rules shared by the whole team
 
 - **One issue, one deliverable.** No bundle of unrelated changes in one issue.
@@ -147,6 +153,13 @@ behalf unless the triggering issue explicitly authorizes that.
   never the value.
 - **Destructive or irreversible actions are proposed, not taken**: state them in the final
   comment and wait for the operator.
+- **A stop for the operator is visible, in two moves.** The issue is assigned to the
+  operator (`multica issue assign <id> --to roberto.tazzoli@gmail.com`) so it lands in the
+  tab they read first, and the run's final comment opens with the line
+  `WAITING FOR OPERATOR: <what is needed, in one sentence>` — then the detail below it. An
+  agent that resumes after the answer takes the issue back
+  (`multica issue assign <id> --to "<your name>" --no-start`) so a following comment still
+  reaches it. The full rule is `skill://lab-orchestration` §3, rule 3.
 - **If the truth is unclear, read the source of truth** — the skill above, then the live
   repository (`/workspace/...`) and the wiki — before acting. Never act from memory of a
   document that may have moved.

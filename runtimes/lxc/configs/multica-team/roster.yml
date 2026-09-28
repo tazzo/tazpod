@@ -46,8 +46,9 @@ skills:
 
   - name: lab-orchestration
     description: >-
-      The orchestration protocol: stages and wakeups, the human approval gate, the handoff
-      contract, failure handling and the release lane. Read it before moving work.
+      The orchestration protocol: stages and wakeups, the human approval gate (an issue
+      waiting for the operator is handed to the operator and declares itself in one line),
+      the handoff contract, failure handling and the release lane. Read it before moving work.
     content: skills/lab-orchestration.md
 
 # ─── Agents ─────────────────────────────────────────────────────────────────

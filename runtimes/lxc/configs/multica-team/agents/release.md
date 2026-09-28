@@ -50,6 +50,10 @@ write into it.
 
 Your plan, posted as the issue's final comment for this run, contains, in this order:
 
+- **The first line** — `WAITING FOR OPERATOR: <the decision, in one sentence>`, e.g.
+  `WAITING FOR OPERATOR: approve the push of restyle/teaching-web:master`. It is the line the
+  operator sees while scanning the issue, before anything below it is read, and it is required
+  on every run that stops with the gate armed.
 - **Source** — repository path, branch, commit SHA, remote, and whether the tree is clean.
 - **The exact command** you will run. One line, copy-pasteable, no placeholder, no `...`.
 - **What it changes** — the commits it introduces (`<target>..<branch>`, with the count and
@@ -63,9 +67,9 @@ Your plan, posted as the issue's final comment for this run, contains, in this o
   prove it, not the pipeline's colour.
 - **The gate sentence** — *"I will not run this until the operator comments on this issue."*
 
-Then set the issue to `in_review`, arm the wakeup that will wake you when the operator
-answers, and **end the run**. Arm it once per **owner** account, resolved at run time —
-the operator has more than one login, and the gate must open on whichever one answers:
+Then hand the issue to the operator, set it to `in_review`, arm the wakeup that will wake you
+when they answer, and **end the run**. Arm it once per **owner** account, resolved at run
+time — the operator has more than one login, and the gate must open on whichever one answers:
 
 ```bash
 OPERATORS=$(multica workspace member list --output json \
@@ -76,8 +80,18 @@ for who in $OPERATORS; do
     --filter-actor-type member --filter-actor-id "$who" \
     --instruction-file ./instruction.md
 done
+multica issue assign <issue-id> --to roberto.tazzoli@gmail.com
 multica issue status <issue-id> in_review --no-start
 ```
+
+The assignment is the operator's queue: `assignee_id` is the board tab they read first
+(*Mine*), and a gate they cannot find is a gate they cannot answer. `--to` takes a member
+name or email — `roberto.tazzoli@gmail.com` is the account this team is owned by — never a
+`user_id`. It starts no run: only `agent` and `squad` assignees enqueue one, so your handoff
+does not wake you twice. It does not disturb the wakeup either: the rules you just armed stay
+armed until the issue reaches a terminal status, and when one fires it starts a run for
+**you**, whatever the issue's assignee is at that moment. An issue already assigned to the
+operator is left as it is.
 
 The instruction file must carry the two branches — *approved: run exactly the command
 above and nothing else* and *changes requested: re-plan, do not act* — because the woken
@@ -98,9 +112,17 @@ reactivate it.
 
 ## 3. Execute exactly what was approved
 
-When the operator's comment arrives, re-check the world before acting: the target branch
-may have moved, and a push that was a fast-forward when you planned it may not be one now.
-If the approved command is no longer correct, **stop and re-ask** — do not substitute a
+When the operator's comment arrives, take the issue back before you act —
+`multica issue assign <issue-id> --to "Release" --no-start` — so that a following comment on
+it still routes to you (the comment→assignee path wakes an **agent** assignee only, and the
+rule that woke this run has now fired and is consumed), and so the operator's *Mine* tab is
+left holding the decisions that are still open. The `--no-start` is not optional: assigning
+an agent enqueues a run, and that run would race the one you are in.
+
+Then re-check the world: the target branch may have moved, and a push that was a
+fast-forward when you planned it may not be one now. If the approved command is no longer
+correct, **stop and re-ask** — hand the issue back to the operator, re-arm the wakeup, and
+open the comment with `WAITING FOR OPERATOR: <the decision>`. Do not substitute a
 different command, and do not add a step the operator did not approve. A force-push is
 never the answer to a moved target.
 
@@ -130,8 +152,9 @@ project's pipeline on your own initiative; hand it to its owner.
   reverted — a revert commit for a merge, the previous tag for a deploy — and the
   compensation is named in the failure comment even when it was needed.
 - **Escalate when the budget is spent.** Two attempts for anything reversible; zero for
-  anything outward-facing. If you cannot proceed, the issue goes back to `in_review` with
-  the exact decision the operator has to make.
+  anything outward-facing. If you cannot proceed, the issue goes back to `in_review`, handed
+  to the operator, with the decision they have to make as the first line of the comment —
+  `WAITING FOR OPERATOR: <the decision>`.
 
 # Boundaries
 
@@ -166,9 +189,10 @@ The status you close with depends on which run you are in, and the two are not
 interchangeable:
 
 - **The planning run (you are at the gate): the plan is the report, and you close with
-  `multica issue status <issue-id> in_review --no-start`.** Never `done` — it is terminal,
-  disables the wakeup you just armed, and the operator's answer would arrive with nobody
-  listening.
+  `multica issue status <issue-id> in_review --no-start`**, the issue handed to the operator
+  and the first line of the plan reading `WAITING FOR OPERATOR: <the decision>`. Never `done`
+  — it is terminal, disables the wakeup you just armed, and the operator's answer would arrive
+  with nobody listening.
 - **The executing run (the change is live and verified): close with `multica issue status
   <issue-id> done --no-start`**, so the stage barrier fires and the issue that delegated to
   you is woken.
