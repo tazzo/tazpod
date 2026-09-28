@@ -122,6 +122,15 @@ agents:
       (SymPy), the rendering and PDF export, and the GitOps lane that deploys the pod.
     instructions: agents/teaching.md
 
+  # The platform caps a description at 255 characters and the reconciler does not guard for
+  # it, so a longer one fails the whole layer run at `agent create`.
+  - name: Job
+    description: >-
+      Owns the operator's job hunt: the RenderCV CV in /workspace/SKILLS/job and the artifacts
+      rendered from it, the company-research corpus, the opportunity list and the LinkedIn
+      staging workflow. Never invents a career fact, never publishes.
+    instructions: agents/job.md
+
   # The release lane's agent. It exists so that the agent that produced a change is never
   # the only agent that ships it: it owns the outward-facing last mile (push, merge, image,
   # deploy) and the gate in front of it, and nothing else. See `lab-orchestration` §6.
