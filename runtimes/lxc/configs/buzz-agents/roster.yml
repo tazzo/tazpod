@@ -9,10 +9,10 @@
 # One agent, one channel. The lab's rule is one run per agent at a time, and Buzz's
 # model is one *channel* at a time — so the channel is the unit of serialisation.
 #
-# `respond_to: owner-only` means the harness answers only messages whose author is the
-# owner's pubkey. A message from anyone else, relay-signed or not, does not wake the
-# agent. That is the INV-7 boundary: an agent does not read the channel, it is handed
-# work.
+# `respond_to` is the wake-up gate, and it is `allowlist`: the harness answers the
+# authors named in `respond_to_allowlist` and nobody else. A key that is not on the
+# list does not wake the agent, relay-signed or not. That is the INV-7 boundary — an
+# agent does not read the channel, it is handed work — and the list is the whole of it.
 
 relay_url: "ws://192.168.1.240:3010"   # the canonical host: one host, one community
 
@@ -28,8 +28,23 @@ agents:
     # before the channel exists.
     channel_name: lab
 
-    # The author's pubkey the `owner-only` gate accepts.
-    respond_to: owner-only
+    # The authors this agent wakes for. `allowlist`, not `owner-only`: under
+    # `owner-only` no turn ever started (verified 2026-09-29 — the mention sat in the
+    # channel, the relay showed the agent authenticated and polling, the harness never
+    # dispatched). The operator's model is that the operator launches the agents in
+    # their terminals and THE AGENTS TALK TO EACH OTHER, so a mention from a known peer
+    # has to wake this agent.
+    #
+    # The list is short, closed, and made only of keys whose owner is known: the owner
+    # and this agent's own siblings. This is the security cost of that model — anyone
+    # whose key is listed here can make the agent burn a turn — so the list is not to be
+    # widened, and a key is added only when the operator adds an agent to the roster.
+    # The owner is listed explicitly even though the harness allows the owner
+    # implicitly, so that this file states the whole policy rather than half of it.
+    respond_to: allowlist
+    respond_to_allowlist:
+      - "5cc846a9492e974e3f560039d5f24909d109b0f3f6d26899b07749cba7d45b84"   # the operator (owner)
+      - "69cd9295286c88979f4b2784207af99403f2ac0e03af636c8b168e3ee4c74b08"   # buzz-agent-1 (this agent's own peer set)
 
     # No schedule: recurring jobs are Phase 6, explicitly deferred by the operator
     # (2026-09-29). An unmentioned agent is not woken; the mention is the alarm.

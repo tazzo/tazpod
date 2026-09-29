@@ -245,7 +245,34 @@ buzz_agent_gopass_prefix: cluster/buzz/agents
 # is lost SILENTLY. Gate M7 proves the fix.
 buzz_acp_agent_command: omp
 buzz_acp_agent_args: acp
-buzz_acp_respond_to: owner-only
+# `allowlist`, NOT `owner-only`, and the list is the point (verified 2026-09-29).
+# Under `owner-only` the harness compared the author against `BUZZ_ACP_AGENT_OWNER`
+# and never dispatched: the mention sat in the channel, the relay showed the agent
+# authenticated and polling, and no turn ever started. The operator's model is that
+# the operator launches the agents in their terminals and **the agents talk to each
+# other**, so an agent must be woken by another agent, not only by the owner.
+# `BUZZ_ACP_RESPOND_TO_ALLOWLIST` carries the owner plus every agent pubkey; the
+# owner is also implicitly allowed by the harness, and it is listed anyway so the
+# file states the whole policy rather than relying on a default.
+#
+# The list is deliberately SHORT and made only of keys whose owner is known: this is
+# the security cost of the model the operator chose, and it is not to be widened into
+# an open list. An unknown key here would let anyone wake the agent.
+buzz_acp_respond_to: allowlist
+buzz_acp_respond_to_allowlist: "5cc846a9492e974e3f560039d5f24909d109b0f3f6d26899b07749cba7d45b84,69cd9295286c88979f4b2784207af99403f2ac0e03af636c8b168e3ee4c74b08"
+
+# The model the child OMP runs. Without it every turn dies with
+# `Agent reported error (code -32603): Internal error / No model selected` — the
+# harness spawns a bare `omp acp`, which has no model of its own.
+buzz_acp_model: "opencode-go/space-bunny-free"
+
+# The credential that child needs, read from gopass at RUN TIME by the launcher
+# (`cluster/hindsight/opencode-key`). It is deliberately not a file the layer
+# renders: the key belongs to the operator's inference provider, not to Buzz, so the
+# launcher borrows it and never copies it. `OPENCODE_API_KEY` is OMP's own variable,
+# read from gopass inside run.sh — never passed with `-e`, never in argv, never
+# written to disk in clear.
+buzz_omp_credential_gopass: cluster/hindsight/opencode-key
 buzz_acp_agents: 1
 buzz_acp_multiple_event_handling: queue
 buzz_acp_idle_timeout: 1800

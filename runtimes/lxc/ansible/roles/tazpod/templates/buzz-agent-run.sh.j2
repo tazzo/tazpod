@@ -30,9 +30,32 @@ export BUZZ_RELAY_URL="{{ buzz_relay_url }}"
 export BUZZ_ACP_AGENT_COMMAND="{{ buzz_acp_agent_command }}"
 export BUZZ_ACP_AGENT_ARGS="{{ buzz_acp_agent_args }}"
 
-# Answer only the owner. An agent does not read the channel; it is handed work.
+# Wake on an explicit list, not on the owner alone. Under `owner-only` no turn ever
+# started (verified 2026-09-29): the mention reached the channel, the relay showed the
+# agent authenticated and polling, and the harness never dispatched it. The operator's
+# model is that the operator launches the agents in their terminals and THE AGENTS TALK
+# TO EACH OTHER, so a mention from a known peer must wake this agent. The list is short
+# and every key in it is known — that is the security cost of the chosen model, and it
+# is not to be widened into an open list.
 export BUZZ_ACP_RESPOND_TO="{{ item.respond_to }}"
+export BUZZ_ACP_RESPOND_TO_ALLOWLIST="{{ item.respond_to_allowlist | join(',') }}"
 export BUZZ_ACP_AGENTS="{{ buzz_acp_agents }}"
+
+# The model the child OMP runs. A bare `omp acp` has no model of its own, and every
+# turn then dies with ACP -32603 "No model selected" — a silent no-op that looks
+# exactly like a hang.
+export BUZZ_ACP_MODEL="{{ buzz_acp_model }}"
+
+# The child OMP's own credential, borrowed from the operator's provider key at RUN
+# TIME and never stored: not in this file, not in any rendered file, not on disk in
+# clear, and never passed with `-e` (which would put it in argv and in every logged
+# command line). If the gopass entry is missing the launcher refuses to start, rather
+# than running a child that cannot answer anyone.
+if ! OPENCODE_API_KEY="$(gopass show -o {{ buzz_omp_credential_gopass }} 2>/dev/null)" || [[ -z "$OPENCODE_API_KEY" ]]; then
+  echo "missing gopass entry {{ buzz_omp_credential_gopass }} — the child OMP cannot authenticate" >&2
+  exit 1
+fi
+export OPENCODE_API_KEY
 
 # `queue`, NOT the default `steer`. OMP does not advertise the steering capability
 # (P6 §5.1, issue #4189), so under `steer` every message arriving mid-turn is dropped
