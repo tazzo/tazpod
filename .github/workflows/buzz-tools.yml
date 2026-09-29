@@ -5,8 +5,8 @@ name: Build Buzz Host Tools
 #
 # It is deliberately a SEPARATE workflow from build-push.yml: that one rebuilds
 # this repository's own container layers on every push, while this one needs to
-# check out an EXTERNAL repository (block/buzz) at a pinned tag, take minutes to
-# compile Rust, and only rerun when the pin or the Dockerfile changes.
+# check out an EXTERNAL repository (block/buzz) at a pinned tag, take ~15 minutes
+# to compile Rust, and only rerun when the pin or the Dockerfile changes.
 on:
   push:
     branches: [master]
@@ -38,8 +38,6 @@ jobs:
           repository: block/buzz
           ref: ${{ env.BUZZ_REF }}
           path: buzz
-          # The pin is a tag; resolve and record the commit so the run states
-          # exactly what was built even if the tag is ever moved.
           fetch-depth: 1
 
       - name: Resolve the pinned Buzz commit
@@ -90,15 +88,21 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "Pin this digest in \`tazpod/runtimes/lxc/ansible/roles/tazpod/defaults/main.yml\`." >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Verify the published image really carries the three binaries
+      - name: Verify the image really carries the three binaries
+        # `buzz` is a clap CLI with no --version flag, so prove the binaries run
+        # by asking for help (exit 0), and read the stamped pin and checksums.
         run: |
           docker buildx build \
             -f .tazpod/Dockerfile.buzz-tools \
-            --build-arg BUZZ_REF=${{ env.BUZZ_REF }} \
-            --build-arg BUZZ_REV=${{ steps.buzz.outputs.revision }} \
+            --build-arg BUZZ_REF="$BUZZ_REF" \
+            --build-arg BUZZ_REV="${{ steps.buzz.outputs.revision }}" \
             -t buzz-tools:verify \
             --load buzz
-          docker run --rm buzz-tools:verify sh -c \
-            'buzz-acp --version; buzz --version; buzz-admin --version'
+          for b in buzz-acp buzz buzz-admin; do
+            echo "--- $b"
+            docker run --rm buzz-tools:verify "$b" --help | head -3
+          done
           echo "--- built Buzz revision:"
           docker run --rm buzz-tools:verify cat /usr/local/share/buzz/BUZZ_REVISION
+          echo "--- checksums recorded in the image:"
+          docker run --rm buzz-tools:verify cat /usr/local/share/buzz/SHA256SUMS
