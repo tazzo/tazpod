@@ -14,7 +14,7 @@
 #     the pin, and the build is reproducible from the layer alone.
 #
 # The build context is a checkout of Buzz at the pinned revision (the workflow
-# checks it out into ./buzz and passes `-f ../.tazpod/Dockerfile.buzz-tools`).
+# checks it out into ./buzz).
 
 ARG RUST_VERSION=1.95
 ARG DEBIAN_VERSION=bookworm
@@ -27,16 +27,18 @@ WORKDIR /build
 
 # ─── Stage 2: plan the dependency graph ─────────────────────────────────────
 FROM chef AS planner
-ARG BUZZ_REF
+# BUZZ_REV is passed in by the pipeline, which resolved it from the tag. Reading
+# it back with `git rev-parse` inside the image is not an option: actions/checkout
+# leaves the worktree owned by a different uid, and git refuses with "dubious
+# ownership" (exit 128). Passing it in also means the image records exactly what
+# was built even if the tag is ever moved.
+ARG BUZZ_REV=unknown
 COPY . .
-# Record the exact revision actually built, so the image states its own pin and
-# a moving tag cannot silently change what the digest means.
-RUN git rev-parse HEAD > /build/BUZZ_REVISION \
+RUN echo "$BUZZ_REV" > /build/BUZZ_REVISION \
     && cargo chef prepare --recipe-path recipe.json
 
 # ─── Stage 3: cook dependencies, build the three binaries ───────────────────
 FROM chef AS builder
-ARG BUZZ_REF
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential \
@@ -59,6 +61,7 @@ RUN cargo build --release --locked \
 
 # ─── Stage 4: runtime — three binaries, a manifest, and their checksums ──────
 FROM debian:${DEBIAN_VERSION}-slim AS runtime
+ARG BUZZ_REF=relay-v0.2.1
 LABEL org.opencontainers.image.title="Buzz host tooling" \
       org.opencontainers.image.description="buzz-acp, buzz CLI and buzz-admin built from a pinned Buzz revision" \
       org.opencontainers.image.source="https://github.com/block/buzz"

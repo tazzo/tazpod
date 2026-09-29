@@ -70,6 +70,7 @@ jobs:
           push: true
           build-args: |
             BUZZ_REF=${{ env.BUZZ_REF }}
+            BUZZ_REV=${{ steps.buzz.outputs.revision }}
           tags: |
             ${{ env.IMAGE }}:${{ env.BUZZ_REF }}
             ${{ env.IMAGE }}:${{ steps.buzz.outputs.revision }}
@@ -92,8 +93,9 @@ jobs:
       - name: Verify the published image really carries the three binaries
         run: |
           docker buildx build \
-            --build-arg BUZZ_REF=${{ env.BUZZ_REF }} \
             -f .tazpod/Dockerfile.buzz-tools \
+            --build-arg BUZZ_REF=${{ env.BUZZ_REF }} \
+            --build-arg BUZZ_REV=${{ steps.buzz.outputs.revision }} \
             -t buzz-tools:verify \
             --load buzz
           docker run --rm buzz-tools:verify sh -c \
