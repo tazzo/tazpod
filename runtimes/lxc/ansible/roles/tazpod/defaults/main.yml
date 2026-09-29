@@ -196,3 +196,58 @@ multica_team_gitconfig_path: "{{ multica_user_home }}/.config/git/config"
 # The forge token the rendered credential helper reads at push time. It is never rendered
 # into any file: only the path appears in `multica.gitconfig.j2`.
 multica_gopass_github_token: cluster/github/token
+
+# ─── Buzz host tooling and agents (layer8-buzz) ─────────────────────────────
+# `buzz-acp`, `buzz` and `buzz-admin` are published nowhere: the relay image carries
+# only the relay binaries and the GitHub releases are desktop installers. They are
+# built from the PINNED Buzz revision and shipped as a tools image, so no Rust
+# toolchain is ever installed on this container — the digest IS the pin, and it is
+# the same revision as the relay image the cluster runs (one protocol contract).
+buzz_tools_image: "docker.io/tazzo/buzz-tools"
+# Pinned by DIGEST, never by tag: the tag `relay-v0.2.1` is the *source* pin, and
+# this is the *artifact* pin. Publishing run 2026-09-29 of `.github/workflows/
+# buzz-tools.yml`, built from Buzz commit 6e5c462ac524de60d7edb46c66130fd779cc9006
+# (= tag relay-v0.2.1). The image records that same commit at
+# /usr/local/share/buzz/BUZZ_REVISION, and the layer asserts it matches.
+buzz_tools_digest: "sha256:bccf27afaca7e106430ec1e03223ff26782a6cf1cf98776264796bfbdf499dd8"
+# Asserted against the image's own stamp, so a re-pushed tag cannot silently change
+# what the digest means.
+buzz_tools_expected_revision: "6e5c462ac524de60d7edb46c66130fd779cc9006"
+# The three binaries, installed here and symlinked into ~/.local/bin.
+buzz_tools_binaries:
+  - buzz-acp
+  - buzz
+  - buzz-admin
+buzz_tools_bin_dir: /home/tazpod/.local/lib/buzz-tools
+
+# The canonical host — the relay's identity. One host, one community: changing it
+# after the fact orphans the existing events (DESIGN.md §B), so it is written once.
+buzz_relay_url: "ws://192.168.1.240:3010"
+
+# One agent, one channel. The roster is in Git (`configs/buzz-agents/roster.yml`)
+# exactly like `configs/multica-team/`: the agent's identity, its channel and its
+# respond-to mode are declared, so a rebuilt container converges from the repository.
+buzz_agents_config_dir: "{{ role_path }}/../../../configs/buzz-agents"
+# Per-agent home: 0700. The private key is rendered from gopass, never committed.
+buzz_agent_home_root: /home/tazpod/buzz
+# The owner's private key is NOT read here: `buzz-admin add-member` (an operator
+# action, task 4.1) and the NIP-OA auth tag are the owner's business. This layer
+# only needs the owner's *public* key, for the harness `owner-only` gate.
+buzz_owner_gopass_pubkey: cluster/buzz/owner-public-key
+# One gopass entry per agent private key. Copy of truth (INV-3): no Git object
+# writes it and no layer can reconstruct it — regenerating an agent's key would
+# silently destroy its identity, so the render below is idempotent.
+buzz_agent_gopass_prefix: cluster/buzz/agents
+
+# Harness knobs. `MULTIPLE_EVENT_HANDLING=queue` is load-bearing, not cosmetic:
+# the default is `steer`, and OMP does not advertise the steering capability
+# (P6 §5.1, issue #4189), so with the default every message that arrives mid-turn
+# is lost SILENTLY. Gate M7 proves the fix.
+buzz_acp_agent_command: omp
+buzz_acp_agent_args: acp
+buzz_acp_respond_to: owner-only
+buzz_acp_agents: 1
+buzz_acp_multiple_event_handling: queue
+buzz_acp_idle_timeout: 1800
+buzz_acp_max_turn_duration: 7200
+buzz_acp_max_turns_per_session: 50

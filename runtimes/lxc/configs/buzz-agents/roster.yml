@@ -1,0 +1,40 @@
+# Buzz agents on this host.
+#
+# Declared in Git for the same reason `configs/multica-team/roster.yml` is: a hand-made
+# agent on a dashboard is an object a rebuild restores only if the backup was good and
+# the timing lucky; a declared agent comes back from the repository. Everything here is
+# non-secret — the private key is NOT here and never will be: it lives in gopass
+# (`cluster/buzz/agents/<name>`, the copy of truth, INV-3) and is rendered by the layer.
+#
+# One agent, one channel. The lab's rule is one run per agent at a time, and Buzz's
+# model is one *channel* at a time — so the channel is the unit of serialisation.
+#
+# `respond_to: owner-only` means the harness answers only messages whose author is the
+# owner's pubkey. A message from anyone else, relay-signed or not, does not wake the
+# agent. That is the INV-7 boundary: an agent does not read the channel, it is handed
+# work.
+
+relay_url: "ws://192.168.1.240:3010"   # the canonical host: one host, one community
+
+agents:
+  - name: buzz-agent-1
+    # The agent's Nostr identity, in clear — a public key belongs in clear. This is the
+    # value the owner admits with `buzz-admin add-member`, and it is derived from the
+    # key in gopass `cluster/buzz/agents/buzz-agent-1`, which is the copy of truth.
+    pubkey: "69cd9295286c88979f4b2784207af99403f2ac0e03af636c8b168e3ee4c74b08"
+
+    # The channel it works in. `channel_name` is resolved to the channel's id at
+    # admission time; Buzz keys channels by uuid, so the id cannot be written down
+    # before the channel exists.
+    channel_name: lab
+
+    # The author's pubkey the `owner-only` gate accepts.
+    respond_to: owner-only
+
+    # No schedule: recurring jobs are Phase 6, explicitly deferred by the operator
+    # (2026-09-29). An unmentioned agent is not woken; the mention is the alarm.
+    schedules: []
+
+    # Durable behaviour contract, shipped as the agent's system prompt. Kept next to
+    # the roster because it is part of the agent's definition, not an operator note.
+    instructions: AGENTS.md

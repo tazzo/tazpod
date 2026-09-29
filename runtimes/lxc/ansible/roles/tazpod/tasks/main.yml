@@ -8,4 +8,5 @@
 - import_tasks: layer5-paperclip.yml
 - import_tasks: layer6-multica.yml
 - import_tasks: layer7-multica-team.yml
+- import_tasks: layer8-buzz.yml
 - import_tasks: tazpod-deploy.yml
