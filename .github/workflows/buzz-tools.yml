@@ -1,0 +1,101 @@
+name: Build Buzz Host Tools
+
+# Builds the host-side Buzz tooling (`buzz-acp`, `buzz` from buzz-cli, `buzz-admin`)
+# from the PINNED upstream revision and publishes it as a tools image on Docker Hub.
+#
+# It is deliberately a SEPARATE workflow from build-push.yml: that one rebuilds
+# this repository's own container layers on every push, while this one needs to
+# check out an EXTERNAL repository (block/buzz) at a pinned tag, take minutes to
+# compile Rust, and only rerun when the pin or the Dockerfile changes.
+on:
+  push:
+    branches: [master]
+    paths:
+      - .tazpod/Dockerfile.buzz-tools
+      - .github/workflows/buzz-tools.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # The pin. Must be the SAME revision as the relay image the cluster runs, so
+  # harness and relay share one protocol contract (DESIGN.md §A.2, D1).
+  BUZZ_REF: relay-v0.2.1
+  IMAGE: tazzo/buzz-tools
+
+jobs:
+  build:
+    name: Build and publish buzz tools
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout tazpod (for the Dockerfile)
+        uses: actions/checkout@v4
+
+      - name: Checkout Buzz at the pinned revision
+        uses: actions/checkout@v4
+        with:
+          repository: block/buzz
+          ref: ${{ env.BUZZ_REF }}
+          path: buzz
+          # The pin is a tag; resolve and record the commit so the run states
+          # exactly what was built even if the tag is ever moved.
+          fetch-depth: 1
+
+      - name: Resolve the pinned Buzz commit
+        id: buzz
+        run: |
+          REV=$(git -C buzz rev-parse HEAD)
+          echo "revision=$REV" >> "$GITHUB_OUTPUT"
+          echo "Building Buzz $BUZZ_REF = $REV"
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: "roberto.tazzoli@gmail.com"
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build and push the tools image
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          # The context is the Buzz checkout; the Dockerfile lives in THIS repo,
+          # one level up, which is why it is addressed as ../.tazpod/…
+          context: buzz
+          file: ../.tazpod/Dockerfile.buzz-tools
+          push: true
+          build-args: |
+            BUZZ_REF=${{ env.BUZZ_REF }}
+          tags: |
+            ${{ env.IMAGE }}:${{ env.BUZZ_REF }}
+            ${{ env.IMAGE }}:${{ steps.buzz.outputs.revision }}
+          # The cargo layer dominates the runtime; cache it across runs.
+          cache-from: type=gha,scope=buzz-tools
+          cache-to: type=gha,mode=max,scope=buzz-tools
+
+      - name: Record the published digest
+        run: |
+          DIGEST="${{ steps.push.outputs.digest }}"
+          echo "### Buzz host tools published" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- image: \`${{ env.IMAGE }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- tag: \`${{ env.BUZZ_REF }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- buzz commit: \`${{ steps.buzz.outputs.revision }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **digest: \`$DIGEST\`**" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Pin this digest in \`tazpod/runtimes/lxc/ansible/roles/tazpod/defaults/main.yml\`." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify the published image really carries the three binaries
+        run: |
+          docker buildx build \
+            --build-arg BUZZ_REF=${{ env.BUZZ_REF }} \
+            -f .tazpod/Dockerfile.buzz-tools \
+            -t buzz-tools:verify \
+            --load buzz
+          docker run --rm buzz-tools:verify sh -c \
+            'buzz-acp --version; buzz --version; buzz-admin --version'
+          echo "--- built Buzz revision:"
+          docker run --rm buzz-tools:verify cat /usr/local/share/buzz/BUZZ_REVISION
