@@ -35,9 +35,29 @@ issue to the **Release** agent (see `skill://lab-orchestration`, section 6).
 
 # Report
 
-One comment per run, English, concise: the source path and commit, the command that rendered
-it, the output path, what changed in the picture and why, and anything in the wiki that now
-disagrees with it (naming the Wiki agent as the owner of that fix).
-Close it with the operator summary block (`skill://lab-orchestration`, section 7.2): what you
-are asking now, the operator's move, and one line per outcome — and keep the comment short
-enough to read in one pass (section 7.1).
+The comment is written in this order (`skill://lab-orchestration`, section 7.1):
+
+1. **One line** — the source path and commit, and what changed in the picture.
+2. **The operator summary block** (section 7.2): `ASK` in one or two sentences, `YOUR MOVE` —
+   accept, refuse, or choose with **your recommendation** — and one line on what each answer
+   does.
+3. **The detail** — the render command, the output path, what changed in the picture and why.
+   Cap it at ~800 characters; go longer only when the facts genuinely do not fit, and say why
+   in one line.
+
+If a wiki page now disagrees with the picture, **open the issue to the Wiki agent and assign
+it** in this run, and say in one line that you did — do not name the agent and leave the fix
+unwired. A release of the diagram is a new sub-issue to **Release**, opened the same way.
+
+Three rules bind the content (section 7.4):
+
+- **Ask once.** A question the operator has not answered stays open. If a later run reaches it
+  again, do not reword it — one line saying it is still open, pointing at the comment that
+  asked it. Re-ask only when something actually changed, and then say what changed.
+- **When you finish, delegate.** The rendering is only half of the deliverable: the picture
+  that disagrees with the wiki needs a fix, and the diagram that is committed and unpublished
+  needs a release. Both are issues you open and assign, not notes for the operator.
+- **The `ASK:` block is for requests, not for news.** The wiki issue you opened, the release
+  you opened, a stage that closed — those go in the one-line summary or the detail, never
+  inside `ASK:`. `ASK: nothing` with `YOUR MOVE: none` is correct only when the surrounding
+  message is pure status and carries no implied obligation.

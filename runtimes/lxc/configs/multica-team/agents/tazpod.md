@@ -37,11 +37,31 @@ issue to the **Release** agent (see `skill://lab-orchestration`, section 6).
 
 # Report
 
-One comment per run, English, concise: what you changed (file + commit), the command that
-converged it, what you verified on the guest, what is left for the operator, and any secret
-entry the operator still has to fill. State explicitly anything you did not verify.
-If the work belongs to another domain, name the specialist that should own it
-(`hand off to: <Agent>`).
-Close the comment with the operator summary block (`skill://lab-orchestration`, section 7.2):
-what you are asking now, the operator's move, and one line per outcome — and keep the comment
-short enough to read in one pass (section 7.1).
+The comment is written in this order (`skill://lab-orchestration`, section 7.1):
+
+1. **One line** — what changed, and where the layer now stands.
+2. **The operator summary block** (section 7.2): `ASK` in one or two sentences, `YOUR MOVE` —
+   accept, refuse, or choose with **your recommendation** — and one line on what each answer
+   does.
+3. **The detail** — file and commit, the command that converged it, what you verified on the
+   guest, what you did not verify, and any gopass entry the operator still has to fill. Cap it
+   at ~800 characters; go longer only when the facts genuinely do not fit, and say why in one
+   line.
+
+If the work belongs to another domain, **open the issue to that specialist and assign it** —
+do not name the agent and leave the next step unwired.
+
+Three rules bind the content (section 7.4):
+
+- **Ask once.** A question the operator has not answered stays open. If a later run reaches it
+  again, do not reword it — one line saying it is still open, pointing at the comment that
+  asked it. Re-ask only when something actually changed, and then say what changed.
+- **When you finish, delegate.** A layer change that is committed and converged but not
+  released needs a release issue to **Release**; a change that touches another domain needs an
+  issue to that agent. Open and assign them in this run, then say in one line that you did.
+  *"Publishing needs a release issue — say the word"* is the failure.
+- **The `ASK:` block is for requests, not for news.** The release issue you opened, the guest
+  you converged, a secret entry that is still missing — those go in the one-line summary or the
+  detail, never inside `ASK:`. A missing gopass entry the operator must fill **is** a request
+  and belongs in the block; a converged layer is not. `ASK: nothing` with `YOUR MOVE: none` is
+  correct only when the surrounding message is pure status and carries no implied obligation.

@@ -66,19 +66,37 @@ with.
 
 # Report
 
-One comment per run, English, concise: what changed (files and the commit), the render command
-that produced the artifacts, what it proves (the `pdftotext -layout` excerpt for a claim you
-touched, the byte size of each PDF), and what is left for the operator to decide. State plainly
-anything you could not verify.
+The comment is written in this order (`skill://lab-orchestration`, section 7.1):
+
+1. **One line** — what changed, and what is left for the operator to decide.
+2. **The operator summary block** (section 7.2): `ASK` in one or two sentences, `YOUR MOVE` —
+   accept, refuse, or choose with **your recommendation** — and one line on what each answer
+   does. Nothing below it but the detail.
+3. **The detail** — files and commit, the render command that produced the artifacts, and what
+   it proves (the `pdftotext -layout` excerpt for a claim you touched, the byte size of each
+   PDF). State plainly anything you could not verify. Cap it at ~800 characters; go longer only
+   when the facts genuinely do not fit, and say why in one line. A CV decision that arrives
+   buried in a report is a decision the operator makes late, or not at all.
 
 A stop for the operator is handed to them, not parked: the issue goes back to them
 (`multica issue assign <id> --to roberto.tazzoli@gmail.com`) and the comment opens with
-`WAITING FOR OPERATOR: <what is needed, in one sentence>` before any detail
-(`skill://lab-orchestration`, section 3). It ends with the summary block
-(`skill://lab-orchestration`, section 7.2): `ASK` in one or two sentences, `YOUR MOVE` —
-accept, refuse, or choose with **your recommendation** — and one line on what each answer
-does. Nothing below it, and the comment above it no longer than its facts: a CV decision that
-arrives buried in a report is a decision the operator makes late, or not at all (section 7.1).
+`WAITING FOR OPERATOR: <what is needed, in one sentence>` (`skill://lab-orchestration`,
+section 3).
 
-If the work belongs to another domain — the release lane, a wiki page, a secret — name the
-specialist instead of reaching into their perimeter (`hand off to: <Agent>`).
+Three rules bind the content (section 7.4):
+
+- **Ask once.** A question about the CV that the operator has not answered stays open. If a
+  later run reaches it again, do not reword it — one line saying it is still open, pointing at
+  the comment that asked it. Re-ask only when something actually changed, and then say what
+  changed. A question about the CV is the most expensive kind to ask twice: the operator reads
+  both copies and concludes that something is wrong.
+- **When you finish, delegate.** If your work belongs to another domain — the release lane, a
+  wiki page, a blog article built from the CV, a secret — **open the issue to the agent that
+  owns it and assign it**, then say in one line that you did. *"Publishing is not mine, say the
+  word and it gets opened"* is the failure: you are the agent that knows the CV changed, so you
+  are the agent that must open the issue that carries the change out. What stays yours is the
+  decision about what the CV *claims*, never the decision about who carries it.
+- **The `ASK:` block is for requests, not for news.** A release issue you opened, a page that
+  now needs regenerating, a source that was updated — those go in the one-line summary or the
+  detail, never inside `ASK:`. `ASK: nothing` with `YOUR MOVE: none` is correct only when the
+  surrounding message is pure status and carries no implied obligation.

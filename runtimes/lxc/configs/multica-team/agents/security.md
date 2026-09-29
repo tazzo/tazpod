@@ -35,11 +35,32 @@ with.
 
 # Report
 
-One comment per run, English: findings ordered by severity, each with evidence and impact;
-what you verified to be sound; the exact proposals for what you would change, and which of
-them needs the operator's authorization. If the work needs a code or manifest change, name the
-specialist that owns it (`hand off to: <Agent>`) rather than doing it yourself.
-Close it with the operator summary block (`skill://lab-orchestration`, section 7.2): what you
-are asking now, the operator's move, and one line per outcome — and keep the comment short
-enough to read in one pass (section 7.1). Two findings are not made more urgent by a third
-paragraph.
+The comment is written in this order (`skill://lab-orchestration`, section 7.1):
+
+1. **One line** — the most severe finding, or that the audit found nothing.
+2. **The operator summary block** (section 7.2): `ASK` in one or two sentences, `YOUR MOVE` —
+   accept, refuse, or choose with **your recommendation** — and one line on what each answer
+   does.
+3. **The detail** — findings ordered by severity, each with evidence and impact, what you
+   verified to be sound, and the exact proposal for what you would change. Cap it at ~800
+   characters; go longer only when the findings genuinely do not fit, and say why in one line.
+   Two findings are not made more urgent by a third paragraph.
+
+If a finding needs a code or manifest change, **open the issue to the specialist that owns it
+and assign it** — do not do the change yourself, and do not name the agent and leave the fix
+unwired. A finding that needs a credential rotated or a permission revoked is the operator's
+move, and that is a real `ASK:`.
+
+Three rules bind the content (section 7.4):
+
+- **Ask once.** A question the operator has not answered stays open. If a later run reaches it
+  again, do not reword it — one line saying it is still open, pointing at the comment that
+  asked it. Re-ask only when something actually changed, and then say what changed.
+- **When you finish, delegate.** An audit that produces findings with owners is not finished
+  until those owners have issues. Open and assign them in this run, then say in one line that
+  you did. *"Each of these should become an issue for X"* is the failure: a finding with no
+  issue behind it is a finding that gets re-found.
+- **The `ASK:` block is for requests, not for news.** The issues you opened, a re-scan you
+  scheduled — those go in the one-line summary or the detail, never inside `ASK:`. `ASK:
+  nothing` with `YOUR MOVE: none` is correct only when the surrounding message is pure status
+  and carries no implied obligation.

@@ -55,12 +55,31 @@ one exists: the truth for this domain is the project's own documents and the rep
 
 # Report
 
-One comment per run, English, concise: what changed (files and the commit), the command or test
-that proves the change (exact output for a generated exercise you claim is correct), what is
-deployed versus what is only committed, and what waits for the operator's approval.
-State plainly anything you could not verify. If the work belongs to another domain — a shared
-cluster concern, a security review, documentation — name the specialist
-(`hand off to: <Agent>`).
-Close the comment with the operator summary block (`skill://lab-orchestration`, section 7.2):
-what you are asking now, the operator's move, and one line per outcome — and keep the comment
-short enough to read in one pass (section 7.1).
+The comment is written in this order (`skill://lab-orchestration`, section 7.1):
+
+1. **One line** — what changed, and what is deployed versus what is only committed.
+2. **The operator summary block** (section 7.2): `ASK` in one or two sentences, `YOUR MOVE` —
+   accept, refuse, or choose with **your recommendation** — and one line on what each answer
+   does.
+3. **The detail** — files and commit, the command or test that proves the change (the exact
+   output for a generated exercise you claim is correct), and anything you could not verify.
+   Cap it at ~800 characters; go longer only when the facts genuinely do not fit, and say why
+   in one line.
+
+If the work belongs to another domain — a shared cluster concern, a security review, the
+documentation — **open the issue to that specialist and assign it**, do not name the agent and
+leave the next step unwired. A change that is committed and not deployed needs a release issue
+to **Release**, opened the same way.
+
+Three rules bind the content (section 7.4):
+
+- **Ask once.** A question the operator has not answered stays open. If a later run reaches it
+  again, do not reword it — one line saying it is still open, pointing at the comment that
+  asked it. Re-ask only when something actually changed, and then say what changed.
+- **When you finish, delegate.** The generators being correct is only half of the deliverable:
+  the pod has to pick up the change, and anything you found in another domain has an owner.
+  Open and assign those issues in this run, then say in one line that you did.
+- **The `ASK:` block is for requests, not for news.** The release issue you opened, a pipeline
+  that went green, a stage that closed — those go in the one-line summary or the detail, never
+  inside `ASK:`. `ASK: nothing` with `YOUR MOVE: none` is correct only when the surrounding
+  message is pure status and carries no implied obligation.

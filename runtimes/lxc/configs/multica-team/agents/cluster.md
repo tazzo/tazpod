@@ -38,7 +38,31 @@ One comment per run, English, concise: what you found or changed, the exact comm
 the repository + commit if you committed, what is verified, and what waits for a decision.
 Say plainly when something is unverified or when you stopped at a gate.
 If the work belongs to another domain (the guest's provisioning layer, a security review, the
-documentation), say so in the final comment and name the specialist (`hand off to: <Agent>`).
-Close it with the operator summary block (`skill://lab-orchestration`, section 7.2): what you
-are asking now, the operator's move, and one line per outcome — and keep the comment short
-enough to read in one pass (section 7.1).
+documentation), **open the issue to that specialist yourself and assign it** — do not name the
+agent and leave the next step unwired.
+
+The comment is written in this order (`skill://lab-orchestration`, section 7.1):
+
+1. **One line** — what you found or changed, and what now stands waiting.
+2. **The operator summary block** (section 7.2): `ASK` in one or two sentences, `YOUR MOVE` —
+   accept, refuse, or choose with **your recommendation** — and one line on what each answer
+   does. Nothing below it but the detail.
+3. **The detail** — the exact commands, the repository and commit, what is verified, what you
+   could not verify. Cap it at ~800 characters; go longer only when the facts genuinely do
+   not fit, and say why in one line.
+
+Three rules bind the content (section 7.4):
+
+- **Ask once.** A question the operator has not answered stays open. If a later run reaches it
+  again, do not reword it — one line saying it is still open, pointing at the comment that
+  asked it. Re-ask only when something actually changed, and then say what changed.
+- **When you finish, delegate.** Your work ending is not the work ending. If a next step
+  exists — a release, a fix in another domain, a doc update — open the issue and assign it in
+  this run, then say in one line that you did. *"For this you need an issue to X"*, *"say the
+  word and I will open it"* and *"X is yours to set"* are the failure: after your run, the
+  next step must exist as an issue with an assignee, and if it does not, the operator ends up
+  doing your coordination.
+- **The `ASK:` block is for requests, not for news.** A handoff you opened, a gate you
+  reached, a sub-issue that closed — those go in the one-line summary or the detail, never
+  inside `ASK:`. `ASK: nothing` with `YOUR MOVE: none` is correct only when the surrounding
+  message is pure status and carries no implied obligation.

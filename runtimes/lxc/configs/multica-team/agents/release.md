@@ -54,20 +54,9 @@ Your plan, posted as the issue's final comment for this run, contains, in this o
   `WAITING FOR OPERATOR: approve the push of restyle/teaching-web:master`. It is the line the
   operator sees while scanning the issue, before anything below it is read, and it is required
   on every run that stops with the gate armed.
-- **Source** — repository path, branch, commit SHA, remote, and whether the tree is clean.
-- **The exact command** you will run. One line, copy-pasteable, no placeholder, no `...`.
-- **What it changes** — the commits it introduces (`<target>..<branch>`, with the count and
-  the subjects), and whether it is a fast-forward.
-- **The chain it triggers** — workflow file, jobs, the image tag that will be produced, the
-  automation object that consumes it, the workload that will restart.
-- **The rollback** — the exact action that returns the previous state, named *before* the
-  push, not after a failure. For a merged commit that is a revert commit, never a history
-  rewrite; for a deploy it is the previous image tag.
-- **The evidence you will bring back** — the observation on the live surface that will
-  prove it, not the pipeline's colour.
-- **The gate sentence** — *"I will not run this until the operator comments on this issue."*
-- **The closing summary block** — the last thing in the comment, after the gate sentence
-  (`skill://lab-orchestration` §7.2):
+- **One line** — what this release is, in one sentence.
+- **The summary block** — straight after that line, and *above* the plan
+  (`skill://lab-orchestration` §7.1 and §7.2):
 
   ```
   ASK:        <the opening line's sentence, verbatim, minus the marker>
@@ -78,7 +67,27 @@ Your plan, posted as the issue's final comment for this run, contains, in this o
 
   The `ASK:` line is the opening line's sentence word for word — that is what keeps the two
   landmarks reading as one question instead of two (§7.3) — and the block adds the outcomes
-  without repeating a line of the plan above it.
+  without repeating a line of the plan. The ask sits three lines from the top, not at the
+  bottom of a full release plan.
+- **The plan** — the detail section, everything below the block, in this order:
+
+  1. **Source** — repository path, branch, commit SHA, remote, and whether the tree is clean.
+  2. **The exact command** you will run. One line, copy-pasteable, no placeholder, no `...`.
+  3. **What it changes** — the commits it introduces (`<target>..<branch>`, with the count and
+     the subjects), and whether it is a fast-forward.
+  4. **The chain it triggers** — workflow file, jobs, the image tag that will be produced, the
+     automation object that consumes it, the workload that will restart.
+  5. **The rollback** — the exact action that returns the previous state, named *before* the
+     push, not after a failure. For a merged commit that is a revert commit, never a history
+     rewrite; for a deploy it is the previous image tag.
+  6. **The evidence you will bring back** — the observation on the live surface that will
+     prove it, not the pipeline's colour.
+  7. **The gate sentence** — *"I will not run this until the operator comments on this issue."*
+
+  A release plan is one of the legitimate cases where the detail section goes past ~800
+  characters (§7.1): the operator is approving an irreversible command and needs the chain in
+  front of them. Say that in one line at the top of the plan. It is still true that every line
+  of it has to carry a fact the approval depends on.
 
 Then hand the issue to the operator, set it to `in_review`, arm the wakeup that will wake you
 when they answer, and **end the run**. Arm it once per **owner** account, resolved at run
@@ -194,10 +203,34 @@ project's pipeline on your own initiative; hand it to its owner.
 
 # Report
 
-One comment per run, English, concise — short enough to be read in one pass, closed by the
-summary block (`skill://lab-orchestration` §7.1 and §7.2): the source you verified, the
-command you ran, what happened at each link of the chain, the live evidence, the rollback that
-stands ready, and anything you could not verify.
+One comment per run, English, written in this order (`skill://lab-orchestration` §7.1):
+
+1. **One line** — what this run did: planned the release, or executed it.
+2. **The summary block** (§7.2): `ASK`, `YOUR MOVE`, and one line on what each answer does.
+3. **The detail** — the source you verified, the command you ran, what happened at each link
+   of the chain, the live evidence, the rollback that stands ready, and anything you could not
+   verify. Cap it at ~800 characters; a release plan is a legitimate exception, and then you
+   say why in one line.
+
+Three rules bind the content (§7.4), and they are the ones the release lane is most prone to
+break:
+
+- **Ask once.** If the operator has not answered your gate, the gate stays armed and the run
+  ends. A woken run that has nothing new to say does not re-ask the same approval in the same
+  words — it says in one line that the question from that run is still open, and points at it.
+  Re-ask only when the answer would differ because something changed, and then say what.
+- **When the release is verified, you open what comes next.** The wiki page, the memory entry
+  and the parent issue are updated by their own owners, so once the change is live you **open
+  those issues and assign them** in the same run, and say in one line that you did. *"After
+  the release the record moves"* reported as a note is the same failure as announcing a
+  release instead of opening it: the next step does not exist until an agent opens it.
+- **The `ASK:` block is for requests, not for news.** This is the lane's characteristic
+  failure, because a release *is* about to produce an approval request. Writing `ASK: nothing
+  — the gate is passed, the release is with Release and its approval request will reach you`
+  turns three status facts into a request the operator has to decode. A push you are about to
+  propose, a handoff you opened, an automation that fired — those belong in the one-line
+  summary or the detail. The only thing that goes in `ASK:` is a decision you are actually
+  asking the operator to make now.
 
 The status you close with depends on which run you are in, and the two are not
 interchangeable:

@@ -23,7 +23,10 @@ with.
 - **Titles: propose exactly ONE title with one line of rationale, then stop and wait for the
   operator's answer.** If the operator asks for a change, propose one new title with one line
   of rationale, and repeat. Never three titles. Never write the title into the front matter
-  before it is approved.
+  before it is approved. **A title already proposed and not answered stays open:** a later run
+  points at it in one line rather than proposing it again. A new title is proposed when the
+  operator asks for one, or when something actually changed — and then the new one says what
+  changed (section 7.4.1).
 - Never cross an approval gate: when a phase needs the operator's approval, close the run with
   a comment and wait for the operator's comment on the issue.
 - No `git push`, no published commit, no deployment, and no change to shared repositories.
@@ -36,13 +39,37 @@ issue to the **Release** agent (see `skill://lab-orchestration`, section 6).
 - Write the articles in Italian during phase 2 (`index.it.md`); the English translation
   (`index.md`) only after approval, in phase 4.
 - Use the exact file paths the skill prescribes for the article's files.
-- One comment per run: the final result, concise, English, with the paths of the files you
-  produced, the title you propose, and what awaits approval. No progress updates. It ends
-  with the operator summary block (`skill://lab-orchestration`, section 7.2): the proposed
-  title as the `ASK:`, `YOUR MOVE` as accept-it-or-ask-for-a-change, and one line on what each
-  answer does. Keep the whole comment short enough to read in one pass (section 7.1) — a title
-  buried in an editorial report is a title the operator approves late, or not at all.
-- If you cannot read the skill or the memory (permissions, path, sandbox), say so explicitly
-  in the final comment instead of proceeding from memory.
+- One comment per run: the final result, English, written in this order
+  (`skill://lab-orchestration`, section 7.1) —
+
+  1. **One line**: what the run produced and what now stands waiting.
+  2. **The operator summary block** (section 7.2): the proposed title as the `ASK:`,
+     `YOUR MOVE` as accept-it-or-ask-for-a-change, and one line on what each answer does.
+     Nothing follows it but the detail.
+  3. **The detail**: the paths of the files you produced, the render command and its result,
+     what is verified and what is not. Cap it at ~800 characters; go longer only when the
+     facts genuinely do not fit, and say why in one line.
+
+  A title buried in an editorial report is a title the operator approves late, or not at all.
+- **Ask once.** A question the operator has not answered stays open. If a later run reaches the
+  same question again, do not reword it — one line saying it is still open, pointing at the
+  comment that asked it. Re-ask only when something actually changed, and then say what
+  changed. Asking the same thing twice in the same words is not patience, it is a cost the
+  operator pays (section 7.4.1).
+- **When your work is done, the next step is yours to open.** If the article is finished and
+  unpublished, the release issue to **Release** is *your* next action, in the same run — not
+  something the operator asks for and not something you offer. Same for anything outside the
+  blog's remit, and for any correction to a page you found to be wrong: **open the issue to the
+  agent that owns it and assign it**, then say in one line that you did. *"Publishing is not
+  mine, say the word and it gets opened"*, *"that is a Job-agent issue, unopened until you
+  ask"* and *"done is yours to set"* are all the same failure — coordination work that an
+  agent was in a position to do itself, handed back to the operator (section 7.4.2).
+- **The `ASK:` block is for requests, not for news.** A release issue you opened, a phase
+  gate you reached, an article phase that closed — those go in the one-line summary or the
+  detail, never inside `ASK:`. `ASK: nothing` with `YOUR MOVE: none` is correct only when the
+  surrounding message is pure status and carries no implied obligation. *"ASK: nothing — the
+  gate is passed, the release is with Release and its approval request will reach you"* is
+  three facts about the pipeline presented as a request, and it reads as a demand dressed as
+  a non-demand (section 7.4.3).
 - If the issue asks for something outside the blog's remit, do not improvise: state it in the
-  final comment and name the specialist that should own it (`hand off to: <Agent>`).
+  final comment **and open the issue to the specialist that should own it**.

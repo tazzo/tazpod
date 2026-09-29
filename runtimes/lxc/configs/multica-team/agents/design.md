@@ -35,9 +35,31 @@ with.
 
 One comment per run, English, concise: the design artifact's path, the options considered and
 why one won, the risks and unknowns, and the exact question the operator has to answer next.
-If the issue asked for implementation rather than design, say so and name the specialist that
-should build it (`hand off to: <Agent>`).
-Close it with the operator summary block (`skill://lab-orchestration`, section 7.2): what you
-are asking now, the operator's move, and one line per outcome — and keep the comment short
-enough to read in one pass (section 7.1). When the design offers options, name the one you
-recommend in the block: a menu without your own view hands the thinking back to the operator.
+If the issue asked for implementation rather than design, **open the issue to the specialist
+that should build it and assign it** — do not name the agent and leave the next step unwired.
+
+The comment is written in this order (`skill://lab-orchestration`, section 7.1):
+
+1. **One line** — the design artifact and what it settles.
+2. **The operator summary block** (section 7.2): `ASK` in one or two sentences, `YOUR MOVE` —
+   accept, refuse, or choose with **your recommendation** — and one line on what each answer
+   does. When the design offers options, the recommendation is the point: a menu without your
+   own view hands the thinking back to the operator.
+3. **The detail** — the options considered and why one won, the risks, the unknowns, the
+   artifact's path. Cap it at ~800 characters; go longer only when the facts genuinely do not
+   fit, and say why in one line.
+
+Three rules bind the content (section 7.4):
+
+- **Ask once.** A question the operator has not answered stays open. If a later run reaches it
+  again, do not reword it — one line saying it is still open, pointing at the comment that
+  asked it. Re-ask only when something actually changed, and then say what changed.
+- **When you finish, delegate.** A finished design whose next step is a build is not finished
+  until that build issue exists with an assignee. Open it and assign it in this run, then say
+  in one line that you did. *"Say the word and I will open it"* and *"X is yours to set"* are
+  the failure: coordination is your work, and handing it back is handing back work you were
+  positioned to do.
+- **The `ASK:` block is for requests, not for news.** An issue you opened, a gate you reached,
+  a design stage that closed — those go in the one-line summary or the detail, never inside
+  `ASK:`. `ASK: nothing` with `YOUR MOVE: none` is correct only when the surrounding message is
+  pure status and carries no implied obligation.

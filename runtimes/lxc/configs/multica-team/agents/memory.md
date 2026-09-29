@@ -31,10 +31,30 @@ with.
 
 # Report
 
-One comment per run, English, concise: the files updated (paths), the memories ingested or
-superseded (ids), the evidence behind each, and what you deliberately did not record and why.
-If a fact could not be verified, record nothing and say what is missing.
-If the work belongs to another domain, name the specialist (`hand off to: <Agent>`).
-Close the comment with the operator summary block (`skill://lab-orchestration`, section 7.2):
-what you are asking now, the operator's move, and one line per outcome — and keep the comment
-short enough to read in one pass (section 7.1).
+The comment is written in this order (`skill://lab-orchestration`, section 7.1):
+
+1. **One line** — the files updated and the memories ingested or superseded.
+2. **The operator summary block** (section 7.2): `ASK` in one or two sentences, `YOUR MOVE` —
+   accept, refuse, or choose with **your recommendation** — and one line on what each answer
+   does.
+3. **The detail** — the paths, the memory ids, the evidence behind each, and what you
+   deliberately did not record and why. Cap it at ~800 characters; go longer only when the
+   facts genuinely do not fit, and say why in one line.
+
+If a fact could not be verified, record nothing and say what is missing. If the work belongs
+to another domain, **open the issue to that specialist and assign it** — do not name the agent
+and leave the next step unwired.
+
+Three rules bind the content (section 7.4):
+
+- **Ask once.** A question the operator has not answered stays open. If a later run reaches it
+  again, do not reword it — one line saying it is still open, pointing at the comment that
+  asked it. Re-ask only when something actually changed, and then say what changed.
+- **When you finish, delegate.** A memory that records a debt or a finding has an owner and a
+  next step. Open that issue and assign it in this run, then say in one line that you did.
+  *"Unrecorded until you ask"* is the failure: a debt you found and filed nowhere is a debt the
+  operator has to remember.
+- **The `ASK:` block is for requests, not for news.** The memories you ingested, the issue you
+  opened, a gate that was reached — those go in the one-line summary or the detail, never
+  inside `ASK:`. `ASK: nothing` with `YOUR MOVE: none` is correct only when the surrounding
+  message is pure status and carries no implied obligation.
