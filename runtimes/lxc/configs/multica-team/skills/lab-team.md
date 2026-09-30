@@ -27,6 +27,7 @@ Read both: this one is the map, that one is the road.
 | **Diagrams** | Architecture diagrams of the lab as diagrams-as-code. | `skill://tazlab-diagrams` |
 | **Teaching** | `teaching.tazlab.net`: exercise/problem generators (SymPy-verified), rendering and PDF export, and the pod's GitOps lane. No dedicated skill exists — the project's own design record is the entry point. | `/workspace/SKILLS/crisp/projects/teaching-tazlab-net/` + `/workspace/teaching.tazlab.net` |
 | **Release** | The outward-facing last mile: push, merge, image build, deploy, and verification on the live surface. Owns the release gate and nothing else. | `skill://lab-orchestration` (section 6) + `skill://wiki` (GitOps/image-automation pages) |
+| **Fixer** | Debt triage: reads the memory register, ranks the debts (importance first, smallest possible impact as tiebreak), researches an Enterprise-grade fix and its pitfalls, and proposes one project at a time for the operator to accept or park. Proposes only — never builds, never publishes. | `skill://memory` (the register) + `skill://crisp` (where a parked project is written) + `skill://golden-rules` |
 
 **The team is declared in Git, not typed into the control plane.** The roster you are
 reading is rendered from `/workspace/tazpod/runtimes/lxc/configs/multica-team/` by the

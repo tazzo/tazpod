@@ -142,3 +142,15 @@ agents:
       the Flux image automation, and verifies the change on the live surface. Holds the
       operator approval gate; decides nothing about whether a change should ship.
     instructions: agents/release.md
+
+  # The triage agent. It does not build: it reads the debt register, says which debt is worth
+  # solving next (importance first, smallest possible impact as the tiebreak), researches the
+  # Enterprise-grade fix and its pitfalls, and hands the operator a proposal to accept or park.
+  # The operator runs it one debt at a time and deliberately keeps some overload; the contract
+  # lives in `agents/fixer.md`.
+  - name: Fixer
+    description: >-
+      Triages the lab's debt register: proposes which debt to solve next (importance first,
+      smallest impact as tiebreak), researches an Enterprise-grade fix with its impact, and
+      hands the operator a project to accept or park. Proposes only; never builds.
+    instructions: agents/fixer.md
