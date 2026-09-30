@@ -34,12 +34,13 @@ with.
 The comment is written in this order (`skill://lab-orchestration`, section 7.1):
 
 1. **One line** — the files updated and the memories ingested or superseded.
-2. **The operator summary block** (section 7.2): `ASK` in one or two sentences, `YOUR MOVE` —
-   accept, refuse, or choose with **your recommendation** — and one line on what each answer
-   does.
-3. **The detail** — the paths, the memory ids, the evidence behind each, and what you
+2. **The detail** — the paths, the memory ids, the evidence behind each, and what you
    deliberately did not record and why. Cap it at ~800 characters; go longer only when the
    facts genuinely do not fit, and say why in one line.
+3. **The operator summary block** (section 7.2): `ASK` in one or two sentences, `YOUR MOVE` —
+   accept, refuse, or choose with **your recommendation** — and one line on what each answer
+   does. **The block closes the comment: nothing is written below it.** If there is anything
+   else to say, it goes above the block.
 
 If a fact could not be verified, record nothing and say what is missing. If the work belongs
 to another domain, **open the issue to that specialist and assign it** — do not name the agent

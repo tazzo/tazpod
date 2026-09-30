@@ -58,13 +58,14 @@ one exists: the truth for this domain is the project's own documents and the rep
 The comment is written in this order (`skill://lab-orchestration`, section 7.1):
 
 1. **One line** — what changed, and what is deployed versus what is only committed.
-2. **The operator summary block** (section 7.2): `ASK` in one or two sentences, `YOUR MOVE` —
-   accept, refuse, or choose with **your recommendation** — and one line on what each answer
-   does.
-3. **The detail** — files and commit, the command or test that proves the change (the exact
+2. **The detail** — files and commit, the command or test that proves the change (the exact
    output for a generated exercise you claim is correct), and anything you could not verify.
    Cap it at ~800 characters; go longer only when the facts genuinely do not fit, and say why
    in one line.
+3. **The operator summary block** (section 7.2): `ASK` in one or two sentences, `YOUR MOVE` —
+   accept, refuse, or choose with **your recommendation** — and one line on what each answer
+   does. **The block closes the comment: nothing is written below it.** If there is anything
+   else to say, it goes above the block.
 
 If the work belongs to another domain — a shared cluster concern, a security review, the
 documentation — **open the issue to that specialist and assign it**, do not name the agent and

@@ -55,21 +55,7 @@ Your plan, posted as the issue's final comment for this run, contains, in this o
   operator sees while scanning the issue, before anything below it is read, and it is required
   on every run that stops with the gate armed.
 - **One line** — what this release is, in one sentence.
-- **The summary block** — straight after that line, and *above* the plan
-  (`skill://lab-orchestration` §7.1 and §7.2):
-
-  ```
-  ASK:        <the opening line's sentence, verbatim, minus the marker>
-  YOUR MOVE:  accept, or say what to change
-  IF YES:     <one line: the approved push runs, the chain it starts, what you will verify live>
-  IF NO:      <one line: nothing is pushed, the branch stays as it is, and you re-plan>
-  ```
-
-  The `ASK:` line is the opening line's sentence word for word — that is what keeps the two
-  landmarks reading as one question instead of two (§7.3) — and the block adds the outcomes
-  without repeating a line of the plan. The ask sits three lines from the top, not at the
-  bottom of a full release plan.
-- **The plan** — the detail section, everything below the block, in this order:
+- **The plan** — the detail section, everything below the one-line summary, in this order:
 
   1. **Source** — repository path, branch, commit SHA, remote, and whether the tree is clean.
   2. **The exact command** you will run. One line, copy-pasteable, no placeholder, no `...`.
@@ -87,7 +73,23 @@ Your plan, posted as the issue's final comment for this run, contains, in this o
   A release plan is one of the legitimate cases where the detail section goes past ~800
   characters (§7.1): the operator is approving an irreversible command and needs the chain in
   front of them. Say that in one line at the top of the plan. It is still true that every line
-  of it has to carry a fact the approval depends on.
+  of it has to carry a fact the approval depends on, and it is still true that **nothing is
+  written below the block** — a release plan is long, and that is exactly why a block buried
+  in the middle of it is a block the operator reaches only after scrolling the whole chain.
+- **The summary block** — the **last** thing in the comment, after the whole plan
+  (`skill://lab-orchestration` §7.1 and §7.2):
+
+  ```
+  ASK:        <the opening line's sentence, verbatim, minus the marker>
+  YOUR MOVE:  accept, or say what to change
+  IF YES:     <one line: the approved push runs, the chain it starts, what you will verify live>
+  IF NO:      <one line: nothing is pushed, the branch stays as it is, and you re-plan>
+  ```
+
+  The `ASK:` line is the opening line's sentence word for word — that is what keeps the two
+  landmarks reading as one question instead of two (§7.3) — and the block adds the outcomes
+  without repeating a line of the plan. It is the last thing written: `IF NO:` is the final
+  line of the comment.
 
 Then hand the issue to the operator, set it to `in_review`, arm the wakeup that will wake you
 when they answer, and **end the run**. Arm it once per **owner** account, resolved at run
@@ -206,11 +208,14 @@ project's pipeline on your own initiative; hand it to its owner.
 One comment per run, English, written in this order (`skill://lab-orchestration` §7.1):
 
 1. **One line** — what this run did: planned the release, or executed it.
-2. **The summary block** (§7.2): `ASK`, `YOUR MOVE`, and one line on what each answer does.
-3. **The detail** — the source you verified, the command you ran, what happened at each link
+2. **The detail** — the source you verified, the command you ran, what happened at each link
    of the chain, the live evidence, the rollback that stands ready, and anything you could not
    verify. Cap it at ~800 characters; a release plan is a legitimate exception, and then you
    say why in one line.
+3. **The summary block** (§7.2): `ASK`, `YOUR MOVE`, and one line on what each answer does.
+   **The block closes the comment: nothing is written below it.** The release plan is the
+   longest thing any agent writes, and a block parked above it is a block the operator scrolls
+   past — so the comment ends on `IF NO:`.
 
 Three rules bind the content (§7.4), and they are the ones the release lane is most prone to
 break:

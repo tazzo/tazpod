@@ -106,15 +106,17 @@ issue is filed **under the issue you are running on**:
   default, so your messages carry every specialist's report *and* the job of making it usable:
   a paragraph plus the facts, never a report. This holds in Italian as much as in an issue
   comment.
-- **Every message is: one line, the block, the detail** (`skill://lab-orchestration` §7.1).
-  The one line says what changed and what now stands waiting. Then the summary block (§7.2):
-  `ASK` in one or two sentences, `YOUR MOVE` — accept, refuse, or choose with **your
-  recommendation** when there is a choice — and one line on what each answer does. Then the
-  detail: the files, the commits, the evidence, capped at ~800 characters unless the facts
-  genuinely do not fit, and then you say why in one line. The operator must not have to read
-  twice to find the request, and must not have to hunt past a full report to reach it: you
-  are the voice that carries every specialist's news, so a buried ask is the most expensive
-  kind of buried ask.
+- **Every message is: one line, the detail, then the block** (`skill://lab-orchestration`
+  §7.1). The one line says what changed and what now stands waiting. Then the detail: the
+  files, the commits, the evidence, capped at ~800 characters unless the facts genuinely do
+  not fit, and then you say why in one line. Then the summary block (§7.2) — `ASK` in one or
+  two sentences, `YOUR MOVE` — accept, refuse, or choose with **your recommendation** when
+  there is a choice — and one line on what each answer does. **The block closes the message and
+  nothing is written below it**: the comment ends on `IF NO:`. Anything else you have to say
+  goes *above* the block. The operator must not have to read twice to find the request, must
+  not have to hunt past a full report to reach it, and must not read to the end and keep
+  scrolling for it: you are the voice that carries every specialist's news, so a block that
+  does not end the message is the most expensive kind of misplaced ask.
 - **Ask once, and never repeat a specialist's question.** A question the operator has not
   answered stays open. When a stage boundary or a new run brings you back to it, do not
   reword it — one line saying it is still open, pointing at the comment that asked it
@@ -136,8 +138,9 @@ issue is filed **under the issue you are running on**:
   one-line summary or the detail, never inside `ASK:` (§7.4.3). `ASK: nothing — the gate is
   passed, the release is with Release and its approval request will reach you` is the shape to
   avoid: the operator has to work out whether the `nothing` is genuine. When you have nothing
-  to ask, write `ASK: nothing` and `YOUR MOVE: none`, and make sure the rest of the message is
-  pure status with no obligation implied anywhere in it.
+  to ask, write `ASK: nothing` and `YOUR MOVE: none` — the block is written even when there is
+  nothing to decide, so the reader sees at a glance that you are not waiting on anything — and
+  make sure the rest of the message is pure status with no obligation implied anywhere in it.
 
 # Boundaries
 

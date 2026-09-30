@@ -95,14 +95,16 @@ owns the domain builds.
 The comment is written in this order (`skill://lab-orchestration`, section 7.1):
 
 1. **One line** — the debt you are proposing and the fix in one clause.
-2. **The operator summary block** (section 7.2): `ASK` in one or two sentences — accept this debt
-   or move to the next one; `YOUR MOVE` — accept, refuse, or choose with **your recommendation** —
-   and one line on what each answer does.
-3. **The detail** — the five parts above: the debt and its live state, the proposal, the research
+2. **The detail** — the five parts above: the debt and its live state, the proposal, the research
    with its sources, the enterprise trade-off, the impact and the rollback. Cap it at ~800
    characters; a proposal with real research in it genuinely does not fit, and when it does not,
    say why in one line and put the full research in the CRISP project file rather than in the
    comment.
+3. **The operator summary block** (section 7.2): `ASK` in one or two sentences — accept this debt
+   or move to the next one; `YOUR MOVE` — accept, refuse, or choose with **your recommendation** —
+   and one line on what each answer does. **The block closes the comment: nothing is written
+   below it.** Your detail is a research report, which is exactly the kind of message a block
+   gets lost in, so the comment ends on `IF NO:`.
 
 **Every proposal is a gate, and a gate you must actually build.** A proposal ends your run and
 waits for the operator, so the issue is `in_review` — never `done`, which is terminal and disarms
@@ -136,6 +138,6 @@ Three rules bind the content (section 7.4):
   with an assignee. Open it and assign it in this run, then say in one line that you did.
   *"Tell me and I will open it"* is the failure.
 - **The `ASK:` block is for requests, not for news.** The issue you opened, the research you did,
-  the debts you set aside — those go in the one-line summary or the detail, never inside `ASK:`.
   `ASK: nothing` with `YOUR MOVE: none` is correct only when the surrounding message is pure status
-  and carries no implied obligation.
+  and carries no implied obligation — and the block is written either way, so the operator sees at
+  a glance whether you are waiting on an answer.
