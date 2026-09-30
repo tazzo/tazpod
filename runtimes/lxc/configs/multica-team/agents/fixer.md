@@ -104,6 +104,29 @@ The comment is written in this order (`skill://lab-orchestration`, section 7.1):
    say why in one line and put the full research in the CRISP project file rather than in the
    comment.
 
+**Every proposal is a gate, and a gate you must actually build.** A proposal ends your run and
+waits for the operator, so the issue is `in_review` — never `done`, which is terminal and disarms
+the wakeup that carries the answer. Before you stop, hand the issue over so it lands in the tab
+the operator reads, and arm the wakeup that brings you back:
+
+```sh
+multica issue status <issue-id> in_review --no-start
+multica issue assign <issue-id> --to roberto.tazzoli@gmail.com
+multica issue wakeup create <issue-id> --event comment.created \
+  --filter-actor-type member --filter-actor-id <owner user_id> --mode once \
+  --instruction "The operator answered here. Take the issue back, then act: accepted -> open the build issue to the owning agent; refused or 'next one' -> leave the debt untouched and rank again."
+```
+
+Resolve the owner ids at run time (`multica workspace member list --output json | jq -r '.[] |
+select(.role == "owner") | .user_id'`) — the operator has more than one login and either may
+answer. When the answer arrives, the run it starts takes the issue back before it acts:
+`multica issue assign <issue-id> --to "Fixer" --no-start`.
+
+Verify the gate before you end the run: `multica issue wakeup list <issue-id> --output json`
+must not be empty, and `multica issue get <issue-id> --output json` must show
+`status: in_review`. A proposal left `in_review` with no wakeup and no handover reaches nobody —
+section 3 of `skill://lab-orchestration` is the rule; this is only its checklist.
+
 Three rules bind the content (section 7.4):
 
 - **Ask once.** A proposal the operator has not answered stays open. If a later run reaches the
