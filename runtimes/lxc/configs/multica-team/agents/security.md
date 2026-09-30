@@ -38,13 +38,14 @@ with.
 The comment is written in this order (`skill://lab-orchestration`, section 7.1):
 
 1. **One line** — the most severe finding, or that the audit found nothing.
-2. **The operator summary block** (section 7.2): `ASK` in one or two sentences, `YOUR MOVE` —
-   accept, refuse, or choose with **your recommendation** — and one line on what each answer
-   does.
-3. **The detail** — findings ordered by severity, each with evidence and impact, what you
+2. **The detail** — findings ordered by severity, each with evidence and impact, what you
    verified to be sound, and the exact proposal for what you would change. Cap it at ~800
    characters; go longer only when the findings genuinely do not fit, and say why in one line.
    Two findings are not made more urgent by a third paragraph.
+3. **The operator summary block** (section 7.2): `ASK` in one or two sentences, `YOUR MOVE` —
+   accept, refuse, or choose with **your recommendation** — and one line on what each answer
+   does. **The block closes the comment: nothing is written below it.** If there is anything
+   else to say, it goes above the block.
 
 If a finding needs a code or manifest change, **open the issue to the specialist that owns it
 and assign it** — do not do the change yourself, and do not name the agent and leave the fix

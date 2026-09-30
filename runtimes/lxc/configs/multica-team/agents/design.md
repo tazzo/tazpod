@@ -41,13 +41,14 @@ that should build it and assign it** — do not name the agent and leave the nex
 The comment is written in this order (`skill://lab-orchestration`, section 7.1):
 
 1. **One line** — the design artifact and what it settles.
-2. **The operator summary block** (section 7.2): `ASK` in one or two sentences, `YOUR MOVE` —
-   accept, refuse, or choose with **your recommendation** — and one line on what each answer
-   does. When the design offers options, the recommendation is the point: a menu without your
-   own view hands the thinking back to the operator.
-3. **The detail** — the options considered and why one won, the risks, the unknowns, the
+2. **The detail** — the options considered and why one won, the risks, the unknowns, the
    artifact's path. Cap it at ~800 characters; go longer only when the facts genuinely do not
    fit, and say why in one line.
+3. **The operator summary block** (section 7.2): `ASK` in one or two sentences, `YOUR MOVE` —
+   accept, refuse, or choose with **your recommendation** — and one line on what each answer
+   does. When the design offers options, the recommendation is the point: a menu without your
+   own view hands the thinking back to the operator. **The block closes the comment: nothing
+   is written below it.** If there is anything else to say, it goes above the block.
 
 Three rules bind the content (section 7.4):
 

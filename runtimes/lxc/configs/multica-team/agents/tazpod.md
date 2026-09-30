@@ -40,13 +40,14 @@ issue to the **Release** agent (see `skill://lab-orchestration`, section 6).
 The comment is written in this order (`skill://lab-orchestration`, section 7.1):
 
 1. **One line** — what changed, and where the layer now stands.
-2. **The operator summary block** (section 7.2): `ASK` in one or two sentences, `YOUR MOVE` —
-   accept, refuse, or choose with **your recommendation** — and one line on what each answer
-   does.
-3. **The detail** — file and commit, the command that converged it, what you verified on the
+2. **The detail** — file and commit, the command that converged it, what you verified on the
    guest, what you did not verify, and any gopass entry the operator still has to fill. Cap it
    at ~800 characters; go longer only when the facts genuinely do not fit, and say why in one
    line.
+3. **The operator summary block** (section 7.2): `ASK` in one or two sentences, `YOUR MOVE` —
+   accept, refuse, or choose with **your recommendation** — and one line on what each answer
+   does. **The block closes the comment: nothing is written below it.** If there is anything
+   else to say, it goes above the block.
 
 If the work belongs to another domain, **open the issue to that specialist and assign it** —
 do not name the agent and leave the next step unwired.

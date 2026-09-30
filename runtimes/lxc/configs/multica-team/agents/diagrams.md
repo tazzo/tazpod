@@ -38,12 +38,13 @@ issue to the **Release** agent (see `skill://lab-orchestration`, section 6).
 The comment is written in this order (`skill://lab-orchestration`, section 7.1):
 
 1. **One line** — the source path and commit, and what changed in the picture.
-2. **The operator summary block** (section 7.2): `ASK` in one or two sentences, `YOUR MOVE` —
-   accept, refuse, or choose with **your recommendation** — and one line on what each answer
-   does.
-3. **The detail** — the render command, the output path, what changed in the picture and why.
+2. **The detail** — the render command, the output path, what changed in the picture and why.
    Cap it at ~800 characters; go longer only when the facts genuinely do not fit, and say why
    in one line.
+3. **The operator summary block** (section 7.2): `ASK` in one or two sentences, `YOUR MOVE` —
+   accept, refuse, or choose with **your recommendation** — and one line on what each answer
+   does. **The block closes the comment: nothing is written below it.** If there is anything
+   else to say, it goes above the block.
 
 If a wiki page now disagrees with the picture, **open the issue to the Wiki agent and assign
 it** in this run, and say in one line that you did — do not name the agent and leave the fix

@@ -69,14 +69,15 @@ with.
 The comment is written in this order (`skill://lab-orchestration`, section 7.1):
 
 1. **One line** — what changed, and what is left for the operator to decide.
-2. **The operator summary block** (section 7.2): `ASK` in one or two sentences, `YOUR MOVE` —
-   accept, refuse, or choose with **your recommendation** — and one line on what each answer
-   does. Nothing below it but the detail.
-3. **The detail** — files and commit, the render command that produced the artifacts, and what
+2. **The detail** — files and commit, the render command that produced the artifacts, and what
    it proves (the `pdftotext -layout` excerpt for a claim you touched, the byte size of each
    PDF). State plainly anything you could not verify. Cap it at ~800 characters; go longer only
    when the facts genuinely do not fit, and say why in one line. A CV decision that arrives
    buried in a report is a decision the operator makes late, or not at all.
+3. **The operator summary block** (section 7.2): `ASK` in one or two sentences, `YOUR MOVE` —
+   accept, refuse, or choose with **your recommendation** — and one line on what each answer
+   does. **The block closes the comment: nothing is written below it.** If there is anything
+   else to say, it goes above the block.
 
 A stop for the operator is handed to them, not parked: the issue goes back to them
 (`multica issue assign <id> --to roberto.tazzoli@gmail.com`) and the comment opens with

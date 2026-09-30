@@ -43,12 +43,13 @@ issue to the **Release** agent (see `skill://lab-orchestration`, section 6).
   (`skill://lab-orchestration`, section 7.1) —
 
   1. **One line**: what the run produced and what now stands waiting.
-  2. **The operator summary block** (section 7.2): the proposed title as the `ASK:`,
-     `YOUR MOVE` as accept-it-or-ask-for-a-change, and one line on what each answer does.
-     Nothing follows it but the detail.
-  3. **The detail**: the paths of the files you produced, the render command and its result,
+  2. **The detail**: the paths of the files you produced, the render command and its result,
      what is verified and what is not. Cap it at ~800 characters; go longer only when the
      facts genuinely do not fit, and say why in one line.
+  3. **The operator summary block** (section 7.2): the proposed title as the `ASK:`,
+     `YOUR MOVE` as accept-it-or-ask-for-a-change, and one line on what each answer does.
+     **The block closes the comment: nothing is written below it.** If there is anything else
+     to say, it goes above the block.
 
   A title buried in an editorial report is a title the operator approves late, or not at all.
 - **Ask once.** A question the operator has not answered stays open. If a later run reaches the

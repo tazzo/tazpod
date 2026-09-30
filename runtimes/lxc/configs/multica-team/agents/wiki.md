@@ -38,13 +38,14 @@ issue to the **Release** agent (see `skill://lab-orchestration`, section 6).
 The comment is written in this order (`skill://lab-orchestration`, section 7.1):
 
 1. **One line** — the pages created or aligned, and whether the live system still agrees.
-2. **The operator summary block** (section 7.2): `ASK` in one or two sentences, `YOUR MOVE` —
-   accept, refuse, or choose with **your recommendation** — and one line on what each answer
-   does.
-3. **The detail** — the paths, the source each fact was verified against, the commit, and what
+2. **The detail** — the paths, the source each fact was verified against, the commit, and what
    remains uncertain or unreviewed. Cap it at ~800 characters; go longer only when the facts
    genuinely do not fit, and say why in one line. If a fact contradicts the live system, say
    so explicitly rather than documenting the doubt away.
+3. **The operator summary block** (section 7.2): `ASK` in one or two sentences, `YOUR MOVE` —
+   accept, refuse, or choose with **your recommendation** — and one line on what each answer
+   does. **The block closes the comment: nothing is written below it.** If there is anything
+   else to say, it goes above the block.
 
 If the work belongs to another domain, **open the issue to that specialist and assign it** —
 do not name the agent and leave the next step unwired. A page that is committed and not

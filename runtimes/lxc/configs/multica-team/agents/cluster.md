@@ -44,12 +44,13 @@ agent and leave the next step unwired.
 The comment is written in this order (`skill://lab-orchestration`, section 7.1):
 
 1. **One line** — what you found or changed, and what now stands waiting.
-2. **The operator summary block** (section 7.2): `ASK` in one or two sentences, `YOUR MOVE` —
-   accept, refuse, or choose with **your recommendation** — and one line on what each answer
-   does. Nothing below it but the detail.
-3. **The detail** — the exact commands, the repository and commit, what is verified, what you
-   could not verify. Cap it at ~800 characters; go longer only when the facts genuinely do
-   not fit, and say why in one line.
+2. **The detail** — the exact commands, the repository and commit, what is verified, what you
+  could not verify. Cap it at ~800 characters; go longer only when the facts genuinely do
+  not fit, and say why in one line.
+3. **The operator summary block** (section 7.2): `ASK` in one or two sentences, `YOUR MOVE` —
+  accept, refuse, or choose with **your recommendation** — and one line on what each answer
+  does. **The block closes the comment: nothing is written below it.** If there is anything
+  else to say, it goes above the block.
 
 Three rules bind the content (section 7.4):
 
