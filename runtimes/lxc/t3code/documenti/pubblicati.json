@@ -2,6 +2,7 @@
   "project": "t3code",
   "fetched_at": "2026-10-17",
   "endpoint": "GET/POST http://127.0.0.1:7807/api/v1/documents?project=t3code",
+  "note": "i documenti di coda (plan, roadmap, progress) sono pubblicati con il titolo in inglese; le prime copie con titolo italiano restano elencate",
   "documents": [
     {
       "id": 126,
@@ -37,6 +38,27 @@
       "author": "ambrogio-worker-q89",
       "created_at": 1792254737363,
       "body_chars": 3366
+    },
+    {
+      "id": 131,
+      "title": "Plan — T3 Code in laboratorio (CT106)",
+      "author": "ambrogio-worker-q89",
+      "created_at": 1792255472728,
+      "body_chars": 2762
+    },
+    {
+      "id": 132,
+      "title": "Roadmap — T3 Code in laboratorio (CT106)",
+      "author": "ambrogio-worker-q89",
+      "created_at": 1792255472734,
+      "body_chars": 2865
+    },
+    {
+      "id": 133,
+      "title": "Progress — passo 89: proposta T3 Code in laboratorio",
+      "author": "ambrogio-worker-q89",
+      "created_at": 1792255472741,
+      "body_chars": 3858
     }
   ]
 }

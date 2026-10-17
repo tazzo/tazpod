@@ -1,4 +1,4 @@
-# Piano — T3 Code in laboratorio
+# Plan (Piano) — T3 Code in laboratorio (CT106)
 
 **Progetto**: `t3code` · **Aperto**: 2026-10-17 · **Origine**: richiesta dell'operatore del
 2026-10-17 («installarlo sul laptop e comandare i miei agenti... lavorano nel container 106... provare
