@@ -59,9 +59,15 @@ print(f"PASS t3.json valid against {schema['$id']} ({len(doc.get('scripts', []))
 PY
 [ $? -eq 0 ] || FAILS=$((FAILS + 1))
 
-for f in PROPOSTA.md README.md t3.json setup-worktree.sh documenti/PIANO.md documenti/ROADMAP.md documenti/PROGRESSO.md documenti/pubblicati.json; do
+for f in PROPOSTA.md README.md t3.json setup-worktree.sh documenti/PLAN.md documenti/ROADMAP.md documenti/PROGRESS.md documenti/pubblicati.json; do
   if [ -s "${HERE}/${f}" ]; then ok "present ${f}"; else bad "present ${f}"; fi
 done
+
+if bash "${HERE}/documenti/check-documents.sh" >/dev/null 2>&1; then
+  ok "documenti/check-documents.sh (plan, roadmap, progress on the hub)"
+else
+  bad "documenti/check-documents.sh (plan, roadmap, progress on the hub)"
+fi
 
 if [ "$FAILS" -eq 0 ]; then printf '\ncheck-layer: all checks passed\n'; else printf '\ncheck-layer: %s failed\n' "$FAILS"; fi
 exit $(( FAILS > 0 ))

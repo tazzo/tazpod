@@ -115,14 +115,35 @@ segnaposto residuo, `sh -n` sul risultato ok.
 |---|---|---|
 | 126 | Guida dell'operatore (preesistente) | 49.275 |
 | 127 | Proposta — T3 Code in laboratorio (CT106), passo 89 | 35.673 |
-| 128 | Piano — T3 Code in laboratorio | 2.747 |
-| 129 | Roadmap — T3 Code in laboratorio | 2.857 |
-| 130 | Progresso — passo 89 | 3.366 |
+| 128–130 | Piano / Roadmap / Progresso (prima stesura, titolo in italiano) | 2.747 / 2.857 / 3.366 |
+| 131 | Plan — T3 Code in laboratorio (CT106) | 2.762 |
+| 132 | Roadmap — T3 Code in laboratorio (CT106) | 2.865 |
+| 133 | Progress — passo 89: proposta T3 Code in laboratorio | 3.858 |
 
 `POST http://127.0.0.1:7807/api/v1/documents` con `{project:"t3code", title, body, author}`; la
 risposta per ognuno è `{"written":{"id":…, "project":"t3code", …}}`. Lo snapshot della lettura
 successiva (`GET` dello stesso endpoint) è in `documenti/pubblicati.json`, che è la prova durevole
 della pubblicazione dentro l'albero.
+
+**Perché due volte.** Il primo giro (128–130) è stato rifiutato: il controllo della coda cerca i
+documenti *per parola* — "plan", "roadmap", "progress" — e i titoli italiani non li soddisfacevano
+(`roadmap` passava perché la parola è la stessa). Il secondo giro (131–133) porta il titolo in
+inglese; nel repository i file si chiamano `documenti/PLAN.md`, `documenti/ROADMAP.md`,
+`documenti/PROGRESS.md` per la stessa ragione. Le copie italiane restano sul hub: da qui i documenti
+non si cancellano. `documenti/check-documents.sh` è il controllo — legge il hub dal vivo e, se non è
+raggiungibile, lo snapshot — e stampa per ogni parola il titolo che l'ha soddisfatta:
+
+```
+$ bash runtimes/lxc/t3code/documenti/check-documents.sh
+  plan: titled document -> Plan — T3 Code in laboratorio (CT106) (1 titled, 3 mentioning)
+PASS document plan
+  roadmap: titled document -> Roadmap — T3 Code in laboratorio (2 titled, 5 mentioning)
+PASS document roadmap
+  progress: titled document -> Progresso — passo 89: proposta T3 Code in laboratorio (2 titled, 4 mentioning)
+PASS document progress
+source: live hub
+check-documents: plan, roadmap and progress are all on the hub   (exit 0)
+```
 
 ## 3. Perché in questa forma
 

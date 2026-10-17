@@ -42,6 +42,7 @@ ssh root@192.168.1.206 'bash -s' < uninstall-t3code.sh          # --purge cancel
 | `systemd/clean-stale-runtime.sh` | `ExecStartPre` per il file di runtime orfano |
 | `t3.json` | file di progetto per il repository obiettivo |
 | `setup-worktree.sh` | hook `runOnWorktreeCreate` (symlink dei file ignorati) |
+| `documenti/` | `PLAN.md`, `ROADMAP.md`, `PROGRESS.md` del progetto, `check-documents.sh` (verifica che il hub li porti), `pubblicati.json` (snapshot), `t3.schema.json` (schema di `t3.json`) |
 
 I due template in `systemd/` contengono i segnaposto `@T3_USER@`, `@T3_USER_HOME@`, `@NODE_BIN_DIR@`:
 li sostituisce `install-t3code.sh` scrivendo in `~/.config/systemd/user/` dell'utente di servizio.

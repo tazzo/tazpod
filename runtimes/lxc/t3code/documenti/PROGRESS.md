@@ -1,4 +1,4 @@
-# Progresso — passo 89: la proposta per T3 Code in laboratorio
+# Progress (Progresso) — passo 89: la proposta per T3 Code in laboratorio
 
 **Data**: 2026-10-17 · **Stato**: consegnato · **Prossimo**: decisione dell'operatore (R1).
 
@@ -21,8 +21,13 @@
   campo contro lo schema pubblicato (`additionalProperties: false`); l'hook del worktree provato su un
   repository di prova (symlink dei file ignorati, idempotenza, propagazione della modifica);
   la guardia del file di runtime provata con un pid morto e con un pid vivo.
-- **Pubblicazione** della proposta e dei documenti di progetto (piano, roadmap, questo progresso) sul
-  hub del progetto `t3code`.
+- **Pubblicazione** della proposta e dei documenti di progetto sul hub del progetto `t3code`
+  (id 127–130). I tre documenti di coda sono stati poi **ripubblicati con il titolo in inglese**
+  (`Plan …` id 131, `Roadmap …` id 132, `Progress …` id 133): il controllo della coda cerca i
+  documenti per parola — "plan", "roadmap", "progress" — e i titoli italiani non li soddisfacevano.
+  Nel repository i file si chiamano `documenti/PLAN.md`, `documenti/ROADMAP.md`,
+  `documenti/PROGRESS.md` per la stessa ragione. Le copie con il titolo italiano (128–130) restano
+  sul hub: i documenti non si cancellano da qui.
 
 ## Cosa resta aperto (e non e' di questo passo)
 
@@ -48,5 +53,5 @@
 
 - Proposta e layer: `runtimes/lxc/t3code/` (`PROPOSTA.md`, `README.md`, `install-t3code.sh`,
   `verify-t3code.sh`, `uninstall-t3code.sh`, `systemd/`, `t3.json`, `setup-worktree.sh`).
-- Documenti di progetto: `runtimes/lxc/t3code/documenti/` (questo file, `PIANO.md`, `ROADMAP.md`) e il
+- Documenti di progetto: `runtimes/lxc/t3code/documenti/` (questo file, `PLAN.md`, `ROADMAP.md`) e il
   hub del progetto `t3code`.
