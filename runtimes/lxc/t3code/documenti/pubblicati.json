@@ -1,0 +1,42 @@
+{
+  "project": "t3code",
+  "fetched_at": "2026-10-17",
+  "endpoint": "GET/POST http://127.0.0.1:7807/api/v1/documents?project=t3code",
+  "documents": [
+    {
+      "id": 126,
+      "title": "Guida — Installazione T3 Code in laboratorio (dall'operatore, 2026-10-17)",
+      "author": "operator",
+      "created_at": 1792253782414,
+      "body_chars": 49275
+    },
+    {
+      "id": 127,
+      "title": "Proposta — T3 Code in laboratorio (CT106), passo 89",
+      "author": "ambrogio-worker-q89",
+      "created_at": 1792254716248,
+      "body_chars": 35673
+    },
+    {
+      "id": 128,
+      "title": "Piano — T3 Code in laboratorio",
+      "author": "ambrogio-worker-q89",
+      "created_at": 1792254737214,
+      "body_chars": 2747
+    },
+    {
+      "id": 129,
+      "title": "Roadmap — T3 Code in laboratorio",
+      "author": "ambrogio-worker-q89",
+      "created_at": 1792254737358,
+      "body_chars": 2857
+    },
+    {
+      "id": 130,
+      "title": "Progresso — passo 89: proposta T3 Code in laboratorio",
+      "author": "ambrogio-worker-q89",
+      "created_at": 1792254737363,
+      "body_chars": 3366
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+# app-t3code.slice — the lab's resource cap for T3 Code on CT106.
+#
+# Rendered by install-t3code.sh into ~/.config/systemd/user/app-t3code.slice.
+#
+# The name is not decorative: systemd derives the hierarchy from it, so this
+# slice is the parent of `app-t3code-agents.slice` — verified on this machine
+# (`systemctl --user show app-t3code-labtest.slice -p Slice` => Slice=app-t3code.slice)
+# — and the t3code.service drop-in moves the server into it as well. Both the
+# server and every agent scope therefore sit under one limit.
+#
+# Numbers, and why:
+#   CT106 is capped by LXC at memory.high=6 GiB / memory.max=8 GiB and already
+#   runs the Ambrogio engine, opencode and pi. T3 Code computes its own agent
+#   limits from total RAM — high = max(total-6GiB, half), max = max(total-4GiB,
+#   0.75*total) — which on this container resolves to roughly 4 GiB high / 6 GiB
+#   max, i.e. it would aim the agents at the container's own watermark. The cap
+#   below is the ceiling that actually holds; T3's child-slice values simply
+#   cannot exceed it, because cgroup v2 enforces every level of the hierarchy.
+#
+#   MemoryHigh=2G  throttling starts here (reclaim, no kill)
+#   MemoryMax=3G   the hard wall: an OOM inside the slice, not inside the box
+#   MemorySwapMax=0  no swap in the container: make the failure local and loud
+#   CPUQuota=400%  half of the 8 cores measured on the box, so Ambrogio keeps
+#                  a machine that answers
+#   IOWeight=200   T3 Code's unit already asks for IOWeight=1000 for the server;
+#                  as a slice this weight keeps agent git/build I/O from
+#                  starving the rest of the container
+#   TasksMax=1024  a runaway agent without a thread ceiling is the failure mode
+#                  this lab has already lived through (CT106, 2026-10-02)
+#
+# Raise the numbers only with the container's memory.high in front of you.
+
+[Unit]
+Description=T3 Code lab resource cap (server + agent scopes)
+
+[Slice]
+MemoryAccounting=yes
+MemoryHigh=2G
+MemoryMax=3G
+MemorySwapMax=0
+CPUAccounting=yes
+CPUQuota=400%
+IOWeight=200
+TasksAccounting=yes
+TasksMax=1024
