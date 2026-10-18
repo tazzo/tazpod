@@ -104,6 +104,13 @@ NODE_BIN_DIR="$(as_user bash -lc 'dirname "$(command -v node)"' 2>/dev/null || t
 
 # ─── 3. drop-ins ────────────────────────────────────────────────────────────
 say "[3/5] systemd drop-ins under ${USER_UNIT_DIR}"
+# **La cartella della config utente e' dell'utente, non di root.** Misurato il 2026-10-18, primo
+# run in laboratorio: `install -d` creava `${USER_UNIT_DIR}/t3code.service.d` e con essa i **genitori**
+# — `~/.config/systemd/user` — come **root**, e poi `t3 service install`, che gira come `${T3_USER}`,
+# moriva con `EACCES: permission denied, mkdtemp '/home/<user>/.config/systemd/user/.service-write-…'`
+# (BootServiceInstallError). I *file* erano gia' chown-ati dal `render`, le **cartelle** no: la unit
+# generata da T3 scrive accanto a se stessa, quindi la cartella deve essere sua.
+install -d -o "$T3_USER" -g "$T3_USER" -m 0755 "$USER_UNIT_DIR"
 install -d -o "$T3_USER" -g "$T3_USER" -m 0755 \
   "${USER_UNIT_DIR}/t3code.service.d" \
   "${T3_HOME_DIR}/tmp" \
