@@ -160,7 +160,10 @@ if command -v tailscale >/dev/null 2>&1; then
   if [ -n "$ts_ip" ]; then
     pass "tailscale" "up, ${ts_ip}"
   else
-    fail "tailscale" "not joined to the tailnet (${ts_state}) — the recommended route, and pairing over it, needs this"
+    # **Il tailnet non serve per T3 Connect.** L'operatore ha scelto T3 Connect (2026-10-18): la
+    # rotta Tailscale e' quella consigliata per la cifratura end-to-end, ma non e' l'unica, e
+    # un check che la pretende accusa una macchina che funziona. WARN, con la ragione.
+    warn "tailscale" "not joined to the tailnet (${ts_state}) — needed only for the Tailscale route: with T3 Connect the tailnet is not required"
   fi
   if tailscale serve status >/dev/null 2>&1; then
     pass "tailscale serve" "$(tailscale serve status 2>&1 | head -n2 | paste -sd'; ' -)"
@@ -176,7 +179,16 @@ if ss -ltn 2>/dev/null | grep -q ":${T3_PORT}\b"; then
   holder="$(ss -ltnp 2>/dev/null | grep ":${T3_PORT}\b" | head -n1)"
   case "$holder" in
     *t3*|*node*) pass "port ${T3_PORT}" "held by the T3 server: ${holder}" ;;
-    *) fail "port ${T3_PORT}" "held by something else: ${holder}" ;;
+    # **E il caso vero del secondo run** (2026-10-18): la porta e' tenuta dal servizio **appena
+    # installato**, ma `ss -ltnp` non sempre nomina il processo — quando chi legge non e' root, o
+    # quando il processo e' di un altro utente, la riga esce senza `users:(...)`. Il verdetto giusto
+    # non e' "qualcosa d'altro": e' **il servizio e' attivo e ascolta**, che e' esattamente cio' che
+    # si voleva. La riga lo dice invece di accusare.
+    *) if as_user systemctl --user is-active --quiet t3code.service 2>/dev/null; then
+         pass "port ${T3_PORT}" "held by the running T3 service: ${holder}"
+       else
+         fail "port ${T3_PORT}" "held by something else: ${holder}"
+       fi ;;
   esac
 else
   if ! command -v python3 >/dev/null 2>&1; then
