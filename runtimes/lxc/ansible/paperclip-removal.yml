@@ -1,0 +1,57 @@
+---
+# Standalone removal play for the Paperclip standby on CT106.
+#
+# NOT part of the baseline: it is the one-shot cleanup of the objects the
+# Paperclip layer used to own (unit, env dir, shim, provisioning logs) plus the
+# old `pi` state trees, which the operator chose not to keep (D15).
+#
+# Run it locally on CT106 (sudo is NOPASSWD):
+#
+#   ansible-playbook -i local.ini paperclip-removal.yml
+#
+# with a local inventory such as:
+#
+#   [tazpod]
+#   localhost ansible_connection=local
+- name: Remove the Paperclip standby from CT106
+  hosts: tazpod
+  become: yes
+  tasks:
+    - name: Stop and disable paperclip.service
+      ansible.builtin.systemd:
+        name: paperclip.service
+        state: stopped
+        enabled: false
+      failed_when: false
+
+    - name: Remove the unit file
+      ansible.builtin.file:
+        path: /etc/systemd/system/paperclip.service
+        state: absent
+
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Remove /etc/paperclip (env file with the old secrets)
+      ansible.builtin.file:
+        path: /etc/paperclip
+        state: absent
+
+    - name: Remove the managed shim
+      ansible.builtin.file:
+        path: /home/tazpod/.local/bin/paperclipai
+        state: absent
+
+    - name: Remove the Paperclip provisioning logs
+      ansible.builtin.shell:
+        cmd: "rm -f /workspace/logs/paperclip-run-*.log"
+        removes: /workspace/logs/paperclip-run-*.log
+
+    - name: Remove the old pi state trees (no sessions are kept)
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /home/tazpod/.pi
+        - /workspace/.tazpod/.pi

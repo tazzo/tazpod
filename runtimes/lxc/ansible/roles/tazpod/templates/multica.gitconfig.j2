@@ -8,7 +8,7 @@
 # the commit identity is deliberately absent below.
 #
 # What this buys: the Release agent pushes through the pipeline with the credential helper
-# reading gopass, exactly as the Paperclip service does (see `paperclip.gitconfig.j2`), so
+# reading gopass, exactly as the operator service does, so
 # the token never appears in a command line, in `ps`, in shell history, in a repository URL
 # or in a comment. Without it an agent's only options are an inline helper with the token in
 # argv or embedding it in the remote URL — both worse.

@@ -4,8 +4,9 @@
 - import_tasks: layer1-shell.yml
 - import_tasks: layer2-aws.yml
 - import_tasks: layer3-k8s.yml
+- import_tasks: layer4b-pi.yml
+  tags: [pi]
 - import_tasks: layer4-ai.yml
-- import_tasks: layer5-paperclip.yml
 - import_tasks: layer6-multica.yml
 - import_tasks: layer7-multica-team.yml
 - import_tasks: layer8-buzz.yml

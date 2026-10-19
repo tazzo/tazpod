@@ -8,7 +8,6 @@ lxc_template   = "local:vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst"
 
 # Runtime sizing (aligned with the live CT106 on 2026-09-10; the agent toolchain
 # plus Node needs the headroom, the original 2048/512 defaults were too tight).
-# dsh was decommissioned on 2026-09-25; paperclip (project paperclip-lxc-deployment)
-# reuses the same profile.
+# dsh was decommissioned on 2026-09-25; the same profile is reused.
 memory_mb = 4096
 swap_mb   = 1024

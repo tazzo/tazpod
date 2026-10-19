@@ -23,72 +23,10 @@ tazpod_admin_key_names:
 # which puts the value in argv and in any logged command line.
 tazpod_user_password: ""
 
-# ─── Paperclip (project paperclip-lxc-deployment) ───────────────────────────
-# Managed (npm) install pinned to a version; state lives on the pet volume so a
-# container rebuild does not rotate secrets/master.key. Secrets are read from
-# gopass by the layer itself (never passed with -e).
-paperclip_version: "2026.916.1"
-# B1 (operator decision 2026-09-25): the service runs as the *operator* user, so the
-# agents it spawns inherit exactly the environment the tmux agents had — write
-# access to the repositories, the git identity, gopass and the SSH keys. That is a
-# deliberate trade: the web app is now as privileged as the operator shell.
-paperclip_user: tazpod
-paperclip_uid: 1000
-paperclip_instance_id: default
-paperclip_home: /workspace/.paperclip
-# The `pi` CLI keeps its state under `~/.pi`: one session transcript per agent run in
-# `paperclips/<timestamp>-<agentId>.jsonl` (the readable record of what an agent did)
-# and the synced agent skills under `agent/`. The service user's home is on the
-# container rootfs, so a rebuild would wipe both. Mirror that home on the pet volume
-# and point `~/.pi` at it — the same guarantee the Paperclip run logs already get from
-# `paperclip_home`. `paperclip_pi_legacy_home` is the older pet location these files
-# used to live in (kept by the interactive `tazpod-deploy.yml` home symlinks); it is
-# seeded into the new directory so the transcripts already collected there survive.
-paperclip_user_home: "/home/{{ paperclip_user }}"
-paperclip_pi_account_path: "{{ paperclip_user_home }}/.pi"
-paperclip_pi_home_dir: "{{ paperclip_home }}/home"
-paperclip_pi_home: "{{ paperclip_pi_home_dir }}/.pi"
-paperclip_pi_legacy_home: /workspace/.tazpod/.pi
-paperclip_port: 3100
-paperclip_bind_host: "192.168.1.206"
-paperclip_host: "0.0.0.0"
-paperclip_public_url: "http://192.168.1.206:3100"
-paperclip_allowed_hostnames: "192.168.1.206"
-paperclip_deployment_mode: authenticated
-paperclip_deployment_exposure: private
-paperclip_bind: lan
-paperclip_db_host: "192.168.1.211"
-paperclip_db_port: 32227
-paperclip_db_name: paperclip
-paperclip_db_user: paperclip
-paperclip_db_pool_max: 10
-paperclip_gopass_db_password: infra/paperclip/db-password
-paperclip_gopass_better_auth_secret: infra/paperclip/better-auth-secret
-paperclip_gopass_tool_action_secret: infra/paperclip/tool-action-signing-secret
-paperclip_gopass_agent_jwt_secret: infra/paperclip/agent-jwt-secret
-# `pi` (the agent CLI used by the `pi_local` adapter) runs on OpenCode Go with the
-# DeepSeek Flash model; the API key is read from gopass and exported into the
-# service environment, so the agent inherits it without any secret on disk.
-paperclip_gopass_opencode_key: infra/paperclip/opencode-key
-# Web search for the agents. Two independent mechanisms, same gopass entry:
-#  * `omp` (the operator's binary) supports Exa natively and reads the key from
-#    `EXA_API_KEY`; the layer exports it into the service environment below and the
-#    operator shell gets the same variable at start (dotfiles/.bashrc).
-#  * `pi` 0.86.1 (what the `pi_local` adapter runs) has no native `web_search` tool;
-#    it reaches Exa over the MCP server declared in `~/.pi/agent/mcp.json`, whose
-#    header interpolates `${EXA_API_KEY}` from the service environment (no `gopass`
-#    at connect time, so it works with a cold pinentry cache).
-# The key value is never written to a repository file, a comment or a log.
-paperclip_gopass_exa_key: infra/exa/api-key
-# Push credential for the agents: the service's own git config reads it from
-# gopass at push time (see paperclip.gitconfig.j2); it is never exported into the
-# service environment and never written to disk.
-paperclip_gopass_github_token: cluster/github/token
-pi_version: "0.86.1"
-# `onboard --yes` always starts the server in the foreground and has no "save only"
-# switch, so the first-run onboarding is bounded by this timeout (seconds); the
-# systemd unit owns the server lifetime afterwards.
-paperclip_onboard_timeout: 240
+# ─── pi (layer4b-pi) ────────────────────────────────────────────────────────
+# One pinned `pi` CLI, system-wide, installed by layer4b-pi.yml. The operator
+# keeps it after Paperclip's decommission (2026-10-19).
+pi_version: "1.3.0"
 
 # ─── Multica (project multica-agent-orchestration, phase 3: the daemon) ─────
 # The daemon is the *runtime* of the control plane: it discovers the agent CLIs
@@ -96,7 +34,7 @@ paperclip_onboard_timeout: 240
 # control plane hands it. It is a plain user process — the upstream guide says
 # explicitly "not inside Docker" — it needs no root and it sandboxes nothing: the
 # boundary is the operating-system account, which is why it runs as `tazpod`, the
-# same deliberate trade the Paperclip layer documents (the agents it spawns inherit
+# same deliberate trade the operator runtime documents (the agents it spawns inherit
 # exactly the operator environment).
 #
 # Install shape: a *pinned release binary* from the upstream GitHub release, installed

@@ -1,0 +1,118 @@
+---
+# Layer 4b: the `pi` agent CLI — its own clean install.
+#
+# Paperclip installed `@earendil-works/pi-coding-agent` for its `pi_local`
+# adapter, together with system Node 24 from NodeSource. Paperclip is gone
+# (decommissioned 2026-10-19) but the operator keeps `pi` on CT106, so the
+# install lives here: system Node 24 + one pinned `pi`, and the nvm global that
+# used to shadow `/usr/bin/pi` is removed. Tagged so it can run alone:
+#
+#   ansible-playbook tazpod-baseline.yml --tags pi
+#
+# `pi_version` lives in the role defaults and is the only pin.
+
+- name: NodeSource signing key
+  ansible.builtin.get_url:
+    url: https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key
+    dest: /usr/share/keyrings/nodesource.asc
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: NodeSource repository (Node 24)
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/nodesource.sources
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      Types: deb
+      URIs: https://deb.nodesource.com/node_24.x
+      Suites: nodistro
+      Components: main
+      Architectures: amd64
+      Signed-By: /usr/share/keyrings/nodesource.asc
+  register: pi_nodesource_repo
+
+- name: Refresh the apt cache for the new repository
+  ansible.builtin.apt:
+    update_cache: true
+  when: pi_nodesource_repo is changed
+
+- name: System Node.js (the runtime `pi` needs; nvm's Node is the user's own)
+  ansible.builtin.apt:
+    name: nodejs
+    state: present
+
+- name: Detect the system Node version
+  ansible.builtin.command: /usr/bin/node --version
+  register: pi_node_version
+  changed_when: false
+  check_mode: false
+
+- name: System Node.js satisfies pi's engine floor (>= 22.19.0)
+  ansible.builtin.assert:
+    that:
+      - pi_node_version.stdout is version('v22.19.0', '>=')
+    fail_msg: "system node is {{ pi_node_version.stdout }}, below pi's floor v22.19.0"
+    success_msg: "system node {{ pi_node_version.stdout }} satisfies >= 22.19.0"
+
+- name: Remove the nvm `pi` that shadows the system one
+  become_user: tazpod
+  ansible.builtin.shell:
+    cmd: |
+      set -eu
+      export NVM_DIR="$HOME/.nvm"
+      [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" || true
+      npm uninstall -g @earendil-works/pi-coding-agent >/dev/null 2>&1 || true
+      rm -f "$HOME/.local/bin/pi"
+    executable: /bin/bash
+    chdir: /home/tazpod
+
+- name: Installed pi version
+  ansible.builtin.command: /usr/bin/pi --version
+  register: pi_cli_version
+  failed_when: false
+  changed_when: false
+  check_mode: false
+
+- name: Install the pi CLI system-wide at the pinned version
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      export PATH=/usr/bin:/usr/local/bin:/bin
+      exec npm install --global --no-fund --no-audit @earendil-works/pi-coding-agent@{{ pi_version }}
+    executable: /bin/bash
+  when: pi_cli_version.stdout is not defined or pi_cli_version.stdout | trim != pi_version
+  register: pi_cli_install
+  changed_when: pi_cli_install.rc == 0
+
+- name: Pi extensions (after pi exists)
+  become_user: tazpod
+  ansible.builtin.shell:
+    cmd: |
+      export PATH="/usr/bin:/usr/local/bin:$PATH"
+      pi install npm:pi-extmgr 2>/dev/null || true
+      pi install npm:pi-mcp-adapter 2>/dev/null || true
+    executable: /bin/bash
+  args:
+    creates: /home/tazpod/.pi
+
+- name: pi resolves to the system install for the operator user
+  become_user: tazpod
+  ansible.builtin.shell:
+    cmd: |
+      set -e
+      command -v pi
+      pi --version
+    executable: /bin/bash
+  register: pi_check
+  changed_when: false
+
+- name: pi is /usr/bin/pi at the pinned version
+  ansible.builtin.assert:
+    that:
+      - "'/usr/bin/pi' in pi_check.stdout"
+      - "pi_version in pi_check.stdout"
+    fail_msg: "pi resolves wrong: {{ pi_check.stdout }}"
+    success_msg: "pi = /usr/bin/pi {{ pi_version }}"

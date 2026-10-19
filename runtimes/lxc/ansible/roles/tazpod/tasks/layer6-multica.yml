@@ -4,7 +4,7 @@
 # Install shape: a *pinned release binary* of the `multica` CLI (Go, static — no
 # Node, no Docker, no npm) installed system-wide in /usr/local/bin, plus a hand-owned
 # `multica-daemon.service` under `Type=exec` running it as the *operator* user. That is
-# the same deliberate trade the Paperclip layer (layer5) documents: the agents this
+# the same deliberate trade the operator runtime documents: the agents this
 # daemon spawns inherit exactly the operator environment — the repositories, the git
 # identity, the SSH keys, the agent CLIs' own state — because the daemon sandboxes
 # nothing and the boundary it declares is the operating-system account.
@@ -141,7 +141,7 @@
 
 # ─── Secrets: read here, never passed on a command line ─────────────────────
 # `check_mode: false` keeps these read-only lookups running during `--check` (the same
-# reason the Paperclip layer sets it): without it the templates below can only render
+# reason the operator runtime sets it): without it the templates below can only render
 # with empty values and report a change on every check run — a false drift signal.
 - name: Read the Multica daemon token from gopass
   delegate_to: localhost
@@ -313,7 +313,7 @@
       - "multica-daemon.service is installed and NOT started: gopass has no `{{ multica_gopass_token }}`."
       - "That is the expected state until the control plane exists (project phase 2 — nothing can mint a `mul_...` token before then)."
       - "When it does: mint a personal access token (UI → Settings → tokens, or the headless flow the wiki page documents), then `gopass insert -m {{ multica_gopass_token }}` with the single line `mul_...`, and re-run this layer."
-      - "The token is then rendered into {{ multica_cli_config_path }} (0600, owned by {{ multica_user }}) — this CLI's own credential file, the equivalent of `/etc/paperclip/paperclip.env` for Paperclip. It never enters git and never travels in argv."
+      - "The token is then rendered into {{ multica_cli_config_path }} (0600, owned by {{ multica_user }}) — this CLI's own credential file, the equivalent of a service environment file. It never enters git and never travels in argv."
       - "No further step: on start the daemon registers one runtime per detected agent CLI in every workspace the account belongs to."
   when: multica_token | length == 0
 

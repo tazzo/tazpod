@@ -36,7 +36,7 @@ MemoryMax=2G
 CPUQuota=100%
 TasksMax=512
 
-# Hardening — the same shape as paperclip.service, for the same reason: the service
+# Hardening — the same shape as the operator service, for the same reason: the service
 # runs as the operator user and its agents must be able to edit the repositories, so
 # the writable surface is exactly the pet volume and that user's home, and everything
 # else stays read-only (ProtectSystem=strict). ProtectHome cannot be read-only here
