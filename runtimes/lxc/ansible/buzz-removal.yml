@@ -1,0 +1,36 @@
+---
+# Standalone removal play for the Buzz host tooling on CT106.
+#
+# NOT part of the baseline: it deletes the binaries, the agent home and the three
+# PATH symlinks. It deliberately does NOT touch the OMP session transcripts
+# (`/home/tazpod/workspace/.tazpod/.omp/agent/sessions`) — D11 keeps them: some
+# belong to other terminals.
+#
+#   ansible-playbook -i local.ini buzz-removal.yml
+- name: Remove the Buzz host tooling from CT106
+  hosts: tazpod
+  become: yes
+  tasks:
+    - name: Remove the agent home (identity files included)
+      ansible.builtin.file:
+        path: /home/tazpod/buzz
+        state: absent
+
+    - name: Remove the tools binaries
+      ansible.builtin.file:
+        path: /home/tazpod/.local/lib/buzz-tools
+        state: absent
+
+    - name: Remove the PATH symlinks
+      ansible.builtin.file:
+        path: "/home/tazpod/.local/bin/{{ item }}"
+        state: absent
+      loop:
+        - buzz
+        - buzz-acp
+        - buzz-admin
+
+    - name: Remove the never-executed CT100 probe scaffold
+      ansible.builtin.file:
+        path: /home/tazpod/workspace/buzz-ct100-probe
+        state: absent
