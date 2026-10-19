@@ -170,10 +170,11 @@ multica_gopass_exa_key: infra/exa/api-key
 # both route to the lab's `opencode-go` provider and read `OPENCODE_API_KEY` from the
 # environment — `pi`'s own `auth.json` is empty and `omp`'s `agent/config.yml` names
 # `opencode-go/deepseek-v4.1-flash`, so the key is not optional: without it every task
-# the daemon claims fails at the CLI handshake. Same entry the Paperclip layer exports
-# for the same two CLIs, delivered here instead of in the control plane's agent env so
-# the provider credential stays in gopass and never lands in the Multica database.
-multica_gopass_opencode_key: infra/paperclip/opencode-key
+# the daemon claims fails at the CLI handshake. It lives under `infra/multica/` since
+# 2026-10-19, when the Paperclip namespace was decommissioned and its key moved here
+# (the value is unchanged); the provider credential stays in gopass and never lands in
+# the Multica database.
+multica_gopass_opencode_key: infra/multica/opencode-key
 
 # ─── Multica agent team (layer7-multica-team) ───────────────────────────────
 # The team — the shared skills and the agents — is declared in Git next to the layer that
