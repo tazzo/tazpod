@@ -1,0 +1,52 @@
+---
+# Standalone removal play for the Multica daemon and team tooling on CT106.
+#
+# NOT part of the baseline: it stops and removes the daemon, its state and the
+# Multica-rendered git config. Run it locally on CT106 with a local inventory:
+#
+#   printf '[tazpod]\nlocalhost ansible_connection=local\n' > /tmp/inv.ini
+#   ansible-playbook -i /tmp/inv.ini multica-removal.yml
+- name: Remove the Multica daemon and tooling from CT106
+  hosts: tazpod
+  become: yes
+  tasks:
+    - name: Stop and disable multica-daemon.service
+      ansible.builtin.systemd:
+        name: multica-daemon.service
+        state: stopped
+        enabled: false
+      failed_when: false
+
+    - name: Remove the unit file
+      ansible.builtin.file:
+        path: /etc/systemd/system/multica-daemon.service
+        state: absent
+
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Remove the CLI binary
+      ansible.builtin.file:
+        path: /usr/local/bin/multica
+        state: absent
+
+    - name: Remove the config directory
+      ansible.builtin.file:
+        path: /etc/multica
+        state: absent
+
+    - name: Remove the operator profile and logs
+      ansible.builtin.file:
+        path: /home/tazpod/.multica
+        state: absent
+
+    - name: Remove the workspace cache
+      ansible.builtin.file:
+        path: /workspace/.multica
+        state: absent
+
+    - name: Remove the Multica-rendered git config
+      ansible.builtin.file:
+        path: /home/tazpod/.config/git/config
+        state: absent
