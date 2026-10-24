@@ -16,6 +16,16 @@
     state: present
   when: ada_ssh_public_key | length > 0
 
+# The desired hash is deterministic (fixed salt, value from gopass), so the current
+# one can be compared: the password is written only when it actually differs. That
+# is what makes a second run report no change.
+- name: Read the current root password hash
+  ansible.builtin.command: getent shadow root
+  register: ada_shadow
+  changed_when: false
+  check_mode: false
+  no_log: true
+
 - name: Root password (from gopass, never in the repository)
   ansible.builtin.user:
     name: root
@@ -24,7 +34,9 @@
     password: "{{ ada_ssh_password_hash }}"
     update_password: always
   no_log: true
-  when: ada_ssh_password_hash | length > 0
+  when:
+    - ada_ssh_password_hash | length > 0
+    - (ada_shadow.stdout | default('')).split(':')[1] | default('') != ada_ssh_password_hash
 
 - name: SSH policy — key and password, both allowed
   ansible.builtin.copy:
