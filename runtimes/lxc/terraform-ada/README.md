@@ -52,6 +52,26 @@ If the host ever starts swapping, a cap on CT106 is a hot change:
    taken by Proxmox guests on the LAN). `provision_key_path` names the private key the
    generated Ansible inventory uses.
 
+## SSH access
+
+| | |
+|---|---|
+| from the provisioning host | `ssh ada` (key `infra/ada/ssh/private`, `~/.ssh/ada`, config block `Host ada`) |
+| from a phone/tablet on the LAN or VPN | `ssh root@192.168.1.209`, password `gopass show -o infra/ada/ssh/password` |
+| as the service user | `ssh -l ada ada` (home `/home/ada`) |
+
+Both key and password are allowed. The Ansible role installs the key, sets the root password from a
+sha512 hash, writes `/etc/ssh/sshd_config.d/10-ada.conf`, and **keeps the host keys on the pet
+volume** (`/home/ada/state/ssh-host-keys`): a recreated container restores its own identity, so
+clients do not see a changed host key.
+
+## Recreating the container
+
+`./ada-create.sh` is the whole procedure: `terraform apply`, wait for SSH, rsync the engine, run the
+role (which installs dependencies, SSH and the service), health check. A bare
+`terraform apply -replace=proxmox_virtual_environment_container.ada` also works — the role restores
+the host keys, the access key and the password — but the engine code has to be rsynced again.
+
 ## Apply
 
 ```
