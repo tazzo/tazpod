@@ -15,7 +15,7 @@ and runtime env the provisioning scripts read. What runs **inside** is Ansible
 | RAM | **3072 MiB** + 1024 MiB swap |
 | Disk | 30 GiB on `local-lvm` |
 | Type | unprivileged, `nesting=1`, start on boot |
-| No mount points | the engine's state is its own SQLite plus `/opt/ada/workspace` |
+| Mount | **`/home/ada`** = `local-lvm:vm-998-disk-1`, a 40 GiB pet volume owned by **CT 998** (protected), created by `../terraform-ada-pet` |
 
 ## Sizing, measured on 2026-10-24
 
@@ -70,4 +70,6 @@ never touch git:
 | `ada_exa_api_key` | `infra/exa/api-key` |
 | `ada_http_token` | `infra/ada/http-token` (create it first) |
 
-`./ada-destroy.sh` removes the container **and its disk**.
+`./ada-destroy.sh` removes the container and its rootfs. **The data is not there**: it lives on the
+pet volume owned by CT 998, which stays. Changing the `mount_point` block **recreates** the
+container — the provider replaces a container whose mount configuration changes.
