@@ -19,3 +19,9 @@ ada_http_token: ""
 # root password (infra/ada/ssh/password). Never the private key.
 ada_ssh_public_key: ""
 ada_ssh_password_hash: ""
+
+# The mail channel (AgentMail): the key comes from gopass at deploy time. The
+# operator's address is the only one whose messages are commands.
+ada_agentmail_api_key: ""
+ada_mail_operator: "roberto.tazzoli@gmail.com"
+ada_mail_poll_seconds: 30
