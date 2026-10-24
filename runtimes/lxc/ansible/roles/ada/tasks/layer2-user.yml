@@ -1,4 +1,9 @@
 ---
+- name: The ada group
+  ansible.builtin.group:
+    name: "{{ ada_group }}"
+    state: present
+
 - name: The ada user (the container is its machine; sudo inside is intended)
   ansible.builtin.user:
     name: "{{ ada_user }}"

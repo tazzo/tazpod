@@ -23,6 +23,12 @@ variable "gateway" {
   default = "192.168.1.1"
 }
 
+# Where the provisioning machine keeps the private key that matches ssh_public_key.
+variable "provision_key_path" {
+  type    = string
+  default = "/root/.ssh/tazpod-provision"
+}
+
 variable "ssh_public_key" {
   type = string
 }

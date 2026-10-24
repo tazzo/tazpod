@@ -1,4 +1,12 @@
 ---
+- name: Configuration directory
+  ansible.builtin.file:
+    path: /etc/ada
+    state: directory
+    owner: root
+    group: "{{ ada_group }}"
+    mode: "0750"
+
 - name: Environment file (secrets, rendered from gopass at deploy time)
   ansible.builtin.template:
     src: env.j2
@@ -19,6 +27,13 @@
   notify:
     - reload systemd
     - restart ada
+
+# A failed first start (for example before npm ci ran) leaves a start limit behind;
+# a redeploy must be able to start the unit again.
+- name: Clear the start limit before starting
+  ansible.builtin.command: systemctl reset-failed ada
+  changed_when: false
+  failed_when: false
 
 - name: Enable and start ada
   ansible.builtin.systemd:

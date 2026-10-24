@@ -9,7 +9,7 @@ output "ct_id" {
 resource "local_file" "ansible_inventory" {
   content  = <<EOT
 [ada]
-${var.ip_address} ansible_user=root ansible_ssh_private_key_file=/root/.ssh/tazpod-provision
+${var.ip_address} ansible_user=root ansible_ssh_private_key_file=${var.provision_key_path}
 EOT
   filename = "${path.module}/../ansible/inventory-ada.ini"
 }
