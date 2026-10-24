@@ -1,0 +1,14 @@
+---
+ada_user: ada
+ada_group: ada
+ada_root: /opt/ada
+ada_app: "{{ ada_root }}/app"
+ada_node_major: "24"
+ada_http_bind: "0.0.0.0"
+ada_http_port: 7801
+
+# Filled by ada-create.sh from gopass. Empty by default so the role can run in
+# check mode without secrets.
+ada_opencode_api_key: ""
+ada_exa_api_key: ""
+ada_http_token: ""

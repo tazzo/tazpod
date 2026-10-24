@@ -1,0 +1,24 @@
+[Unit]
+Description=Ada — the durable agent house
+Documentation=file://{{ ada_app }}/README.md
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User={{ ada_user }}
+Group={{ ada_group }}
+WorkingDirectory={{ ada_app }}
+EnvironmentFile=/etc/ada/env
+ExecStart=/usr/bin/node src/main.ts serve
+Restart=always
+RestartSec=3
+KillSignal=SIGTERM
+TimeoutStopSec=20
+# The agent owns this container: it installs packages and runs commands here.
+# The container boundary, not this unit, is the blast radius.
+
+[Install]
+WantedBy=multi-user.target

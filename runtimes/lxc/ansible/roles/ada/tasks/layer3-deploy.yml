@@ -1,0 +1,28 @@
+---
+- name: Environment file (secrets, rendered from gopass at deploy time)
+  ansible.builtin.template:
+    src: env.j2
+    dest: /etc/ada/env
+    owner: "{{ ada_user }}"
+    group: "{{ ada_group }}"
+    mode: "0600"
+  no_log: true
+  notify: restart ada
+
+- name: systemd unit
+  ansible.builtin.template:
+    src: ada.service.j2
+    dest: /etc/systemd/system/ada.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart ada
+
+- name: Enable and start ada
+  ansible.builtin.systemd:
+    name: ada
+    enabled: true
+    state: started
+    daemon_reload: true

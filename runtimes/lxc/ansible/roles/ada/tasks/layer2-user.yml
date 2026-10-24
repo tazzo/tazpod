@@ -1,0 +1,33 @@
+---
+- name: The ada user (the container is its machine; sudo inside is intended)
+  ansible.builtin.user:
+    name: "{{ ada_user }}"
+    group: "{{ ada_user }}"
+    groups: sudo
+    shell: /bin/bash
+    create_home: true
+    system: false
+
+- name: Passwordless sudo for the service user
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/90-ada
+    owner: root
+    group: root
+    mode: "0440"
+    content: "{{ ada_user }} ALL=(ALL) NOPASSWD:ALL\n"
+    validate: /usr/sbin/visudo -cf %s
+
+- name: Directory tree
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner | default(ada_user) }}"
+    group: "{{ item.group | default(ada_group) }}"
+    mode: "{{ item.mode | default('0750') }}"
+  loop:
+    - { path: "{{ ada_root }}" }
+    - { path: "{{ ada_app }}" }
+    - { path: "{{ ada_root }}/data", mode: "0700" }
+    - { path: "{{ ada_root }}/workspace" }
+    - { path: "{{ ada_root }}/state", mode: "0700" }
+    - { path: "{{ ada_root }}/logs" }

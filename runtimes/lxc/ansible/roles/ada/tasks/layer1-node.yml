@@ -1,0 +1,45 @@
+---
+- name: NodeSource signing key
+  ansible.builtin.get_url:
+    url: https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key
+    dest: /usr/share/keyrings/nodesource.asc
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: NodeSource repository (Node 24)
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/nodesource.sources
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      Types: deb
+      URIs: https://deb.nodesource.com/node_{{ ada_node_major }}.x
+      Suites: nodistro
+      Components: main
+      Architectures: amd64
+      Signed-By: /usr/share/keyrings/nodesource.asc
+  register: ada_nodesource_repo
+
+- name: Refresh the apt cache for the new repository
+  ansible.builtin.apt:
+    update_cache: true
+  when: ada_nodesource_repo is changed
+
+- name: System Node.js
+  ansible.builtin.apt:
+    name: nodejs
+    state: present
+
+- name: Node version
+  ansible.builtin.command: /usr/bin/node --version
+  register: ada_node_version
+  changed_when: false
+  check_mode: false
+
+- name: Node satisfies the engine floor (type stripping needs >= 22.19)
+  ansible.builtin.assert:
+    that:
+      - ada_node_version.stdout is version('v22.19.0', '>=')
+    fail_msg: "system node is {{ ada_node_version.stdout }}, below v22.19.0"

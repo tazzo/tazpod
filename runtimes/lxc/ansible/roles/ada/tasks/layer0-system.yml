@@ -1,0 +1,26 @@
+---
+- name: Base packages
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+    name:
+      - ca-certificates
+      - curl
+      - git
+      - jq
+      - sudo
+      - ripgrep
+      - fd-find
+      - build-essential
+      - python3
+      - unzip
+      - tmux
+      - htop
+      - ncdu
+      - sqlite3
+      - rsync
+    state: present
+
+- name: Timezone
+  ansible.builtin.timezone:
+    name: Europe/Rome
