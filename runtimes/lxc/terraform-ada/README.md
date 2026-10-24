@@ -8,7 +8,7 @@ and runtime env the provisioning scripts read. What runs **inside** is Ansible
 
 | | |
 |---|---|
-| CT ID | `110` (verify it is free: the API rejects a duplicate) |
+| CT ID | `110` (created 2026-10-24) |
 | Hostname | `ada` |
 | Address | `192.168.1.209/24`, gateway `192.168.1.1` |
 | Cores | **6** (cpuset: 6 of the host's 8; TazPod keeps all 8) |
@@ -19,20 +19,22 @@ and runtime env the provisioning scripts read. What runs **inside** is Ansible
 
 ## Sizing, measured on 2026-10-24
 
-From inside CT106 (which has no cgroup limits, so it reports the host):
+From the Proxmox API (a reading from inside CT106 is misleading: its cgroup files show `max` but
+the guest is capped and its `MemTotal` is the cap):
 
-- host: **8 cores**, **11 GiB RAM** (`MemTotal 11 534 336 kB`), **1 GiB swap**, ~9 GiB available;
-- CT106: `memory.max = max`, `memory.high = max`, `cpuset 0-7` → **TazPod is unlimited today**.
+- host: AMD Ryzen 7 5825U, **8 cores / 16 threads**, **30.8 GiB RAM**, 12.7 GiB free, 8 GiB swap;
+- CT106: **8 cores**, no cpulimit, **11264 MiB**, swap 1024, `keyctl+nesting`;
+- other guests: CT100 1.5 GiB, CT107 1 GiB, CP 8 GiB, worker 8 GiB, pet 256 MiB.
 
 Budget proposal (sum stays below the host, leaving ~2 GiB for the kernel and page cache):
 
 | guest | RAM cap | swap | note |
 |---|---|---|---|
 | ada | 3072 | 1024 | the engine is Node + SQLite; the model calls happen off-box |
-| tazpod (CT106) | **6144** | 1024 | today unlimited, measured ~2 GiB in use; a cap is a hot change |
+| tazpod (CT106) | **unchanged 11264** | 1024 | no cap needed while 12.7 GiB are free |
 
-The cap on CT106 is applied live with `pct set 106 --memory 6144` (no reboot: the
-cgroup is rewritten). It can be lowered further or raised back at any time.
+If the host ever starts swapping, a cap on CT106 is a hot change:
+`pct set 106 --memory 8192` (no reboot: the cgroup is rewritten).
 
 ## Two host-side steps that Terraform cannot do
 
@@ -46,8 +48,9 @@ cgroup is rewritten). It can be lowered further or raised back at any time.
    lxc.cgroup2.memory.high: 2576980377   # 80 % of 3072 MiB
    ```
 
-2. **Verify the CT ID and the address** before applying: `110` and `.209` are the
-   proposal; `.207`, `.210`, `.211` are taken (Proxmox MACs answer on the LAN).
+2. **CT ID and address are now fixed**: `110` and `.209` (`.207`, `.210`, `.211` were
+   taken by Proxmox guests on the LAN). `provision_key_path` names the private key the
+   generated Ansible inventory uses.
 
 ## Apply
 

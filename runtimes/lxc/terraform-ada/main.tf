@@ -48,6 +48,14 @@ resource "proxmox_virtual_environment_container" "ada" {
     nesting = true
   }
 
+  # Ada's home is a pet volume owned by CT 998: a host power loss only means a
+  # reattach at boot, and destroying this container leaves the data in place.
+  mount_point {
+    volume = "local-lvm:vm-998-disk-1"
+    path   = "/home/ada"
+    backup = true
+  }
+
   started       = true
   start_on_boot = true
 

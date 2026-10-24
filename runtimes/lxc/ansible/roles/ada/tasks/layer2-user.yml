@@ -22,6 +22,29 @@
     content: "{{ ada_user }} ALL=(ALL) NOPASSWD:ALL\n"
     validate: /usr/sbin/visudo -cf %s
 
+# Without this check a misconfigured mount would silently put the database on the
+# container disk, which is exactly what the pet volume exists to avoid.
+- name: The home must be the pet volume
+  ansible.builtin.command: findmnt -n -o SOURCE,FSTYPE "{{ ada_home }}"
+  register: ada_home_mount
+  changed_when: false
+  failed_when: ada_home_mount.rc != 0
+
+- name: Refuse to continue if the home is not a mount point
+  ansible.builtin.assert:
+    that:
+      - ada_home_mount.stdout | length > 0
+    fail_msg: "{{ ada_home }} is not a mount point: the data would live on the container disk"
+
+# The mount point itself is created by Proxmox as root: the user must own its home.
+- name: The home belongs to the service user
+  ansible.builtin.file:
+    path: "{{ ada_home }}"
+    state: directory
+    owner: "{{ ada_user }}"
+    group: "{{ ada_group }}"
+    mode: "0750"
+
 - name: Directory tree
   ansible.builtin.file:
     path: "{{ item.path }}"
@@ -32,7 +55,7 @@
   loop:
     - { path: "{{ ada_root }}" }
     - { path: "{{ ada_app }}" }
-    - { path: "{{ ada_root }}/data", mode: "0700" }
-    - { path: "{{ ada_root }}/workspace" }
-    - { path: "{{ ada_root }}/state", mode: "0700" }
-    - { path: "{{ ada_root }}/logs" }
+    - { path: "{{ ada_home }}/data", mode: "0700" }
+    - { path: "{{ ada_home }}/workspace" }
+    - { path: "{{ ada_home }}/state", mode: "0700" }
+    - { path: "{{ ada_home }}/logs" }
