@@ -3,6 +3,11 @@
   ansible.builtin.systemd:
     daemon_reload: true
 
+- name: restart ssh
+  ansible.builtin.systemd:
+    name: ssh
+    state: restarted
+
 - name: restart ada
   ansible.builtin.systemd:
     name: ada

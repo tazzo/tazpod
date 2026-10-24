@@ -26,6 +26,9 @@ echo "── secrets (never printed) ──"
 export PROXMOX_VE_API_TOKEN="$(gopass show -o bootstrap/proxmox/token-id)=$(gopass show -o bootstrap/proxmox/token-secret)"
 ADA_OPENCODE="$(gopass show -o infra/t3code/opencode-key)"
 ADA_EXA="$(gopass show -o infra/exa/api-key)"
+ADA_SSH_PUB="$(gopass show -o infra/ada/ssh/public)"
+ADA_SSH_PW="$(gopass show -o infra/ada/ssh/password)"
+ADA_SSH_HASH="$(printf '%s' "$ADA_SSH_PW" | openssl passwd -6 -salt ada-ssh-2026 -stdin)"
 ADA_HTTP_TOKEN="$(gopass show -o infra/ada/http-token)" || {
   echo "missing gopass entry infra/ada/http-token (create it: openssl rand -hex 24 | gopass insert -f infra/ada/http-token)"
   exit 1
@@ -58,7 +61,9 @@ echo "── ansible: system, node, user, unit ──"
 EA_FILE="$(mktemp)"; chmod 600 "$EA_FILE"
 trap 'shred -u "$EA_FILE" 2>/dev/null || rm -f "$EA_FILE"' EXIT
 jq -n --arg oc "$ADA_OPENCODE" --arg ex "$ADA_EXA" --arg ht "$ADA_HTTP_TOKEN" \
-  '{ada_opencode_api_key:$oc, ada_exa_api_key:$ex, ada_http_token:$ht}' > "$EA_FILE"
+      --arg sp "$ADA_SSH_PUB" --arg sw "$ADA_SSH_HASH" \
+  '{ada_opencode_api_key:$oc, ada_exa_api_key:$ex, ada_http_token:$ht,
+    ada_ssh_public_key:$sp, ada_ssh_password_hash:$sw}' > "$EA_FILE"
 ansible-playbook -i "${ANSIBLE_DIR}/inventory-ada.ini" "${ANSIBLE_DIR}/ada-baseline.yml" -e "@${EA_FILE}"
 
 echo "── dependencies and start ──"

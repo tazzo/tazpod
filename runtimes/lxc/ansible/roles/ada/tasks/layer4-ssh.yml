@@ -1,0 +1,81 @@
+---
+# SSH access must survive a container recreation: the access key and the root
+# password come from gopass at deploy time, and the host keys are kept on the pet
+# volume so a recreated container keeps the same identity (no known_hosts churn).
+- name: Access key for root
+  ansible.posix.authorized_key:
+    user: root
+    key: "{{ ada_ssh_public_key }}"
+    state: present
+  when: ada_ssh_public_key | length > 0
+
+- name: Access key for the service user
+  ansible.posix.authorized_key:
+    user: "{{ ada_user }}"
+    key: "{{ ada_ssh_public_key }}"
+    state: present
+  when: ada_ssh_public_key | length > 0
+
+- name: Root password (from gopass, never in the repository)
+  ansible.builtin.user:
+    name: root
+    # A sha512 crypt hash computed by the deploy script from the gopass value, so
+    # the plaintext never reaches the controller's filters or the logs.
+    password: "{{ ada_ssh_password_hash }}"
+    update_password: always
+  no_log: true
+  when: ada_ssh_password_hash | length > 0
+
+- name: SSH policy — key and password, both allowed
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/10-ada.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      PermitRootLogin yes
+      PasswordAuthentication yes
+      KbdInteractiveAuthentication no
+  notify: restart ssh
+
+- name: Host keys kept on the pet volume
+  ansible.builtin.file:
+    path: "{{ ada_home }}/state/ssh-host-keys"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Is there a saved host key?
+  ansible.builtin.find:
+    paths: "{{ ada_home }}/state/ssh-host-keys"
+    patterns: "*"
+    file_type: file
+  register: ada_saved_host_keys
+
+- name: Restore the host keys (a recreated container keeps its identity)
+  ansible.builtin.copy:
+    src: "{{ item.path }}"
+    dest: "/etc/ssh/{{ item.path | basename }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0600"
+  loop: "{{ ada_saved_host_keys.files }}"
+  when: ada_saved_host_keys.matched > 0
+  notify: restart ssh
+
+- name: Save the host keys on the pet volume (first boot)
+  ansible.builtin.copy:
+    src: "/etc/ssh/{{ item }}"
+    dest: "{{ ada_home }}/state/ssh-host-keys/{{ item }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0600"
+  loop:
+    - ssh_host_ed25519_key
+    - ssh_host_ed25519_key.pub
+    - ssh_host_rsa_key
+    - ssh_host_rsa_key.pub
+  when: ada_saved_host_keys.matched == 0

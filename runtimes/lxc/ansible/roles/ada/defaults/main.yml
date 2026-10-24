@@ -14,3 +14,8 @@ ada_http_port: 7801
 ada_opencode_api_key: ""
 ada_exa_api_key: ""
 ada_http_token: ""
+
+# SSH access: the public key installed in gopass (infra/ada/ssh/public) and the
+# root password (infra/ada/ssh/password). Never the private key.
+ada_ssh_public_key: ""
+ada_ssh_password_hash: ""

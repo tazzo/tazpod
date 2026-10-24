@@ -1,4 +1,20 @@
 ---
+# A recreated container has the code copied in by ada-create.sh but no dependencies;
+# install them here so the role alone can bring the service up.
+- name: Is node_modules present?
+  ansible.builtin.stat:
+    path: "{{ ada_app }}/node_modules"
+  register: ada_node_modules
+
+- name: Install the engine's dependencies
+  ansible.builtin.command:
+    cmd: npm ci --omit=dev
+    chdir: "{{ ada_app }}"
+  become_user: "{{ ada_user }}"
+  environment:
+    HOME: "{{ ada_home }}"
+  when: not ada_node_modules.stat.exists
+
 - name: Configuration directory
   ansible.builtin.file:
     path: /etc/ada
