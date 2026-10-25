@@ -25,3 +25,15 @@
 - name: Timezone
   ansible.builtin.timezone:
     name: Europe/Rome
+
+# The module points /etc/localtime at the zone but leaves the Debian image's
+# /etc/timezone saying Etc/UTC. Anything that reads that file (rather than
+# /etc/localtime) then disagrees with `timedatectl` by an hour. Idempotent on
+# purpose: it rewrites only when the content differs.
+- name: Timezone file agrees with the zone
+  ansible.builtin.copy:
+    dest: /etc/timezone
+    content: "Europe/Rome\n"
+    owner: root
+    group: root
+    mode: "0644"
