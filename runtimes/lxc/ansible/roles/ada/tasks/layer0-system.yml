@@ -18,6 +18,7 @@
       - htop
       - ncdu
       - sqlite3
+      - age
       - rsync
     state: present
 

@@ -12,7 +12,10 @@ User={{ ada_user }}
 Group={{ ada_group }}
 WorkingDirectory={{ ada_app }}
 EnvironmentFile=/etc/ada/env
-ExecStart=/usr/bin/node src/main.ts serve
+# The identity is in PID 1's environment (Proxmox injects it via lxc.environment);
+# systemd does not pass the manager's environment to units unless asked.
+PassEnvironment=ADA_SECRETS_IDENTITY
+ExecStart=/usr/local/bin/ada-secrets-exec /usr/bin/node src/main.ts serve
 Restart=always
 RestartSec=3
 KillSignal=SIGTERM

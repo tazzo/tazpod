@@ -4,7 +4,9 @@ ada_group: ada
 ada_root: /opt/ada
 # The data lives on the pet volume owned by CT 998, not on the container disk.
 ada_home: /home/ada
-ada_app: "{{ ada_root }}/app"
+# The checkout lives on the pet volume, like the data: a recreated container finds
+# its own code, node_modules and git history where it left them.
+ada_app: "{{ ada_home }}/app"
 ada_node_major: "24"
 ada_http_bind: "0.0.0.0"
 ada_http_port: 7801
@@ -23,5 +25,7 @@ ada_ssh_password_hash: ""
 # The mail channel (AgentMail): the key comes from gopass at deploy time. The
 # operator's address is the only one whose messages are commands.
 ada_agentmail_api_key: ""
+# The key is scoped to this inbox, so it cannot create one: use the address.
+ada_agentmail_inbox_id: "ada-bot@agentmail.to"
 ada_mail_operator: "roberto.tazzoli@gmail.com"
 ada_mail_poll_seconds: 30

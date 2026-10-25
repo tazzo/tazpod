@@ -1,6 +1,18 @@
 ---
 # A recreated container has the code copied in by ada-create.sh but no dependencies;
 # install them here so the role alone can bring the service up.
+# Git belongs to the agent: it commits and pushes its own work.
+- name: Git identity for the service user
+  ansible.builtin.command:
+    cmd: "git config --global --replace-all {{ item.key }} {{ item.value | quote }}"
+  become_user: "{{ ada_user }}"
+  environment:
+    HOME: "{{ ada_home }}"
+  loop:
+    - { key: user.name, value: "Ada" }
+    - { key: user.email, value: "ada-bot@agentmail.to" }
+  changed_when: false
+
 - name: Is node_modules present?
   ansible.builtin.stat:
     path: "{{ ada_app }}/node_modules"
@@ -23,7 +35,41 @@
     group: "{{ ada_group }}"
     mode: "0750"
 
-- name: Environment file (secrets, rendered from gopass at deploy time)
+# The secrets live encrypted in the agent's home; this wrapper decrypts the ones it
+# needs into its own environment and then execs the engine. Nothing is written.
+- name: Secrets wrapper
+  ansible.builtin.template:
+    src: secrets-exec.sh.j2
+    dest: /usr/local/bin/ada-secrets-exec
+    owner: root
+    group: root
+    mode: "0755"
+  notify: restart ada
+
+- name: One-secret helper
+  ansible.builtin.template:
+    src: ada-secret.sh.j2
+    dest: /usr/local/bin/ada-secret
+    owner: root
+    group: root
+    mode: "0755"
+
+# The secrets are no longer rendered into an environment file: they live encrypted
+# in the agent's home and the wrapper decrypts them at start. A deploy that finds no
+# identity must fail loudly, not start an engine without credentials.
+- name: The encrypted secrets must be there
+  ansible.builtin.find:
+    paths: "{{ ada_home }}/.secrets"
+    patterns: "*.age"
+  register: ada_secrets_files
+
+- name: Refuse to start an engine with no secrets at all
+  ansible.builtin.assert:
+    that:
+      - ada_secrets_files.matched > 0
+    fail_msg: "no *.age in {{ ada_home }}/.secrets: run ada-secrets-init.sh first."
+
+- name: Environment file (configuration only, no secrets)
   ansible.builtin.template:
     src: env.j2
     dest: /etc/ada/env

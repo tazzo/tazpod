@@ -59,3 +59,4 @@
     - { path: "{{ ada_home }}/workspace" }
     - { path: "{{ ada_home }}/state", mode: "0700" }
     - { path: "{{ ada_home }}/logs" }
+    - { path: "{{ ada_home }}/.secrets", mode: "0700" }
